@@ -49,6 +49,14 @@ const sessionSnapshots = new WeakMap<SlotRegistry, SnapshotStore<ConversationSna
 const tConversation: ConversationSessionHeaderProps['t'] =
   key => (conversationZh as Record<string, string>)[key] ?? key
 
+function trajectoryT(key: TrajectoryKey, values?: Record<string, string | number>): string {
+  let text = zh[key]
+  for (const [name, value] of Object.entries(values ?? {})) {
+    text = text.replaceAll(`{${name}}`, String(value))
+  }
+  return text
+}
+
 afterEach(cleanup)
 // The chat store persists under its declared key; clear so one case's active
 // view cannot rehydrate into the next.
@@ -248,7 +256,7 @@ function mount(slots: SlotRegistry, nodes: ConversationSnapshot['nodes'] = NODES
           loadOlder: trajectory.loadOlder,
           setActualDuration: trajectory.setActualDuration,
           useDuration: bindSnapshotSelector(trajectory.hooks.duration),
-          t: (key: TrajectoryKey) => zh[key],
+          t: trajectoryT,
         }
       })()
       : injected
@@ -369,6 +377,9 @@ describe('tab switching in ConversationRoot', () => {
     expect(view.container.querySelectorAll('tr[data-turn-start="true"]')).toHaveLength(2)
     expect(screen.queryByRole('columnheader')).toBeNull()
     expect(screen.getByRole('toolbar', { name: '轨迹工具栏' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: '关键步骤记录' }).textContent).toContain('2 轮')
+    expect(screen.getByRole('region', { name: '关键步骤记录' }).textContent).toContain('1 次工具调用')
+    expect(screen.getByRole('region', { name: '关键步骤记录' }).textContent).toContain('已记录')
     expect(screen.getByRole('region', { name: 'Trajectory timeline' })).toBeTruthy()
     expect(view.container.querySelector('[data-conversation-composer-overlay]')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Collapse turns' }))

@@ -25,6 +25,69 @@
   --dsh-composer-dock-inset: 8px;
 }
 
+:global(body[data-dsh-chat-background]) .root {
+  background-image:
+    linear-gradient(
+      color-mix(in srgb, var(--dsw-alias-bg-base) 78%, transparent),
+      color-mix(in srgb, var(--dsw-alias-bg-base) 88%, transparent)
+    ),
+    var(--dsh-chat-background-image);
+  background-position: center;
+  background-size: cover;
+}
+
+:global(body[data-dsh-chat-background='bubble-whale']) .root {
+  background-image:
+    linear-gradient(rgb(244 251 255 / 68%), rgb(244 251 255 / 80%)),
+    var(--dsh-chat-background-image);
+}
+
+/* Subject-safe artwork keeps its low-detail field behind the shared content
+   axis and reveals the illustration at the outer edge. The image itself owns
+   the focal point; the conversation owns only the readability veil. */
+:global(body[data-dsh-chat-background-layout='focus-right']) .root {
+  background-image:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent) 0%,
+      color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent) 58%,
+      color-mix(in srgb, var(--dsw-alias-bg-base) 56%, transparent) 76%,
+      color-mix(in srgb, var(--dsw-alias-bg-base) 20%, transparent) 100%
+    ),
+    var(--dsh-chat-background-image);
+  background-position: center, right center;
+}
+
+:global(body[data-dsh-chat-background-layout='focus-left']) .root {
+  background-image:
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--dsw-alias-bg-base) 20%, transparent) 0%,
+      color-mix(in srgb, var(--dsw-alias-bg-base) 56%, transparent) 24%,
+      color-mix(in srgb, var(--dsw-alias-bg-base) 90%, transparent) 42%,
+      color-mix(in srgb, var(--dsw-alias-bg-base) 94%, transparent) 100%
+    ),
+    var(--dsh-chat-background-image);
+  background-position: center, left center;
+}
+
+:global(body[data-dsh-chat-background]) .header,
+:global(body[data-dsh-chat-background]) .composerSeat {
+  backdrop-filter: blur(12px) saturate(1.08);
+}
+
+@media (max-width: 900px) {
+  :global(body[data-dsh-chat-background-layout]) .root {
+    background-image:
+      linear-gradient(
+        color-mix(in srgb, var(--dsw-alias-bg-base) 84%, transparent),
+        color-mix(in srgb, var(--dsw-alias-bg-base) 92%, transparent)
+      ),
+      var(--dsh-chat-background-image);
+    background-position: center;
+  }
+}
+
 .header {
   position: relative;
   flex: none;
@@ -342,6 +405,7 @@
 
 .heroWorkspaceRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   min-width: 0;

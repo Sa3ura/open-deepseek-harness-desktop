@@ -11,6 +11,12 @@ import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 
 /** Body attribute selecting the dark base palette in the token stylesheets. */
 export const DARK_ATTRIBUTE = 'data-ds-dark-theme'
+/** Body attribute marking that the center conversation has a decorative image. */
+export const CHAT_BACKGROUND_ATTRIBUTE = 'data-dsh-chat-background'
+/** Body attribute selecting a subject-safe background placement. */
+export const CHAT_BACKGROUND_LAYOUT_ATTRIBUTE = 'data-dsh-chat-background-layout'
+/** CSS variable carrying the escaped chat background image. */
+export const CHAT_BACKGROUND_IMAGE = '--dsh-chat-background-image'
 
 /** Applies theme snapshots to the document; one instance per plugin fiber. */
 export class ThemePresenter {
@@ -46,6 +52,18 @@ export class ThemePresenter {
       body.style.setProperty(name, value)
       this.appliedTokens.push(name)
     }
+    const backgroundUrl = snapshot.background.url
+    if (backgroundUrl === undefined) {
+      body.removeAttribute(CHAT_BACKGROUND_ATTRIBUTE)
+      body.removeAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE)
+      body.style.removeProperty(CHAT_BACKGROUND_IMAGE)
+    } else {
+      body.setAttribute(CHAT_BACKGROUND_ATTRIBUTE, snapshot.background.id)
+      const layout = snapshot.background.layout
+      if (layout === undefined) body.removeAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE)
+      else body.setAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE, layout)
+      body.style.setProperty(CHAT_BACKGROUND_IMAGE, `url(${JSON.stringify(backgroundUrl)})`)
+    }
     this.themeColorMeta.content = getComputedStyle(body).backgroundColor
     if (!this.themeColorMeta.isConnected) document.head.append(this.themeColorMeta)
   }
@@ -55,6 +73,9 @@ export class ThemePresenter {
     document.documentElement.style.removeProperty('color-scheme')
     const body = document.body
     body.removeAttribute(DARK_ATTRIBUTE)
+    body.removeAttribute(CHAT_BACKGROUND_ATTRIBUTE)
+    body.removeAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE)
+    body.style.removeProperty(CHAT_BACKGROUND_IMAGE)
     for (const name of this.appliedTokens) body.style.removeProperty(name)
     this.appliedTokens = []
     this.themeColorMeta.remove()

@@ -26,3 +26,31 @@ export interface PluginInventoryEntry {
 export interface PluginInventorySnapshot {
   readonly entries: readonly PluginInventoryEntry[]
 }
+
+/** Stable identity of one background profile-plugin installation. */
+export type PluginInstallId = Branded<'PluginInstallId'>
+
+/** Registry package request accepted by the profile plugin installer. */
+export interface PluginInstallRequest {
+  /** Profile that will receive the dependency and bundle layer. */
+  readonly profile: string
+  /** npm registry package specifier, optionally with a version or dist-tag. */
+  readonly packageSpec: string
+}
+
+/** Observable lifecycle of one package-manager process. */
+export type PluginInstallPhase = 'running' | 'succeeded' | 'failed'
+
+/** Point-in-time state returned when starting or polling an installation. */
+export interface PluginInstallSnapshot {
+  readonly installId: PluginInstallId
+  readonly profile: string
+  readonly packageSpec: string
+  /** Exact CLI command represented by the structured request. */
+  readonly command: string
+  readonly phase: PluginInstallPhase
+  /** Exit code when the package-manager process settled normally. */
+  readonly exitCode?: number | null
+  /** Bounded package-manager output for local troubleshooting after failure. */
+  readonly diagnostic?: string
+}

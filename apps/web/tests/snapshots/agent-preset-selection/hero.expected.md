@@ -6,3 +6,6 @@
   - img
   - text: Standard mode
   - img
+- button "Explore plugins 5":
+  - img
+  - text: Explore plugins 5

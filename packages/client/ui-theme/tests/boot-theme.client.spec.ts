@@ -47,6 +47,13 @@ describe('theme boot index transform', () => {
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
   })
 
+  it.each(['starlight', 'pirate', 'shinobi', 'rift'] as const)('boots the %s skin on the dark base palette', (preference) => {
+    mockSystemDark(false)
+    executeBootstrap(preference)
+    expect(document.documentElement.style.colorScheme).toBe('dark')
+    expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(true)
+  })
+
   it.each([
     [true, 'dark', true],
     [false, 'light', false],

@@ -109,7 +109,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     // Focus-reveal the footers (hover:hover keeps them opacity-hidden until
     // hover/focus-within). Branch renders only under assistant answers — user
     // bubbles carry none — and only a completed transcript tail enables it.
-    const copyButtons = page.getByRole('button', { name: 'Copy' })
+    const copyButtons = page.getByRole('button', { name: 'Copy', exact: true })
     await expect.poll(() => copyButtons.count(), { timeout: 10_000 }).toBeGreaterThanOrEqual(4)
     await copyButtons.first().focus()
     const branchButtons = page.getByRole('button', { name: 'Branch into a new conversation' })
@@ -131,7 +131,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     await page.getByText(/Cache hit \d+%/u).first().waitFor({ timeout: 10_000 })
     // Keep a footer focused so opacity-hidden actions stay in the a11y tree
     // as an active/focused control during the capture.
-    await page.getByRole('button', { name: 'Copy' }).first().focus()
+    await page.getByRole('button', { name: 'Copy', exact: true }).first().focus()
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)

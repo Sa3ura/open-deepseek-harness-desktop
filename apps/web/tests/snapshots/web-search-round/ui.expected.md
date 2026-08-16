@@ -3,6 +3,10 @@
     - button "Use web_search to search exactly" [disabled]
   - img
   - text: Standard mode
+  - button "Copy loaded conversation":
+    - img
+  - button "More session actions":
+    - img
   - button "Session log":
     - text: Session log
     - img

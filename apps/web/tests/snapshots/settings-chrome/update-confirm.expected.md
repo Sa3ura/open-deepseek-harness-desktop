@@ -1,0 +1,8 @@
+- dialog "升级 DeepSeek Harness？":
+  - heading "升级 DeepSeek Harness？" [level=2]
+  - button "取消":
+    - img
+  - paragraph: 将升级到官方稳定提交 22222222，随后安装锁定依赖并完整构建。
+  - paragraph: 该过程会运行官方仓库中的依赖安装和构建脚本。升级期间请保持网络连接并不要关闭应用。
+  - button "取消"
+  - button "确认升级"

@@ -14,7 +14,8 @@ function bootThemeScript(preference: ThemePreference): string {
   const systemDark = preference === 'system'
     && typeof matchMedia !== 'undefined'
     && matchMedia('(prefers-color-scheme: dark)').matches
-  const dark = preference === 'dark' || systemDark
+  const darkThemes = ['dark', 'ocean', 'moonlight', 'starlight', 'pirate', 'shinobi', 'rift']
+  const dark = darkThemes.includes(preference) || systemDark
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
   document.body.toggleAttribute('data-ds-dark-theme', dark)
 })()</script>`

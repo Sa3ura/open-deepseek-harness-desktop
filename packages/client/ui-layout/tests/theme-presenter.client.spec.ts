@@ -6,15 +6,21 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
-import { DARK_ATTRIBUTE, ThemePresenter } from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
+import {
+  CHAT_BACKGROUND_LAYOUT_ATTRIBUTE, DARK_ATTRIBUTE, ThemePresenter,
+} from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
 
 const LIGHT_THEME_COLOR = 'rgb(255, 255, 255)'
 const DARK_THEME_COLOR = 'rgb(21, 21, 23)'
 
-function snapshot(colorScheme: 'light' | 'dark', tokens: Record<string, string> = {}): ThemeSnapshot {
+function snapshot(
+  colorScheme: 'light' | 'dark',
+  tokens: Record<string, string> = {},
+  background: ThemeSnapshot['background'] = { id: 'none' },
+): ThemeSnapshot {
   // The presenter must key off colorScheme, not the id — keep them distinct.
   const active = { id: `${colorScheme}-test`, colorScheme, tokens }
-  return { preference: colorScheme, active, themes: [active], revision: 1 }
+  return { preference: colorScheme, active, themes: [active], background, revision: 1 }
 }
 
 function clearThemePresentation(): void {
@@ -74,6 +80,20 @@ describe('ThemePresenter', () => {
     expect(document.body.style.getPropertyValue('--dsw-alias-bg')).toBe('#fff')
     // The old theme's extra variable is gone, not merged.
     expect(document.body.style.getPropertyValue('--dsw-alias-fg')).toBe('')
+  })
+
+  it('projects and retracts the selected chat background', () => {
+    const presenter = new ThemePresenter()
+    presenter.apply(snapshot('dark', {}, {
+      id: 'anime-starlight', url: '/anime.webp', layout: 'focus-right',
+    }))
+    expect(document.body.dataset.dshChatBackground).toBe('anime-starlight')
+    expect(document.body.getAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE)).toBe('focus-right')
+    expect(document.body.style.getPropertyValue('--dsh-chat-background-image')).toContain('/anime.webp')
+    presenter.apply(snapshot('dark'))
+    expect(document.body.hasAttribute('data-dsh-chat-background')).toBe(false)
+    expect(document.body.hasAttribute(CHAT_BACKGROUND_LAYOUT_ATTRIBUTE)).toBe(false)
+    expect(document.body.style.getPropertyValue('--dsh-chat-background-image')).toBe('')
   })
 
   it('dispose removes color-scheme, the attribute, and every applied variable, sparing foreign inline styles', () => {

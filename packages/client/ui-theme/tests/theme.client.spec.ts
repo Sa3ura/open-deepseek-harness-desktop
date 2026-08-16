@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
@@ -22,6 +22,7 @@ const make = (host = stubSettingsScope<ThemeSettings>()): {
 }
 
 describe('ThemeRuntime', () => {
+  beforeEach(() => { localStorage.clear() })
   it('defaults to the system preference resolved against prefers-color-scheme', () => {
     const { theme } = make()
     const snapshot = theme.getTheme()
@@ -29,7 +30,10 @@ describe('ThemeRuntime', () => {
     // jsdom matchMedia is absent; system resolves to light.
     expect(snapshot.active.id).toBe('light')
     expect(snapshot.active.colorScheme).toBe('light')
-    expect(snapshot.themes.map(t => t.id)).toEqual(['light', 'dark'])
+    expect(snapshot.themes.map(t => t.id)).toEqual([
+      'light', 'dark', 'ocean', 'moonlight', 'bubble', 'starlight', 'pirate', 'shinobi', 'rift',
+    ])
+    expect(snapshot.background).toEqual({ id: 'none' })
   })
 
   it('setTheme switches, writes through the scope, republishes, and keeps DOM untouched', () => {
@@ -75,12 +79,16 @@ describe('ThemeRuntime', () => {
   it('registered themes join the snapshot; disposing the active one resets to default', () => {
     const { theme, events, host } = make()
     const dispose = theme.register({ id: 'sepia', colorScheme: 'light', tokens: { '--dsw-alias-bg-base': 'red' } })
-    expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark', 'sepia'])
+    expect(theme.getTheme().themes.map(t => t.id)).toEqual([
+      'light', 'dark', 'ocean', 'moonlight', 'bubble', 'starlight', 'pirate', 'shinobi', 'rift', 'sepia',
+    ])
     theme.setTheme('sepia')
     expect(theme.getTheme().active.tokens['--dsw-alias-bg-base']).toBe('red')
     dispose()
     expect(theme.getTheme().preference).toBe('system')
-    expect(theme.getTheme().themes.map(t => t.id)).toEqual(['light', 'dark'])
+    expect(theme.getTheme().themes.map(t => t.id)).toEqual([
+      'light', 'dark', 'ocean', 'moonlight', 'bubble', 'starlight', 'pirate', 'shinobi', 'rift',
+    ])
     // Custom ids are in-process extension themes; only the built-in product
     // preferences cross the Host settings schema.
     expect(host.set).not.toHaveBeenCalled()
@@ -88,6 +96,27 @@ describe('ThemeRuntime', () => {
     expect(events.length).toBe(3)
     dispose()
     expect(events.length).toBe(3)
+  })
+
+  it('persists a shipped chat background locally and republishes it', () => {
+    const { theme, events } = make()
+    theme.setBackground('deep-ocean')
+    expect(theme.getTheme().background).toEqual({
+      id: 'deep-ocean',
+      url: '/theme-backgrounds/deep-ocean-whale.webp',
+    })
+    expect(events).toHaveLength(1)
+    expect(JSON.parse(localStorage.getItem('dsh.theme.chat-background') ?? '{}')).toMatchObject({ id: 'deep-ocean' })
+  })
+
+  it('publishes the subject-safe layout carried by an artwork preset', () => {
+    const { theme } = make()
+    theme.setBackground('anime-starlight')
+    expect(theme.getTheme().background).toEqual({
+      id: 'anime-starlight',
+      url: '/theme-backgrounds/anime-starlight.webp',
+      layout: 'focus-right',
+    })
   })
 
   it('disposing an inactive theme keeps the active preference', () => {

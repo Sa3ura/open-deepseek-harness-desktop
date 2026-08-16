@@ -5,6 +5,10 @@
     - button "event-sourcing researcher"
     - text: /
     - button "example editor" [disabled]
+  - button "Copy loaded conversation":
+    - img
+  - button "More session actions":
+    - img
   - button "Session log":
     - text: Session log
     - img

@@ -144,6 +144,7 @@ export function TrajectoryView({
   const historyLoading = useSession(snapshot => snapshot.openState === 'loading')
   const olderHistoryLoading = useSession(snapshot => snapshot.loadingOlder)
   const hasOlderHistory = useSession(snapshot => snapshot.hasMore)
+  const sessionRunning = useSession(snapshot => snapshot.running)
   const nodes = inspection.eventNodes
   const eventLocations = inspection.eventLocations
   const historyBaseSeq = nodes[0]?.seq ?? 0
@@ -396,6 +397,15 @@ export function TrajectoryView({
   }, [timelineTurns])
   const allAssistantsCollapsed = collapsibleAssistantIds.length > 0
     && collapsibleAssistantIds.every(index => collapsedAssistants.has(index))
+  const summary = useMemo(() => ({
+    turns: timelineTurns.filter(turn => turn.turn !== null).length,
+    tools: nodes.filter(node => node.kind === 'tool-result').length + runningCalls.length,
+    failures: nodes.filter(node =>
+      node.kind === 'turn-error'
+      || (node.kind === 'tool-result' && node.isError)
+      || (node.kind === 'command' && node.outcome?.kind === 'error')).length,
+    running: sessionRunning,
+  }), [nodes, runningCalls, sessionRunning, timelineTurns])
 
   const toggleTurn = (turn: number) => {
     setCollapsedTurns((current) => {
@@ -445,6 +455,22 @@ export function TrajectoryView({
 
   return (
     <div className={css.root} data-conversation-composer-overlay="">
+      <section className={css.auditSummary} aria-label={t('summary.title')}>
+        <div className={css.auditCopy}>
+          <strong>{t('summary.title')}</strong>
+          <span>{t('summary.source')}</span>
+        </div>
+        <div className={css.auditFacts}>
+          <span>{t('summary.turns', { count: summary.turns })}</span>
+          <span>{t('summary.tools', { count: summary.tools })}</span>
+          {summary.failures > 0 && (
+            <span className={css.auditFailure}>{t('summary.failures', { count: summary.failures })}</span>
+          )}
+          <span className={summary.running ? css.auditRunning : css.auditRecorded}>
+            {t(summary.running ? 'summary.running' : 'summary.recorded')}
+          </span>
+        </div>
+      </section>
       <TrajectoryToolbar
         actualDuration={actualDuration}
         onActualDurationChange={(nextActualDuration) => {

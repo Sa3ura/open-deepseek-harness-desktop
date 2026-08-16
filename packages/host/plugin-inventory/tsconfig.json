@@ -15,6 +15,9 @@
       "path": "../../../vendor/loader"
     },
     {
+      "path": "../../../vendor/schemastery"
+    },
+    {
       "path": "../../util/brand"
     },
     {
@@ -22,6 +25,9 @@
     },
     {
       "path": "../../runtime-diagnostics/invariants"
+    },
+    {
+      "path": "../../subprocess/subprocess"
     }
   ]
 }

@@ -5,6 +5,10 @@
     - button "event-sourcing researcher" [disabled]
   - img
   - text: Standard mode
+  - button "Copy loaded conversation":
+    - img
+  - button "More session actions":
+    - img
   - button "Session log":
     - text: Session log
     - img

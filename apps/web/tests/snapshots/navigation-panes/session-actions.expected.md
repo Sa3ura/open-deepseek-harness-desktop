@@ -1,0 +1,20 @@
+- banner:
+  - navigation "Session hierarchy":
+    - 'button "NavScenario: first run bash to" [disabled]'
+  - button "Copy loaded conversation":
+    - img
+  - button "More session actions":
+    - img
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- dialog "Delete this session?":
+  - heading "Delete this session?" [level=2]
+  - button "Cancel":
+    - img
+  - paragraph: The session will leave the client list. Its underlying log is not physically deleted so execution remains auditable; this interface currently has no restore action.
+  - button "Cancel"
+  - button "Delete session"

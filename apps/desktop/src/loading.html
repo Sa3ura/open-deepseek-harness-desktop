@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+    <title>DeepSeek Harness</title>
+    <style>
+      :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f4f2ed; color: #24221f; }
+      main { width: min(420px, calc(100vw - 48px)); text-align: center; }
+      .mark { width: 52px; height: 52px; margin: 0 auto 24px; border-radius: 16px; background: #24221f; color: #fff; display: grid; place-items: center; font: 700 22px/1 ui-monospace, monospace; box-shadow: 0 12px 32px rgb(36 34 31 / 16%); }
+      h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+      p { margin: 12px 0 28px; color: #706c65; font-size: 14px; line-height: 1.6; }
+      .track { height: 3px; overflow: hidden; border-radius: 999px; background: #dedbd4; }
+      .track::after { content: ""; display: block; width: 36%; height: 100%; border-radius: inherit; background: #3f7f67; animation: progress 1.2s ease-in-out infinite alternate; }
+      @keyframes progress { from { transform: translateX(-80%); } to { transform: translateX(260%); } }
+      @media (prefers-color-scheme: dark) { body { background: #1b1b1a; color: #f3f1ec; } .mark { background: #f3f1ec; color: #1b1b1a; } p { color: #aaa69f; } .track { background: #343330; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">DS</div>
+      <h1>Starting DeepSeek Harness</h1>
+      <p>The desktop app is preparing your local agent workspace. Your sessions and credentials stay on this machine.</p>
+      <div class="track" role="progressbar" aria-label="Starting Harness"></div>
+    </main>
+  </body>
+</html>

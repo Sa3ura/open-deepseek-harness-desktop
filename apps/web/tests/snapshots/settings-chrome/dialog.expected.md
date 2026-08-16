@@ -29,17 +29,43 @@
   - button "中文":
     - text: 中文
     - img
-  - text: 外观
-  - button "浅色":
-    - img
-    - text: 浅色
-  - button "深色":
-    - img
-    - text: 深色
-  - button "跟随系统" [pressed]:
-    - img
-    - text: 跟随系统
+  - region "主题皮肤":
+    - text: 主题皮肤 外观 10 套皮肤
+    - button "跟随系统" [pressed]
+    - button "浅色"
+    - button "深色"
+    - button "深海蓝鲸"
+    - button "月光鲸语"
+    - button "气泡乐园"
+    - button "星光次元"
+    - button "海盗远航"
+    - button "忍者赤焰"
+    - button "峡谷电竞"
+  - region "聊天背景":
+    - text: 聊天背景 原创插画会把视觉主体留在工作区侧面；也可上传仅保存在当前设备的图片。
+    - button "纯色" [pressed]
+    - button "深海鲸游"
+    - button "月光小鲸"
+    - button "软萌气泡"
+    - button "星光程序姬"
+    - button "海盗远航"
+    - button "忍者赤焰"
+    - button "峡谷电竞"
+    - button "上传背景"
   - text: 繁忙时 Enter 键行为 仅在智能体运行时生效；Cmd/Ctrl+Enter 使用另一行为
   - button "排队发送":
     - text: 排队发送
     - img
+  - region "DeepSeek Harness 底层更新":
+    - text: DeepSeek Harness 底层更新 检查 DeepSeek 官方稳定分支，在保留本地数据的前提下更新依赖并重新构建底层能力。 官方稳定源
+    - link "deepseek-ai/deepseek-harness":
+      - /url: https://github.com/deepseek-ai/deepseek-harness
+    - code: master
+    - text: 当前版本
+    - code: "11111111"
+    - text: 稳定版本
+    - code: "22222222"
+    - status: 发现新的稳定版本，可以安全快进升级。
+    - button "检查更新"
+    - button "一键升级底层能力"
+    - text: 仅接受官方 master 的快进更新；升级前要求工作树干净，构建失败时自动回退。会话、API 密钥、插件和 Skill 数据不存放在源码工作树中。

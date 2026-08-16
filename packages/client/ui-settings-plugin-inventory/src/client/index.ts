@@ -1,9 +1,12 @@
-/** Read-only Host plugin inventory registered into Web Settings. */
+/** Host plugin inventory and controlled installation registered into Web UI. */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { PluginInventorySettingsTab, type PluginInventorySettingsTabInjected } from './PluginInventorySettingsTab.tsx'
+import { PluginDiscovery } from './PluginDiscovery.tsx'
+import type { PluginDiscoveryInjected } from './PluginDiscovery.tsx'
 import { en, zh, type PluginInventoryLocaleKey } from './locales.ts'
 
 export type { PluginInventorySettingsTabInjected, PluginInventorySettingsTabProps } from './PluginInventorySettingsTab.tsx'
@@ -11,7 +14,7 @@ export type { PluginInventoryLocaleKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
-    /** Read-only Host plugin inventory copy. */
+    /** Host plugin inventory and controlled-installation copy. */
     'settings.pluginInventory': PluginInventoryLocaleKey
   }
 }
@@ -22,7 +25,7 @@ export const NS = 'settings.pluginInventory'
 /** Services required by the Settings registration and generated Remote face. */
 export const inject = ['slots', 'locale', 'remote', 'remote.pluginInventory']
 
-/** Contribute the lazy inventory tab to the Plugins settings section. */
+/** Contribute the lazy inventory tab and new-session discovery entry. */
 export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-plugin-inventory: dictionaries')
 
@@ -35,6 +38,22 @@ export function apply(ctx: ClientContext): void {
     return result.value
   }
   const injected = (): PluginInventorySettingsTabInjected => ({ list })
+  const discoveryInjected = (): PluginDiscoveryInjected => ({
+    startInstall: async (request) => {
+      const result = await ctx.remote.pluginInventory.startInstall(request)
+      if (!result.ok) {
+        throw new Error(`pluginInventory.startInstall failed: ${result.error.code}: ${result.error.message}`)
+      }
+      return result.value
+    },
+    getInstall: async (installId) => {
+      const result = await ctx.remote.pluginInventory.getInstall(installId)
+      if (!result.ok) {
+        throw new Error(`pluginInventory.getInstall failed: ${result.error.code}: ${result.error.message}`)
+      }
+      return result.value
+    },
+  })
 
   ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
     name: 'settings.plugins.tab',
@@ -44,4 +63,9 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: injected,
   }, PluginInventorySettingsTab))
+  ctx.slots.inject('conversation.hero.pluginDiscovery', () => ctx.slots.register({
+    name: 'conversation.hero.pluginDiscovery',
+    locale: NS,
+    inject: discoveryInjected,
+  }, PluginDiscovery))
 }

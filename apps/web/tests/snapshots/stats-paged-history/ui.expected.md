@@ -1,6 +1,10 @@
 - banner:
   - navigation "Session hierarchy":
     - button "{{workspace}}" [disabled]
+  - button "Copy loaded conversation":
+    - img
+  - button "More session actions":
+    - img
   - button "Session log":
     - text: Session log
     - img

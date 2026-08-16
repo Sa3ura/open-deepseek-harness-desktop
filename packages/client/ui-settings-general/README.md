@@ -10,6 +10,8 @@ A loopback browser loads the provider's `hasDocument` capability through `settin
 
 The Host half registers `ui-onboarding` in the user-settings seam. The welcome step contributed by `ui-settings-models` reads and writes its `welcomeNoticeVersion` through the existing public settings boundary; the shell itself remains policy-free.
 
+In the Electron desktop host, the preload bridge contributes a General row for official Harness source updates. The row checks current and stable commit identities, explains dirty, diverged, packaged, and network-failure states, confirms a ready update, and offers restart only after the desktop process reports a successful transactional build. Ordinary Web clients have no preload bridge and do not register this privileged row.
+
 ## Model Experience
 
 None, as the plugin renders browser settings UI; nothing here reaches a model request.
@@ -20,4 +22,4 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- The General section has no built-in rows; each row appears only when its owning feature plugin is mounted.
+- The desktop source updater is available only for a Git source run. Packaged updates require a signed release channel owned by the desktop host.

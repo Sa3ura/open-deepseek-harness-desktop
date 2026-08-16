@@ -1,0 +1,80 @@
+- dialog "DeepSeek Harness plugin ecosystem":
+  - heading "DeepSeek Harness plugin ecosystem" [level=2]
+  - button "Close plugin ecosystem":
+    - img
+  - paragraph: Curated community projects that support the official plugin mechanism. Review the command, then install directly into its Harness profile.
+  - text: GitHub stars guide discovery only; they are not DeepSeek review or a security endorsement. Inspect the source, license, permissions, and build scripts before installation.
+  - list:
+    - listitem:
+      - text: Web UI suite
+      - link "dsh-web-ui":
+        - /url: https://github.com/zhu1090093659/dsh-web-ui
+      - text: ★ 2.9k+
+      - paragraph: A suite with a task board, Git graph, side panel, remote access, vision tools, and skins.
+      - text: Apache-2.0 Third-party
+      - code: dsh plugin --profile web add @linxin666/dsh-web-ui-all
+      - button "Copy install command":
+        - img
+        - text: Copy install command
+      - button "Install"
+      - link "View source":
+        - /url: https://github.com/zhu1090093659/dsh-web-ui
+    - listitem:
+      - text: Vision
+      - link "modlens":
+        - /url: https://github.com/liustack/modlens
+      - text: ★ 2k+
+      - paragraph: Adds image reading, OCR, layout, and semantic evidence to text-only models.
+      - text: MIT Third-party
+      - code: dsh plugin --profile web add @liustack/modlens@3.17.1
+      - button "Copy install command":
+        - img
+        - text: Copy install command
+      - button "Install"
+      - link "View source":
+        - /url: https://github.com/liustack/modlens
+    - listitem:
+      - text: Developer workspace
+      - link "DSH Better Sidebar":
+        - /url: https://github.com/omdsh-dev/DSH-better-sidebar
+      - text: ★ 1.4k+
+      - paragraph: A sidebar workspace with file preview and editing, terminal, Git, and subagent management.
+      - text: MIT Third-party
+      - code: dsh plugin --profile web add dsh-better-sidebar
+      - button "Copy install command":
+        - img
+        - text: Copy install command
+      - button "Install"
+      - link "View source":
+        - /url: https://github.com/omdsh-dev/DSH-better-sidebar
+    - listitem:
+      - text: Terminal UI
+      - link "dsh-TUI":
+        - /url: https://github.com/ccch1mneyyy/dsh-TUI
+      - text: ★ 1.3k+
+      - paragraph: A Claude Code-style terminal UI with streaming status, history search, and session workflows.
+      - text: MIT Third-party
+      - code: dsh plugin --profile dsh-tui add @deepseek-harness-tui/dsh-tui
+      - button "Copy install command":
+        - img
+        - text: Copy install command
+      - button "Install"
+      - link "View source":
+        - /url: https://github.com/ccch1mneyyy/dsh-TUI
+    - listitem:
+      - text: Plugin market
+      - link "dsh-market":
+        - /url: https://github.com/dsh-market/dsh-market
+      - text: ★ 380+
+      - paragraph: Browse, search, install, and update community plugins inside Harness Settings.
+      - text: MIT Third-party
+      - code: dsh plugin --profile web add dshmarket
+      - button "Copy install command":
+        - img
+        - text: Copy install command
+      - button "Install"
+      - link "View source":
+        - /url: https://github.com/dsh-market/dsh-market
+  - text: Star bands collected on 2026-08-16
+  - link "Browse the complete dsh-plugin topic on GitHub":
+    - /url: https://github.com/topics/dsh-plugin

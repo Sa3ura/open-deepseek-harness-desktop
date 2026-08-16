@@ -20,7 +20,7 @@
 - button "Settings":
   - img
   - text: Settings
-- text: Into the Unknown Preview
+- text: Build what’s next Preview
 - button "Choose workspace":
   - img
   - text: workspace
@@ -29,6 +29,9 @@
   - img
   - text: Standard mode
   - img
+- button "Explore plugins 5":
+  - img
+  - text: Explore plugins 5
 - textbox "Describe what you want to build"
 - button "Commands":
   - img

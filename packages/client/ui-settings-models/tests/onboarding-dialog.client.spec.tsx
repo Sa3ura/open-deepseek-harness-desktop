@@ -153,15 +153,51 @@ describe('DeepSeekOnboardingDialog', () => {
     expect(await screen.findByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
   })
 
-  it('loads a credential-only modal, inerts the product, and focuses the key', async () => {
+  it('shows the official default with endpoint and model controls, inerts the product, and focuses the key', async () => {
     const h = harness()
     render(<DeepSeekOnboardingDialog {...h.props} />)
     expect(await screen.findByRole('dialog', { name: en.onboardingTitle })).toBeTruthy()
     expect(document.getElementById('root')?.inert).toBe(true)
     expect(screen.getByText(en.onboardingDescription)).toBeTruthy()
+    expect(screen.getByText(en.onboardingDefault)).toBeTruthy()
+    expect(screen.getByText('https://api.deepseek.com')).toBeTruthy()
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     await waitFor(() => { expect(document.activeElement).toBe(key) })
-    expect(screen.queryByText(en.customized)).toBeNull()
+    expect(screen.getByText(en.customized).closest('details')?.open).toBe(true)
+    expect(screen.getByLabelText(en.baseUrl).getAttribute('placeholder')).toBe('https://api.deepseek.com')
+  })
+
+  it('stores a custom endpoint and model catalog beside the write-only key', async () => {
+    const h = harness()
+    render(<DeepSeekOnboardingDialog {...h.props} />)
+    await screen.findByRole('dialog')
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-custom' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), {
+      target: { value: 'https://gateway.example.com/v1' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), {
+      target: { value: 'deepseek-proxy-chat' },
+    })
+    fireEvent.change(screen.getByLabelText(`${en.modelName} 1`), {
+      target: { value: 'Proxy Chat' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.onboardingSave }))
+
+    await waitFor(() => { expect(h.complete).toHaveBeenCalledOnce() })
+    expect(h.mutate).toHaveBeenCalledWith({
+      ns: 'llm-deepseek',
+      ops: [
+        { op: 'set', path: ['baseURL'], value: 'https://gateway.example.com/v1' },
+        {
+          op: 'set',
+          path: ['models'],
+          value: [{ id: 'deepseek-proxy-chat', name: 'Proxy Chat' }],
+        },
+      ],
+      expectedRevision: 0,
+    })
+    expect(h.set).toHaveBeenCalledWith({ ref: 'DEEPSEEK_API_KEY', value: 'sk-custom' })
   })
 
   it('cannot be dismissed implicitly and restores the previous inert state', async () => {

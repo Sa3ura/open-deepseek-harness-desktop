@@ -1,6 +1,10 @@
 - banner:
   - navigation "Session hierarchy":
     - button "Load the snapshot-skill skill with" [disabled]
+  - button "Copy loaded conversation":
+    - img
+  - button "More session actions":
+    - img
   - button "Session log":
     - text: Session log
     - img

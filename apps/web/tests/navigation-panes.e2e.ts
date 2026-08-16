@@ -24,6 +24,7 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/navigation-panes', import.meta.url))
 const SEED = join(SNAPSHOT_DIR, 'seed.jsonl')
 const TRAJECTORY_EXPECTED = join(SNAPSHOT_DIR, 'trajectory.expected.md')
+const SESSION_ACTIONS_EXPECTED = join(SNAPSHOT_DIR, 'session-actions.expected.md')
 const SEARCH_EXPECTED = join(SNAPSHOT_DIR, 'search-results.expected.md')
 const TERMINAL_EXPECTED = join(SNAPSHOT_DIR, 'terminal-card.expected.md')
 const MODE = webSnapshotMode()
@@ -377,6 +378,32 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     }
   }, 120_000)
 
+  it.skipIf(MODE === 'record')('exposes transcript copy and confirmed Session lifecycle actions', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-session-actions'))
+    await ensureSeedOpen(page)
+    const copy = page.getByRole('button', { name: 'Copy loaded conversation' })
+    const more = page.getByRole('button', { name: 'More session actions' })
+    await copy.waitFor({ timeout: 15_000 })
+    expect(await copy.isEnabled()).toBe(true)
+    await more.click()
+    const clear = page.getByRole('menuitem', { name: 'Clear and start new' })
+    const remove = page.getByRole('menuitem', { name: 'Delete session' })
+    expect(await clear.isEnabled()).toBe(true)
+    await remove.click()
+    const dialog = page.getByRole('dialog', { name: 'Delete this session?' })
+    await dialog.waitFor({ timeout: 5_000 })
+    const [headerSnapshot, dialogSnapshot] = await Promise.all([
+      captureStableAria(page, 'header', scaffold.workspaceCwd),
+      captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd),
+    ])
+    await compareOrRefreshGolden(
+      SESSION_ACTIONS_EXPECTED,
+      `${headerSnapshot}\n${dialogSnapshot}`.split(SEED_ID).join('{{seededId}}'),
+      MODE,
+    )
+    await dialog.getByText('Cancel', { exact: true }).click()
+  }, 60_000)
+
   it.skipIf(MODE === 'record')('focuses the ledger by dragging an overview interval', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-timeline'))
     await ensureSeedOpen(page)
@@ -506,7 +533,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
 
   it.skipIf(MODE === 'record')('keeps the recorded fixture inventory exact', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'seed.jsonl', 'search-results.expected.md', 'trajectory.expected.md',
+      'seed.jsonl', 'search-results.expected.md', 'session-actions.expected.md', 'trajectory.expected.md',
       'terminal-card.expected.md',
     ])
   })

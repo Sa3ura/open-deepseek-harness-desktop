@@ -13,6 +13,81 @@
   background: var(--dsw-alias-bg-layer-1);
 }
 
+.auditSummary {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 54px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2) 86%, transparent);
+}
+
+.auditCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.auditCopy strong {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.auditCopy span {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.auditFacts {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.auditFacts > span {
+  padding: 1px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.auditFailure {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.auditRunning {
+  color: var(--dsw-alias-state-warn-label);
+}
+
+.auditRecorded {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+@media (max-width: 760px) {
+  .auditSummary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .auditFacts {
+    flex-wrap: wrap;
+  }
+}
+
 .ledger {
   position: relative;
   z-index: 0;

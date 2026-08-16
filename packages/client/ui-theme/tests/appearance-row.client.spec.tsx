@@ -14,9 +14,29 @@ afterEach(cleanup)
 
 const COPY: Record<string, string> = {
   'appearance.title': 'Appearance',
+  'appearance.skins': 'Theme skins',
   'appearance.light': 'Light',
   'appearance.dark': 'Dark',
   'appearance.system': 'System',
+  'appearance.ocean': 'Deep Ocean',
+  'appearance.moonlight': 'Moon Whale',
+  'appearance.bubble': 'Bubble Cove',
+  'appearance.starlight': 'Starlight',
+  'appearance.pirate': 'Pirate Horizon',
+  'appearance.shinobi': 'Shinobi Ember',
+  'appearance.rift': 'Rift Arena',
+  'appearance.collection': '10 skins',
+  'background.title': 'Chat background',
+  'background.description': 'Choose a background.',
+  'background.none': 'Solid',
+  'background.deepOcean': 'Ocean Whale',
+  'background.moonWhale': 'Moon Whale',
+  'background.bubbleWhale': 'Bubble Whale',
+  'background.animeStarlight': 'Anime Coder',
+  'background.pirateHorizon': 'Pirate Horizon',
+  'background.shinobiEmber': 'Shinobi Ember',
+  'background.riftArena': 'Rift Arena',
+  'background.upload': 'Upload background',
 }
 
 /** Empty global standard-kit hooks (the row reads neither). */
@@ -36,8 +56,10 @@ function emptyWorkspaces() {
 function mount(preference: ThemePreference = 'system') {
   // Real store instance — the sanctioned zero-machinery path for tests.
   const store = createAppearanceRowStore().create()
-  store.actions.sync(preference, 0)
+  store.actions.sync(preference, 'none', 0)
   const setTheme = vi.fn()
+  const setBackground = vi.fn()
+  const setCustomBackground = vi.fn(async () => {})
   const props: AppearanceRowComponentProps = {
     useSessions: emptySessions(),
     useWorkspaces: emptyWorkspaces(),
@@ -45,18 +67,22 @@ function mount(preference: ThemePreference = 'system') {
     actions: store.actions,
     t: (key: string) => COPY[key] ?? key,
     setTheme,
+    setBackground,
+    setCustomBackground,
   }
   render(<AppearanceRow {...props} />)
-  return { store, setTheme }
+  return { store, setTheme, setBackground }
 }
 
 const pressed = (name: RegExp): string | null =>
   screen.getByRole('button', { name }).getAttribute('aria-pressed')
 
 describe('AppearanceRow', () => {
-  it('renders the title and three cubes with the preference cube selected', () => {
+  it('renders ten skins and original background choices with persisted selections', () => {
     mount('dark')
-    expect(screen.getByText('Appearance')).toBeDefined()
+    expect(screen.getByText('Theme skins')).toBeDefined()
+    expect(screen.getByText('10 skins')).toBeDefined()
+    expect(screen.getAllByRole('button', { pressed: false }).length).toBeGreaterThan(3)
     expect(pressed(/Dark/)).toBe('true')
     expect(pressed(/Light/)).toBe('false')
     expect(pressed(/System/)).toBe('false')
@@ -68,8 +94,20 @@ describe('AppearanceRow', () => {
     expect(b.setTheme).toHaveBeenCalledWith('light')
     // No store write yet: selection is unchanged.
     expect(pressed(/Dark/)).toBe('true')
-    act(() => { b.store.actions.sync('light', 1) })
+    act(() => { b.store.actions.sync('light', 'none', 1) })
     expect(pressed(/Light/)).toBe('true')
     expect(pressed(/Dark/)).toBe('false')
+  })
+
+  it('selects a shipped chat background through the theme service', () => {
+    const mounted = mount()
+    fireEvent.click(screen.getByRole('button', { name: /Ocean Whale/ }))
+    expect(mounted.setBackground).toHaveBeenCalledWith('deep-ocean')
+  })
+
+  it('selects the original anime-style background without using franchise assets', () => {
+    const mounted = mount()
+    fireEvent.click(screen.getByRole('button', { name: /Anime Coder/ }))
+    expect(mounted.setBackground).toHaveBeenCalledWith('anime-starlight')
   })
 })

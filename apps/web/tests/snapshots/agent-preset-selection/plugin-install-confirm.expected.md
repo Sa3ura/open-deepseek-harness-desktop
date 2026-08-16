@@ -1,0 +1,10 @@
+- dialog "Install a third-party plugin?":
+  - heading "Install a third-party plugin?" [level=2]
+  - button "Close":
+    - img
+  - img
+  - paragraph: This will run the install command for dsh-web-ui. The plugin and its install scripts execute on this computer. Continue only after reviewing and trusting the project.
+  - checkbox "I reviewed the source, license, and install scripts, and I trust this plugin"
+  - text: I reviewed the source, license, and install scripts, and I trust this plugin
+  - button "Cancel"
+  - button "Install plugin" [disabled]

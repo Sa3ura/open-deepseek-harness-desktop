@@ -3,6 +3,10 @@
     - button "Reply with the single word" [disabled]
   - img
   - text: Standard mode
+  - button "Copy loaded conversation":
+    - img
+  - button "More session actions":
+    - img
   - button "Session log":
     - text: Session log
     - img

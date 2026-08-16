@@ -34,6 +34,17 @@ pnpm run build
 pnpm dsh web
 ```
 
+### Run the desktop app from source
+
+The desktop host supervises the local Harness process and opens the existing GUI in a hardened Electron window:
+
+```sh
+pnpm run build
+pnpm run dev:desktop
+```
+
+macOS is the first locally exercised platform. See the [desktop application reference](apps/desktop/README.md) for the security model, current limitations, and the Windows/Linux release plan.
+
 ## Community and support
 
 - Feel free to submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).

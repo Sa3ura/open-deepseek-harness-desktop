@@ -28,6 +28,8 @@ import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './suppor
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/agent-preset-selection', import.meta.url))
 const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
+const PLUGINS_EXPECTED = join(SNAPSHOT_DIR, 'plugins.expected.md')
+const PLUGIN_INSTALL_CONFIRM_EXPECTED = join(SNAPSHOT_DIR, 'plugin-install-confirm.expected.md')
 const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
 const HEADER_EXPECTED = join(SNAPSHOT_DIR, 'header.expected.md')
 /** The shipped roster, beside the composition that names it. */
@@ -219,6 +221,36 @@ describe('web e2e: agent-preset selection', () => {
     expect(snapshot).toContain('Minimal mode')
     expect(snapshot).toContain('Creator mode')
     await page.keyboard.press('Escape')
+  })
+
+  it('opens the curated plugin guide from the new-session row', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-discovery'))
+    await page.getByRole('button', { name: /Explore plugins/ }).click()
+    const dialog = page.getByRole('dialog', { name: 'DeepSeek Harness plugin ecosystem' })
+    await dialog.waitFor({ timeout: 10_000 })
+
+    const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(PLUGINS_EXPECTED, snapshot, MODE)
+    expect(snapshot).toContain('dsh-web-ui')
+    expect(snapshot).toContain('modlens')
+    expect(snapshot).toContain('Third-party')
+    expect(snapshot).toContain('button "Install"')
+    expect(await dialog.getByRole('link', { name: /complete dsh-plugin topic/ }).getAttribute('href'))
+      .toBe('https://github.com/topics/dsh-plugin')
+
+    await dialog.getByRole('button', { name: 'Install', exact: true }).first().click()
+    const confirmation = page.getByRole('dialog', { name: 'Install a third-party plugin?' })
+    await confirmation.waitFor({ timeout: 10_000 })
+    const confirmationSnapshot = await confirmation.ariaSnapshot()
+    await compareOrRefreshGolden(PLUGIN_INSTALL_CONFIRM_EXPECTED, confirmationSnapshot, MODE)
+    const confirm = confirmation.getByRole('button', { name: 'Install plugin' })
+    expect(await confirm.isDisabled()).toBe(true)
+    await confirmation.getByRole('checkbox').check()
+    expect(await confirm.isEnabled()).toBe(true)
+    await page.keyboard.press('Escape')
+    await confirmation.waitFor({ state: 'detached', timeout: 10_000 })
+    await page.keyboard.press('Escape')
+    await dialog.waitFor({ state: 'detached', timeout: 10_000 })
   })
 
   it('applies the staged pick to the blank session, and the host honors it', async () => {

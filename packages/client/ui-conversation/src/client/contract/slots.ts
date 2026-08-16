@@ -143,6 +143,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * the next one rather than applied to a current one.
      */
     'conversation.hero.agentPreset': { kind: 'single'; scope: 'root'; owner: HeroAgentPresetOwnerProps }
+    /**
+     * Optional ecosystem entry beside the new-session selectors. Root scope:
+     * discovery is deployment-wide and does not belong to a Session.
+     */
+    'conversation.hero.pluginDiscovery': { kind: 'single'; scope: 'root'; owner: HeroPluginDiscoveryOwnerProps }
     // 'conversation.input.overlay' merges in ui-input-trigger (the dependency
     // direction is the hard constraint — ui-input-trigger cannot import
     // this package, while this package's input contract already imports
@@ -243,6 +248,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Owner share of the hero agent-preset chip: the shell supplies nothing. */
 export interface HeroAgentPresetOwnerProps {
   /** Marker field: the chip owns its own roster, staging, and menu state. */
+  children?: never
+}
+
+/** Owner share of the hero plugin-discovery entry: the contribution is self-contained. */
+export interface HeroPluginDiscoveryOwnerProps {
+  /** Marker field: the contribution owns its own catalog and dialog state. */
   children?: never
 }
 
@@ -575,6 +586,7 @@ export type ConversationSlotProps =
     | 'conversation.input.left' | 'conversation.input.right'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'
+    | 'conversation.hero.pluginDiscovery'
   >
   & InjectFace<ConversationInjected>
   & PropsLocale<'conversation'>

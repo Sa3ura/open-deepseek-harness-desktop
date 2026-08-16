@@ -2,10 +2,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
+import { PluginDiscovery } from '../src/client/PluginDiscovery.tsx'
 import type {
   PluginInventorySettingsTabInjected,
   PluginInventorySettingsTabProps,
 } from '../src/client/PluginInventorySettingsTab.tsx'
+import type { PluginDiscoveryProps } from '../src/client/PluginDiscovery.tsx'
+import type { PluginInstallId, PluginInstallSnapshot } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import { en, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -123,5 +126,86 @@ describe('PluginInventorySettingsTab', () => {
     const pendingFailure = render(<PluginInventorySettingsTab {...props(() => deferredFailure.promise)} />)
     pendingFailure.unmount()
     await act(async () => { deferredFailure.reject(new Error('late failure')) })
+  })
+})
+
+describe('PluginDiscovery', () => {
+  const installed: PluginInstallSnapshot = {
+    installId: 'install-1' as PluginInstallId,
+    profile: 'web',
+    packageSpec: '@linxin666/dsh-web-ui-all',
+    command: 'dsh plugin --profile web add @linxin666/dsh-web-ui-all',
+    phase: 'succeeded',
+    exitCode: 0,
+  }
+  const startInstall = vi.fn(async () => installed)
+  const getInstall = vi.fn(async () => installed)
+  const discoveryProps = { t, startInstall, getInstall } as PluginDiscoveryProps
+
+  it('opens the curated guide and copies an official CLI install command', async () => {
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    })
+    render(<PluginDiscovery {...discoveryProps} />)
+
+    const trigger = screen.getByRole('button', { name: /Explore plugins/ })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByRole('dialog', { name: en['discovery.title'] })).toBeTruthy()
+    expect(screen.getAllByText(en['discovery.thirdParty'])).toHaveLength(5)
+    expect(screen.getByText(en['discovery.notice'])).toBeTruthy()
+    expect(screen.getByText(en['discovery.collected'])).toBeTruthy()
+    expect(screen.getByRole('link', { name: en['discovery.more'] }).getAttribute('href'))
+      .toBe('https://github.com/topics/dsh-plugin')
+
+    fireEvent.click(screen.getAllByRole('button', { name: en['discovery.copy'] })[0]!)
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledWith('dsh plugin --profile web add @linxin666/dsh-web-ui-all')
+    })
+    expect(screen.getByRole('button', { name: en['discovery.copied'] })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.close'] }))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(trigger)
+    expect(screen.queryByRole('button', { name: en['discovery.copied'] })).toBeNull()
+  })
+
+  it('keeps the copy label when the browser refuses clipboard access', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn(async () => { throw new Error('denied') }) },
+    })
+    render(<PluginDiscovery {...discoveryProps} />)
+    fireEvent.click(screen.getByRole('button', { name: /Explore plugins/ }))
+    fireEvent.click(screen.getAllByRole('button', { name: en['discovery.copy'] })[0]!)
+    await act(async () => { await Promise.resolve() })
+    expect(screen.queryByRole('button', { name: en['discovery.copied'] })).toBeNull()
+  })
+
+  it('confirms and starts a reviewed structured plugin installation', async () => {
+    startInstall.mockClear()
+    render(<PluginDiscovery {...discoveryProps} />)
+    fireEvent.click(screen.getByRole('button', { name: /Explore plugins/ }))
+    fireEvent.click(screen.getAllByRole('button', { name: en['discovery.install.action'] })[0]!)
+
+    const confirmation = screen.getByRole('dialog', { name: en['discovery.confirm.title'] })
+    const confirm = screen.getByRole('button', { name: en['discovery.confirm.install'] })
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: en['discovery.confirm.acknowledge'] }))
+    expect(confirm.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(confirm)
+
+    await waitFor(() => {
+      expect(startInstall).toHaveBeenCalledWith({
+        profile: 'web',
+        packageSpec: '@linxin666/dsh-web-ui-all',
+      })
+    })
+    expect(screen.queryByRole('dialog', { name: en['discovery.confirm.title'] })).toBeNull()
+    expect(await screen.findByText(en['discovery.install.succeeded'])).toBeTruthy()
+    expect(confirmation.isConnected).toBe(false)
   })
 })

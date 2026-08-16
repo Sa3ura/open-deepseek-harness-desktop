@@ -3,6 +3,10 @@
     - 'button "Using ONE run_code program: run" [disabled]'
   - img
   - text: Standard mode
+  - button "Copy loaded conversation":
+    - img
+  - button "More session actions":
+    - img
   - button "Session log":
     - text: Session log
     - img

@@ -23,6 +23,7 @@ import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/settings-chrome', import.meta.url))
 const DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'dialog.expected.md')
+const UPDATE_CONFIRM_EXPECTED = join(SNAPSHOT_DIR, 'update-confirm.expected.md')
 const PLUGINS_EXPECTED = join(SNAPSHOT_DIR, 'plugins.expected.md')
 const PLUGIN_ROW_SELECTOR = '[data-plugin-entry$="ui-settings"]'
 const MODE = webSnapshotMode()
@@ -39,6 +40,29 @@ describe('web e2e: settings modal and General preferences', () => {
     // Chinese browser: the shared page asserts the localized settings surface
     // the client derives from it (the English default has its own spec below).
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
+    await page.addInitScript(() => {
+      const currentCommit = '1111111111111111111111111111111111111111'
+      const latestCommit = '2222222222222222222222222222222222222222'
+      Object.assign(globalThis, { deepSeekHarnessDesktop: {
+        updater: {
+          check: async () => ({
+            repository: 'https://github.com/deepseek-ai/deepseek-harness.git',
+            branch: 'master',
+            reason: 'ready' as const,
+            currentCommit,
+            latestCommit,
+            dirtyFiles: 0,
+          }),
+          upgrade: async (expectedCommit: string) => ({
+            ok: true as const,
+            previousCommit: currentCommit,
+            currentCommit: expectedCommit,
+            restartRequired: true as const,
+          }),
+          restart: async () => ({ restarting: true as const }),
+        },
+      } })
+    })
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -90,6 +114,16 @@ describe('web e2e: settings modal and General preferences', () => {
     // Golden of the freshly opened dialog (default zh, General active).
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(DIALOG_EXPECTED, snapshot, MODE)
+    await dialog.getByRole('button', { name: '一键升级底层能力' }).click()
+    const updateConfirmation = page.getByRole('dialog', { name: '升级 DeepSeek Harness？' })
+    await updateConfirmation.waitFor({ timeout: 5_000 })
+    await compareOrRefreshGolden(
+      UPDATE_CONFIRM_EXPECTED,
+      await captureStableAria(page, '[role="dialog"]:has-text("升级 DeepSeek Harness？")', scaffold.workspaceCwd),
+      MODE,
+    )
+    await updateConfirmation.getByRole('button', { name: '确认升级' }).click()
+    await dialog.getByRole('button', { name: '立即重启应用' }).waitFor({ timeout: 5_000 })
     // Section switch: aria-current moves (the Models page itself has its own scenario file).
     await dialog.getByRole('button', { name: '模型' }).click()
     await expect.poll(() => dialog.getByRole('button', { name: '模型' }).getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
@@ -344,6 +378,54 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
+  it('applies palette skins and browser-local original backgrounds independently', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-whale-skin'))
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    const ocean = dialog.getByRole('button', { name: '深海蓝鲸' })
+    const artwork = dialog.getByRole('button', { name: '深海鲸游' })
+    await ocean.click()
+    await artwork.click()
+    await expect.poll(() => ocean.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
+    await expect.poll(() => artwork.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
+    const applied = await page.evaluate(() => ({
+      background: document.body.getAttribute('data-dsh-chat-background'),
+      image: document.body.style.getPropertyValue('--dsh-chat-background-image'),
+      stored: localStorage.getItem('dsh.theme.chat-background'),
+      token: getComputedStyle(document.body).getPropertyValue('--dsw-alias-bg-base').trim(),
+    }))
+    expect(applied).toMatchObject({ background: 'deep-ocean', token: '#071728' })
+    expect(applied.image).toContain('/theme-backgrounds/deep-ocean-whale.webp')
+    expect(JSON.parse(applied.stored ?? '{}')).toMatchObject({ id: 'deep-ocean' })
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
+      .toMatch(/ui-theme:\n\s+preference: ocean/)
+
+    const starlight = dialog.getByRole('button', { name: '星光次元' })
+    const animeArtwork = dialog.getByRole('button', { name: '星光程序姬' })
+    await starlight.click()
+    await animeArtwork.click()
+    await expect.poll(() => starlight.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
+    await expect.poll(() => animeArtwork.getAttribute('aria-pressed'), { timeout: 5_000 }).toBe('true')
+    const focused = await page.evaluate(() => ({
+      background: document.body.getAttribute('data-dsh-chat-background'),
+      layout: document.body.getAttribute('data-dsh-chat-background-layout'),
+      image: document.body.style.getPropertyValue('--dsh-chat-background-image'),
+      token: getComputedStyle(document.body).getPropertyValue('--dsw-alias-bg-base').trim(),
+    }))
+    expect(focused).toMatchObject({
+      background: 'anime-starlight', layout: 'focus-right', token: '#0a1022',
+    })
+    expect(focused.image).toContain('/theme-backgrounds/anime-starlight.webp')
+
+    await dialog.getByRole('button', { name: '浅色' }).click()
+    await dialog.getByRole('button', { name: '纯色' }).click()
+    await expect.poll(() => page.evaluate(() => document.body.hasAttribute('data-dsh-chat-background')), {
+      timeout: 5_000,
+    }).toBe(false)
+    await page.keyboard.press('Escape')
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
   it('persists the busy-state Enter behavior across reload and a distinct port', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-enter-behavior'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
@@ -403,13 +485,12 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(await selector.getAttribute('aria-haspopup')).toBe('menu')
     await selector.click()
     await page.getByRole('menuitem', { name: 'English' }).click()
-    // The settings-owned copy re-registers localized: dialog title, nav,
-    // Appearance labels. (Only the settings namespaces are localized —
-    // the rest of the app's copy is intentionally out of this row's scope.)
+    // The locale revision updates both Settings and the conversation hero.
     const enDialog = page.getByRole('dialog', { name: 'Settings' })
     await enDialog.waitFor({ timeout: 10_000 })
     expect(await enDialog.getByRole('button', { name: 'General' }).getAttribute('aria-current')).toBe('true')
     await expect.poll(() => enDialog.getByText('Appearance', { exact: true }).count(), { timeout: 5_000 }).toBe(1)
+    await page.getByText('Build what’s next', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await page.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
       .toMatch(/locale:\n\s+preference: en/)
@@ -446,6 +527,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: 'English' }).click()
     await page.getByRole('menuitem', { name: '中文' }).click()
     await page.getByRole('dialog', { name: '设置' }).waitFor({ timeout: 10_000 })
+    await page.getByText('构建你的下一个想法', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await page.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
     await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
       .toMatch(/locale:\n\s+preference: zh/)
@@ -480,6 +562,10 @@ describe('web e2e: settings modal and General preferences', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['dialog.expected.md', 'plugins.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'dialog.expected.md',
+      'plugins.expected.md',
+      'update-confirm.expected.md',
+    ])
   })
 })

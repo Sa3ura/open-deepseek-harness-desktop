@@ -34,6 +34,7 @@ import { todoDockEntry } from './skeleton/TodoPanel.tsx'
 import { queueDockEntry } from './queue/QueueDock.tsx'
 import { ConversationRoot } from './skeleton/ConversationRoot.tsx'
 import { ConversationSession, ConversationSessionHeader } from './skeleton/ConversationSession.tsx'
+import { SessionActions, type SessionActionsInjected } from './skeleton/SessionActions.tsx'
 import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
@@ -208,6 +209,7 @@ export function apply(ctx: Context): void {
       'conversation.input.right': { kind: 'list', scope: 'session' },
       'conversation.hero.workspace': { kind: 'single', scope: 'root' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
+      'conversation.hero.pluginDiscovery': { kind: 'single', scope: 'root' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
       hooks: { composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId) },
@@ -267,6 +269,28 @@ export function apply(ctx: Context): void {
       open: (id) => { sessions.open(id) },
     }),
   }, ConversationSessionHeader)
+
+  // Session utility actions use the existing archive contract: clear starts a
+  // blank Session after the durable source has been removed from visible lists,
+  // while remove leaves the retained log untouched.
+  slots.register({
+    name: 'conversation.session.header.utilities',
+    id: 'session-actions',
+    order: -100,
+    locale: NS,
+    inject: (sessionId: SessionId): SessionActionsInjected => {
+      const workspaceId = workspaces.list.getSnapshot().items
+        .find(item => item.sessionIds.includes(sessionId))?.workspaceId
+      return {
+        ...(workspaceId === undefined ? {} : { workspaceId }),
+        archive: () => workspaces.archiveSession(sessionId),
+        clearAndRestart: async () => {
+          await workspaces.archiveSession(sessionId)
+          workspaces.startSession(workspaceId)
+        },
+      }
+    },
+  }, SessionActions)
 
   // The default composer body: its own single slot inside the composer
   // chain's fallback. Public machine surface arrives via the

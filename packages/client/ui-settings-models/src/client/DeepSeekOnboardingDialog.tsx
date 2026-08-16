@@ -1,9 +1,10 @@
 /**
- * Official-DeepSeek first-run step. Readiness comes from the same
+ * DeepSeek connection first-run step. Readiness comes from the same
  * provider/settings/credential join as the Models page: any provider the user
  * can already talk to ends the step, and only a user with none is offered the
- * official DeepSeek route. The step reuses that page's credential editor in
- * the onboarding plugin's shared modal, so the key is entered once.
+ * official DeepSeek route. The step reuses the Models page editor in the
+ * onboarding plugin's shared modal, so the key, endpoint, and catalog are
+ * configured once and stay editable from Settings.
  */
 
 import { useEffect } from 'react'
@@ -42,8 +43,8 @@ function assertNever(_value: never): never {
 }
 
 /**
- * Prompt a first-run user for the official DeepSeek credential while no
- * provider can serve requests and that credential is writable.
+ * Prompt a first-run user for the DeepSeek credential and optional endpoint
+ * and model overrides while no provider can serve requests.
  * @param props - settings-shell owner state and Models feature dependencies.
  * @returns the onboarding modal or null when onboarding needs no intervention.
  */
@@ -96,6 +97,11 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
   return (
     <OnboardingModal title={t('onboardingTitle')}>
       <p className={styles.description}>{t('onboardingDescription')}</p>
+      <div className={styles.defaultConnection}>
+        <span className={styles.defaultLabel}>{t('onboardingDefault')}</span>
+        <code className={styles.defaultEndpoint}>https://api.deepseek.com</code>
+        <span className={styles.defaultHint}>{t('onboardingCustomHint')}</span>
+      </div>
       <div className={styles.editor}>
         <ProviderEditor
           provider={row.entry.provider}
@@ -106,7 +112,7 @@ export function DeepSeekOnboardingDialog(props: DeepSeekOnboardingDialogProps): 
           t={t}
           readOnly={false}
           hideTitle
-          credentialOnly
+          expandCustomized
           credentialRequired
           autoFocusCredential
           cancelLabel="onboardingLater"

@@ -34,6 +34,17 @@ pnpm run build
 pnpm dsh web
 ```
 
+### 从源码运行桌面应用
+
+桌面宿主负责监管本地 Harness 进程，并在经过加固的 Electron 窗口中打开现有 GUI：
+
+```sh
+pnpm run build
+pnpm run dev:desktop
+```
+
+macOS 是首个经过本地验证的平台。安全模型、当前限制以及 Windows/Linux 发布计划见[桌面应用参考](apps/desktop/README.md)。
+
 ## 社区与支持
 
 - 欢迎通过 [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions) 提交反馈或 bug 报告。

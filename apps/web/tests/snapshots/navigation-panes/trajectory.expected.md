@@ -1,3 +1,6 @@
+- region "Key step record":
+  - strong: Key step record
+  - text: Derived from the session log to verify what the agent actually executed 2 turns 3 tool calls Recorded
 - toolbar "Trajectory toolbar":
   - button "Use actual duration": Duration
   - button "Collapse turns": Turns

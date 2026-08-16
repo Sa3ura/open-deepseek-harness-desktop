@@ -1,8 +1,39 @@
-- dialog "添加一个 API Key 开始使用":
-  - heading "添加一个 API Key 开始使用" [level=2]
-  - paragraph: 配置 DeepSeek 官方模型，即可开始使用。
-  - text: API 密钥
+- dialog "连接 DeepSeek，开始使用":
+  - heading "连接 DeepSeek，开始使用" [level=2]
+  - paragraph: 填写 API 密钥后，可直接使用 DeepSeek 官方 API，也可以接入兼容的自定义 API 地址和模型。
+  - text: 默认连接
+  - code: https://api.deepseek.com
+  - text: 保持 API 地址和模型目录不变，即使用 DeepSeek 默认配置。 API 密钥
   - textbox "API 密钥":
     - /placeholder: 输入 API 密钥
+  - group:
+    - text: 自定义设置 API 地址
+    - textbox "API 地址":
+      - /placeholder: https://api.deepseek.com
+    - region "模型目录":
+      - text: 模型目录 正在使用适配器默认模型
+      - textbox "模型 ID 1":
+        - /placeholder: 模型 ID
+        - text: deepseek-v4-flash
+      - textbox "显示名称 1":
+        - /placeholder: 显示名称
+        - text: DeepSeek-V4-Flash
+      - button "容量 1":
+        - img
+      - button "删除模型 1":
+        - img
+      - textbox "模型 ID 2":
+        - /placeholder: 模型 ID
+        - text: deepseek-v4-pro
+      - textbox "显示名称 2":
+        - /placeholder: 显示名称
+        - text: DeepSeek-V4-Pro
+      - button "容量 2":
+        - img
+      - button "删除模型 2":
+        - img
+      - button "添加模型":
+        - img
+        - text: 添加模型
   - button "稍后配置"
   - button "保存并继续" [disabled]
