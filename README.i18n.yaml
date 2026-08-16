@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write README.md
-README.md: 709550d25715d5efb036cf28e812bbfcb9d41e82
-README.zh.md: 8f2ad7d03fef57a054a30ac6a3dee213c506d0ab
+README.md: bbb2e19b6936fdfe9e04cc06ae73727d2db8df72
+README.zh.md: 83107c32ba0bcead1e3623875af956dd68c4eff7
