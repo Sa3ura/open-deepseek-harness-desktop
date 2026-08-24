@@ -51,6 +51,7 @@ export {
 
 export {
   allowProfilePackageBuild,
+  allowProfileRegistryPackageBuild,
   type ProfilePackageBuildAllowance,
 } from './profile-package-builds.ts'
 

@@ -3,7 +3,12 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { appendBundledPluginFailure, seedBundledPlugin, type BundledPluginManifestEntry } from '../src/bundled-plugin-seed.ts'
+import {
+  appendBundledPluginFailure,
+  assertBundledPluginManifestEntry,
+  seedBundledPlugin,
+  type BundledPluginManifestEntry,
+} from '../src/bundled-plugin-seed.ts'
 
 const roots: string[] = []
 
@@ -65,10 +70,24 @@ describe('bundled plugin seed', () => {
       ['dsh-pocket', '1.12.3', 'startup'],
     ])
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
+    expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
+      .toEqual(['node-pty'])
     for (const entry of manifest.plugins) {
       const bytes = await readFile(new URL(`../bundled-plugins/${entry.archive}`, import.meta.url))
       expect(`sha512-${createHash('sha512').update(bytes).digest('base64')}`).toBe(entry.integrity)
     }
+  })
+
+  it('rejects malformed or duplicate lifecycle build approvals', async () => {
+    const options = await fixture()
+    expect(() => assertBundledPluginManifestEntry({
+      ...options.entry,
+      approvedBuilds: ['node-pty', 'node-pty'],
+    })).toThrow('invalid bundled plugin manifest entry')
+    expect(() => assertBundledPluginManifestEntry({
+      ...options.entry,
+      approvedBuilds: ['node-pty@1.1.0'],
+    })).toThrow('invalid bundled plugin manifest entry')
   })
 
   it('installs once and preserves the marker as an uninstall tombstone', async () => {

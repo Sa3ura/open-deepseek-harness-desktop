@@ -12,6 +12,7 @@ The `dsh` command is the product launcher for profiles: ordered stacks of plugin
 | `dsh --profile headless "job"` | Run one fresh persisted session, print the final answer, and exit. |
 | `dsh web` | Alias of `--profile web`. |
 | `dsh plugin --profile <name> <pnpm args>` | Manage a profile's plugins by forwarding to pnpm in the profile directory. |
+| `dsh plugin --profile <name> approve-build <package-name>` | Allow one reviewed registry dependency lifecycle script without overriding an explicit denial. |
 | `dsh plugin --profile <name> doctor [--repair]` | Inspect shared Host dependency identity, or repair and quarantine conflicts. |
 
 The invoking directory is the default workspace root. The `web` and `headless` profiles auto-initialize on first use from shipped templates; any other profile must be created through `dsh plugin`.

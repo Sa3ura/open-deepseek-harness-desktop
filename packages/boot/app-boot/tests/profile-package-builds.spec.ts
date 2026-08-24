@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { allowProfilePackageBuild } from '../src/profile-package-builds.ts'
+import { allowProfilePackageBuild, allowProfileRegistryPackageBuild } from '../src/profile-package-builds.ts'
 
 describe('profile package build approvals', () => {
   it('adds one exact rule while preserving user comments and settings', () => {
@@ -35,6 +35,26 @@ describe('profile package build approvals', () => {
         .toThrow('invalid pnpm allowBuilds key')
       writeFileSync(workspace, `packages:\n  - .\nallowBuilds:\n  ${key}: inherited\n`)
       expect(() => allowProfilePackageBuild(profile, key)).toThrow('must be true or false')
+    } finally {
+      rmSync(profile, { recursive: true, force: true })
+    }
+  })
+
+  it('adds a reviewed registry package without overriding an explicit denial', () => {
+    const profile = mkdtempSync(join(tmpdir(), 'dsh-profile-registry-builds-'))
+    const workspace = join(profile, 'pnpm-workspace.yaml')
+    writeFileSync(workspace, 'packages:\n  - .\n\n# keep user settings\nnodeLinker: hoisted\n')
+    try {
+      expect(allowProfileRegistryPackageBuild(profile, 'node-pty')).toBe('added')
+      expect(allowProfileRegistryPackageBuild(profile, 'node-pty')).toBe('already-allowed')
+      const content = readFileSync(workspace, 'utf8')
+      expect(content).toContain('# keep user settings')
+      expect(content).toContain('node-pty: true')
+
+      writeFileSync(workspace, 'packages:\n  - .\nallowBuilds:\n  node-pty: false\n')
+      expect(allowProfileRegistryPackageBuild(profile, 'node-pty')).toBe('denied')
+      expect(() => allowProfileRegistryPackageBuild(profile, 'node-pty@1.1.0'))
+        .toThrow('invalid pnpm registry allowBuilds name')
     } finally {
       rmSync(profile, { recursive: true, force: true })
     }

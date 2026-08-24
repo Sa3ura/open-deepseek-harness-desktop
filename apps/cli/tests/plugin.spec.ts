@@ -14,6 +14,7 @@ import {
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
 describe('profile plugin package manager', () => {
@@ -143,6 +144,21 @@ describe('profile plugin package manager', () => {
   it('does not fabricate a package name from an incomplete Git prepare error', () => {
     const raw = 'ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED: fetch failed before package metadata was available'
     expect(normalizePnpmDiagnostic(raw)).toBe(raw)
+  })
+
+  it('records one explicit registry build approval without invoking pnpm', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-build-approval-'))
+    vi.stubEnv('DSH_HOME', home)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['approve-build', 'node-pty'])).toBe(0)
+      expect(readFileSync(join(home, 'profiles', 'web', 'pnpm-workspace.yaml'), 'utf8'))
+        .toContain('node-pty: true')
+      expect(runPlugin('web', ['approve-build', 'node-pty'])).toBe(0)
+      expect(runPlugin('web', ['approve-build', 'node-pty@1.1.0'])).toBe(1)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('keeps an inspect-only doctor invocation read-only for a missing profile', () => {

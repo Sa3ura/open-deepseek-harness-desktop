@@ -7,6 +7,7 @@ import { isMap, parseDocument, YAMLMap } from 'yaml'
 
 const PROFILE_WORKSPACE_FILENAME = 'pnpm-workspace.yaml'
 const PACKAGE_BUILD_KEY = /^(?:@[^/@\s]+\/[^@\s]+|[^/@\s]+)@\S+$/u
+const PACKAGE_BUILD_NAME = /^(?:@[^/@\s]+\/[^/@\s]+|[^/@\s]+)$/u
 
 /** Result of applying one exact pnpm build-script rule. */
 export type ProfilePackageBuildAllowance = 'added' | 'already-allowed' | 'denied'
@@ -19,18 +20,15 @@ function atomicWrite(path: string, content: string): void {
 }
 
 /**
- * Add one exact pnpm build-script key without overriding an explicit denial.
+ * Apply one validated pnpm build-script key without overriding an explicit denial.
  * @param profileDir - Profile whose pnpm workspace owns the rule.
- * @param packageBuildKey - Exact dependency path printed by pnpm's Git prepare diagnostic.
+ * @param packageBuildKey - Validated Git dependency path or registry package name.
  * @returns Whether the rule was added, already allowed, or explicitly denied.
  */
-export function allowProfilePackageBuild(
+function setProfilePackageBuildAllowance(
   profileDir: string,
   packageBuildKey: string,
 ): ProfilePackageBuildAllowance {
-  if (packageBuildKey.length > 4096 || !PACKAGE_BUILD_KEY.test(packageBuildKey)) {
-    throw new TypeError(`dsh: invalid pnpm allowBuilds key ${JSON.stringify(packageBuildKey)}`)
-  }
   const workspacePath = join(profileDir, PROFILE_WORKSPACE_FILENAME)
   const source = readFileSync(workspacePath, 'utf8')
   const document = parseDocument(source)
@@ -52,4 +50,36 @@ export function allowProfilePackageBuild(
   allowBuilds.set(packageBuildKey, true)
   atomicWrite(workspacePath, document.toString())
   return 'added'
+}
+
+/**
+ * Add one exact Git dependency build rule without overriding an explicit denial.
+ * @param profileDir - Profile whose pnpm workspace owns the rule.
+ * @param packageBuildKey - Exact dependency path printed by pnpm's Git prepare diagnostic.
+ * @returns Whether the rule was added, already allowed, or explicitly denied.
+ */
+export function allowProfilePackageBuild(
+  profileDir: string,
+  packageBuildKey: string,
+): ProfilePackageBuildAllowance {
+  if (packageBuildKey.length > 4096 || !PACKAGE_BUILD_KEY.test(packageBuildKey)) {
+    throw new TypeError(`dsh: invalid pnpm allowBuilds key ${JSON.stringify(packageBuildKey)}`)
+  }
+  return setProfilePackageBuildAllowance(profileDir, packageBuildKey)
+}
+
+/**
+ * Add one reviewed registry package build rule without overriding an explicit denial.
+ * @param profileDir - Profile whose pnpm workspace owns the rule.
+ * @param packageName - Exact unversioned registry package name accepted by pnpm allowBuilds.
+ * @returns Whether the rule was added, already allowed, or explicitly denied.
+ */
+export function allowProfileRegistryPackageBuild(
+  profileDir: string,
+  packageName: string,
+): ProfilePackageBuildAllowance {
+  if (packageName.length > 214 || !PACKAGE_BUILD_NAME.test(packageName)) {
+    throw new TypeError(`dsh: invalid pnpm registry allowBuilds name ${JSON.stringify(packageName)}`)
+  }
+  return setProfilePackageBuildAllowance(profileDir, packageName)
 }

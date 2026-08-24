@@ -13,6 +13,7 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
+  allowProfileRegistryPackageBuild,
   DEFAULT_PROFILE_BUNDLES,
   healProfilesModuleFallback,
   initProfile,
@@ -127,6 +128,25 @@ function anchorPathSpec(argument: string, cwd: string): string {
  */
 export function runPlugin(profile: string, args: readonly string[]): number {
   const dir = resolveProfileDir(profile)
+  if (args[0] === 'approve-build') {
+    if (args.length !== 2 || args[1] === undefined) {
+      process.stderr.write(`${NAME}: usage: dsh plugin --profile ${profile} approve-build <package-name>\n`)
+      return 1
+    }
+    initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
+    try {
+      const result = allowProfileRegistryPackageBuild(dir, args[1])
+      if (result === 'denied') {
+        process.stderr.write(`${NAME}: pnpm build remains explicitly denied for ${JSON.stringify(args[1])} in ${dir}\n`)
+        return 1
+      }
+      process.stderr.write(`${NAME}: pnpm build ${result} for ${JSON.stringify(args[1])} in ${dir}\n`)
+      return 0
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+      return 1
+    }
+  }
   if (args[0] === 'doctor') {
     const repair = args.length === 2 && args[1] === '--repair'
     const retryId = args.length === 3 && args[1] === '--retry' ? args[2] : undefined

@@ -468,6 +468,11 @@ async function startApplication(): Promise<void> {
       resourcesDirectory: bundledDirectory,
       dshHome,
       install: async (archivePath, plugin) => {
+        for (const packageName of plugin.approvedBuilds ?? []) {
+          await runHarnessInvocation(resolveHarnessInvocation(process.env, [
+            'plugin', '--profile', plugin.profile, 'approve-build', packageName,
+          ], launchOptions))
+        }
         await installBundledPluginSource(plugin, archivePath, async (packageSpec, preferOffline) => {
           await runHarnessInvocation(resolveHarnessInvocation(process.env, [
             'plugin', '--profile', plugin.profile, 'add', '--save-exact',

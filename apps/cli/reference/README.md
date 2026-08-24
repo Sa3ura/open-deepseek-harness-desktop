@@ -44,6 +44,8 @@ dsh --profile web --patch ./extra.yml --dump-config
 
 Successful plugin mutations then run the profile shared-Host dependency policy before returning. `dsh plugin --profile <name> doctor` performs only the installed graph and real-path inspection (`0` healthy, `2` conflicts); it does not initialize a missing profile or run pnpm. `doctor --repair` initializes when needed and returns `0` healthy, `10` losslessly repaired, `11` quarantined, or `1` unable to make the profile safe. `doctor --retry <quarantine-id>` uses the same mutating exit codes while transactionally restoring the recorded dependency specifier and bundle position. The JSON result uses schema `dsh/profile-dependency-repair/v1`.
 
+`dsh plugin --profile <name> approve-build <package-name>` initializes the profile when needed and atomically adds only that validated, unversioned registry package name to `pnpm-workspace.yaml` `allowBuilds`. An existing `false` remains authoritative. The packaged desktop uses this command only for lifecycle dependencies named in its integrity-checked bundled-plugin manifest; ordinary `add` operations receive no implicit registry approval.
+
 The Codex and Claude Code subagent providers are separate optional Bundles. Add either package, both in one command, or remove either package independently:
 
 ```sh

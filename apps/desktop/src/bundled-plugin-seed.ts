@@ -12,6 +12,8 @@ export interface BundledPluginManifestEntry {
   readonly installPolicy: 'startup' | 'manual'
   /** Exact npm or Git spec used first so ordinary installs remain updateable. */
   readonly registrySpec?: string
+  /** Reviewed registry packages whose lifecycle scripts this bundled entry requires. */
+  readonly approvedBuilds?: readonly string[]
   readonly archive: string
   readonly integrity: string
 }
@@ -59,6 +61,15 @@ export function assertBundledPluginManifestEntry(entry: BundledPluginManifestEnt
     || basename(entry.archive) !== entry.archive
     || (entry.installPolicy !== 'startup' && entry.installPolicy !== 'manual')
     || (entry.registrySpec !== undefined && (!/^\S+$/u.test(entry.registrySpec) || entry.registrySpec.length > 512))
+    || (entry.approvedBuilds !== undefined && (
+      !Array.isArray(entry.approvedBuilds)
+      || entry.approvedBuilds.length > 16
+      || new Set(entry.approvedBuilds).size !== entry.approvedBuilds.length
+      || entry.approvedBuilds.some(packageName => (
+        typeof packageName !== 'string'
+        || !/^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu.test(packageName)
+      ))
+    ))
     || !entry.integrity.startsWith('sha512-')) {
     throw new TypeError(`desktop: invalid bundled plugin manifest entry ${entry.seedId}`)
   }

@@ -48,6 +48,9 @@
       "profile": "web",
       "installPolicy": "manual",
       "registrySpec": "dsh-better-sidebar@0.15.2",
+      "approvedBuilds": [
+        "node-pty"
+      ],
       "archive": "dsh-better-sidebar-0.15.2.tgz",
       "integrity": "sha512-XHr7cAqxz1k60D3W9q5VAuZ64kGhnZz9M4etBaRDNNCzuJZbJTvQ/Fzgl8mY06B/PpEcgzG6PTn2RMYF3FVnGQ=="
     },

@@ -44,6 +44,8 @@ dsh --profile web --patch ./extra.yml --dump-config
 
 成功的插件改动会在返回前继续执行 profile 共享 Host 依赖策略。`dsh plugin --profile <name> doctor` 只检查已安装依赖图和 real path（健康退出 `0`，存在冲突退出 `2`）；它不会初始化缺失的 profile，也不会运行 pnpm。`doctor --repair` 会在需要时初始化，并以 `0` 表示健康、`10` 表示无损修复、`11` 表示已隔离、`1` 表示无法令 profile 安全。`doctor --retry <quarantine-id>` 使用相同的修改型退出码，并以事务方式恢复记录中的依赖说明符与 bundle 位置。JSON 结果使用 `dsh/profile-dependency-repair/v1` schema。
 
+`dsh plugin --profile <name> approve-build <package-name>` 会在需要时初始化 profile，并以原子方式只把这个经过校验、未携带版本号的 registry 包名加入 `pnpm-workspace.yaml` 的 `allowBuilds`。已有的 `false` 仍然具有最终效力。打包桌面端只会为通过完整性校验的预置插件 manifest 中明确列出的生命周期依赖调用该命令；普通 `add` 操作不会获得隐式 registry 授权。
+
 Codex 与 Claude Code subagent provider 是两个彼此独立的可选 Bundle。可以只添加一个包、在同一命令中添加两个包，或独立移除任一包：
 
 ```sh
