@@ -402,8 +402,8 @@ await rm(outputRoot, { recursive: true, force: true })
 await mkdir(outputRoot, { recursive: true })
 await run(process.execPath, [
   pnpmEntry,
-  '--dir',
-  join(repositoryRoot, 'apps', 'cli'),
+  '--filter',
+  '@deepseek-ai/dsh',
   'deploy',
   '--prod',
   '--legacy',

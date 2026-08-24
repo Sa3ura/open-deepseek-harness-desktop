@@ -208,8 +208,8 @@ if (staging === repositoryRoot || repositoryRoot.startsWith(staging + sep)) {
 await rm(staging, { recursive: true, force: true })
 await rm(archive, { force: true })
 await run('pnpm', [
-  '--dir',
-  join(repositoryRoot, 'apps', 'cli'),
+  '--filter',
+  '@deepseek-ai/dsh',
   'deploy',
   '--prod',
   '--legacy',
