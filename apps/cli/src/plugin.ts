@@ -13,24 +13,32 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
+  allowProfilePackageBuild,
   allowProfileRegistryPackageBuild,
+  classifyProfileDiagnostic,
+  createProfileDiagnosticReport,
   DEFAULT_PROFILE_BUNDLES,
   healProfilesModuleFallback,
   initProfile,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  orphanedBundleDiagnostic,
   PROFILE_TEMPLATES,
+  profileDependencyConflictDiagnostic,
   readProfileManifest,
+  readProfileDiagnosticReport,
   repairProfileDependencies,
   retryQuarantinedProfilePlugin,
   resolveBundleDir,
   resolveProfileDir,
   writeProfileManifest,
+  writeProfileDiagnosticReport,
   type ProfileManifest,
+  type ProfileDiagnostic,
   type ProfileRepairReport,
 } from '@deepseek-ai/dsh-app-boot'
 import { INSTALL_ANCHOR } from './install-anchor.ts'
-import { runProfilePackageManager, runProfilePackageManagerWithGitBuildApproval } from './profile-package-manager.ts'
+import { runProfilePackageManager } from './profile-package-manager.ts'
 
 export { resolvePnpmCommand } from './profile-package-manager.ts'
 
@@ -120,6 +128,16 @@ function anchorPathSpec(argument: string, cwd: string): string {
   return `${prefix}${resolve(cwd, match.groups.path)}`
 }
 
+function addedPackageSpec(args: readonly string[]): string | undefined {
+  if (args[0] !== 'add') return undefined
+  let candidate: string | undefined
+  for (const argument of args.slice(1)) {
+    if (argument === '--') continue
+    if (!argument.startsWith('-')) candidate = argument
+  }
+  return candidate
+}
+
 /**
  * Run one `dsh plugin` invocation: init if needed, forward to pnpm, reconcile.
  * @param profile - the profile name.
@@ -128,6 +146,25 @@ function anchorPathSpec(argument: string, cwd: string): string {
  */
 export function runPlugin(profile: string, args: readonly string[]): number {
   const dir = resolveProfileDir(profile)
+  if (args[0] === 'approve-build-key') {
+    if (args.length !== 2 || args[1] === undefined) {
+      process.stderr.write(`${NAME}: usage: dsh plugin --profile ${profile} approve-build-key <exact-package-key>\n`)
+      return 1
+    }
+    initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
+    try {
+      const result = allowProfilePackageBuild(dir, args[1])
+      if (result === 'denied') {
+        process.stderr.write(`${NAME}: pnpm build remains explicitly denied for ${JSON.stringify(args[1])} in ${dir}\n`)
+        return 1
+      }
+      process.stderr.write(`${NAME}: pnpm build ${result} for exact key ${JSON.stringify(args[1])} in ${dir}\n`)
+      return 0
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+      return 1
+    }
+  }
   if (args[0] === 'approve-build') {
     if (args.length !== 2 || args[1] === undefined) {
       process.stderr.write(`${NAME}: usage: dsh plugin --profile ${profile} approve-build <package-name>\n`)
@@ -185,13 +222,22 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         profile,
         installAnchor: INSTALL_ANCHOR,
       })
+      const conflicts = inspectProfileDependencies({ binName: NAME, profile, installAnchor: INSTALL_ANCHOR })
       outcome = {
         schema: 'dsh/profile-dependency-repair/v1' as const,
+        diagnosticSchema: 'dsh/profile-diagnostic/v2' as const,
         profile,
         status: 'healthy' as const,
-        conflicts: inspectProfileDependencies({ binName: NAME, profile, installAnchor: INSTALL_ANCHOR }),
+        conflicts,
         ...(orphanedBundles.length === 0 ? {} : { orphanedBundles }),
         quarantined: [],
+        issues: [
+          ...conflicts.map(conflict => profileDependencyConflictDiagnostic(
+            conflict.rootPackage,
+            conflict.dependencyChain,
+          )),
+          ...orphanedBundles.map(bundle => orphanedBundleDiagnostic(bundle.packageName)),
+        ],
       }
     }
     const normalized = !mutatesProfile
@@ -224,7 +270,7 @@ export function runPlugin(profile: string, args: readonly string[]): number {
   const before = readProfileManifest(NAME, dir)
   // A host-provided pnpm.mjs is executed by the current Node process without a
   // shell; ordinary Windows pnpm.cmd discovery retains its compatibility path.
-  const result = runProfilePackageManagerWithGitBuildApproval(
+  const result = runProfilePackageManager(
     dir,
     args.map(argument => anchorPathSpec(argument, process.cwd())),
   )
@@ -246,6 +292,25 @@ export function runPlugin(profile: string, args: readonly string[]): number {
       process.stderr.write(`${NAME}: profile dependency health ${JSON.stringify(dependencyHealth)}\n`)
     }
   } else {
+    const packageSpec = addedPackageSpec(args)
+    const issue = classifyProfileDiagnostic({
+      source: 'pnpm',
+      phase: 'install',
+      value: result.diagnostic ?? `pnpm exited with ${String(exitCode)}`,
+      ...(packageSpec === undefined ? {} : { attribution: { rootPackage: packageSpec } }),
+    })
+    let retainedIssues: ProfileDiagnostic[] = []
+    try {
+      retainedIssues = [...readProfileDiagnosticReport(profile)?.issues ?? []]
+    } catch {
+      // A fresh structured report replaces only the unreadable diagnostic record.
+    }
+    const issueKey = `${issue.code}\0${issue.attribution?.rootPackage ?? ''}`
+    const issues = [
+      ...retainedIssues.filter(candidate => `${candidate.code}\0${candidate.attribution?.rootPackage ?? ''}` !== issueKey),
+      issue,
+    ]
+    writeProfileDiagnosticReport(createProfileDiagnosticReport(profile, issues))
     process.stderr.write(`${NAME}: pnpm failed in profile directory ${dir}\n`)
   }
   return exitCode

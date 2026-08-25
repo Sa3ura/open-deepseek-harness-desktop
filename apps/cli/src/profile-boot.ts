@@ -25,15 +25,22 @@ import {
   healProfilesModuleFallback,
   installFailLoud,
   initProfile,
+  loadDiagnosticProfile,
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
+  classifyProfileDiagnostic,
+  createProfileDiagnosticReport,
+  readProfileDiagnosticReport,
+  readProfileManifest,
   repairProfileDependencies,
   resolveProfileDir,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
   watchUserPatches,
+  writeProfileDiagnosticReport,
   type Profile,
+  type ProfileDiagnostic,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 
@@ -197,6 +204,13 @@ export function prepareProfile(name: string, userLayer = true): Profile {
   return profile
 }
 
+/** Load the installation-owned diagnostic composition without parsing user-owned Profile files. */
+function prepareDiagnosticProfile(name: string): Profile {
+  const profile = loadDiagnosticProfile(NAME, name, INSTALL_ANCHOR)
+  writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
+  return profile
+}
+
 /** One profile's patch layers (application order) and the row index of its pre-flag composition. */
 interface ComposedProfile {
   profile: Profile
@@ -237,21 +251,24 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 function composeProfile(
   name: string,
   patchFiles: readonly string[],
+  safeMode: boolean,
 ): ComposedProfile {
-  const profile = prepareProfile(name)
-  const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
-  const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
+  const profile = safeMode ? prepareDiagnosticProfile(name) : prepareProfile(name)
+  const homePatches = safeMode ? [] : loadOptionalPatches(NAME, homePatchPath()) ?? []
+  const overlays = safeMode ? [] : patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
-  const staleLoaderQuarantine = quarantineStaleInBoxLoaderEntries(
-    bundlePatches, [...profile.patches, ...homePatches], profile.dir,
-  )
-  const duplicateSingletonQuarantine = quarantineDuplicateSingletonLoaderEntries([
-    bundlePatches,
-    profile.patches,
-    homePatches,
-    overlays,
-    staleLoaderQuarantine,
-  ])
+  const staleLoaderQuarantine = safeMode
+    ? []
+    : quarantineStaleInBoxLoaderEntries(bundlePatches, [...profile.patches, ...homePatches], profile.dir)
+  const duplicateSingletonQuarantine = safeMode
+    ? []
+    : quarantineDuplicateSingletonLoaderEntries([
+      bundlePatches,
+      profile.patches,
+      homePatches,
+      overlays,
+      staleLoaderQuarantine,
+    ])
   const rows = new Map<string, EntryOptions>()
   for (const row of composeEntries([
     bundlePatches,
@@ -292,6 +309,49 @@ export interface RunProfileOptions {
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
   args: readonly string[]
+  /** Start only installation-owned bundles and omit every user-owned layer. */
+  safeMode?: boolean
+  /** Emit a stable desktop-supervisor marker when ordinary startup fails. */
+  safeModeOnFailure?: boolean
+}
+
+function startupFailurePhase(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/pnpm|dependency|lockfile|node_modules|profile manifest/iu.test(message)) return 'preflight' as const
+  if (/cannot resolve|ERR_MODULE_NOT_FOUND|failed to load/iu.test(message)) return 'import' as const
+  if (/failed to apply|apply loader entry/iu.test(message)) return 'apply' as const
+  if (/did not activate|pending \(waiting|activation/iu.test(message)) return 'activate' as const
+  return 'compose' as const
+}
+
+function deduplicateStartupIssues(issues: readonly ProfileDiagnostic[]): ProfileDiagnostic[] {
+  const seen = new Set<string>()
+  return issues.filter((issue) => {
+    const key = `${issue.code}\0${issue.attribution?.rootPackage ?? ''}\0${issue.attribution?.entryId ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+/** Decide whether a failed normal Profile can improve by omitting user-owned layers. */
+export function isDeterministicSafeModeFailure(issue: ProfileDiagnostic): boolean {
+  return issue.code !== 'pnpm.network'
+    && issue.code !== 'pnpm.registry-auth'
+    && issue.code !== 'pnpm.minimum-release-age'
+    && issue.code !== 'profile.unknown'
+    && issue.code !== 'runtime.launch-invalid'
+}
+
+function configuredExternalBundles(profile: string): string[] {
+  try {
+    const profileDir = resolveProfileDir(profile)
+    const configured = readProfileManifest(NAME, profileDir).dsh?.profile?.bundles ?? []
+    const installationOwned = new Set(PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
+    return configured.filter(bundle => !installationOwned.has(bundle))
+  } catch {
+    return []
+  }
 }
 
 /**
@@ -316,9 +376,10 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
  */
-export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+  const safeMode = options.safeMode === true
   const profileDir = resolveProfileDir(options.profile)
-  if (existsSync(join(profileDir, 'package.json'))) {
+  if (!safeMode && existsSync(join(profileDir, 'package.json'))) {
     initProfile(profileDir, PROFILE_TEMPLATES[options.profile] ?? DEFAULT_PROFILE_BUNDLES)
     healProfilesModuleFallback(INSTALL_ANCHOR)
     const dependencyHealth = repairProfileDependencies({
@@ -337,7 +398,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       process.stderr.write(`${NAME}: profile dependency health ${JSON.stringify(dependencyHealth)}\n`)
     }
   }
-  const composed = composeProfile(options.profile, options.patchFiles)
+  const composed = composeProfile(options.profile, options.patchFiles, safeMode)
   const app: { current?: Context } = {}
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })
   const signalShutdown = new AbortController()
@@ -388,8 +449,24 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       args: options.args,
       exit: code => void shutdown.shutdown(code),
     })
-  })
+  }, safeMode ? INSTALL_ANCHOR : undefined)
   app.current = ctx
+  if (safeMode) {
+    const current = readProfileDiagnosticReport(options.profile)
+    const enteredAt = new Date().toISOString()
+    writeProfileDiagnosticReport(createProfileDiagnosticReport(
+      options.profile,
+      current?.issues ?? [],
+      {
+        safeMode: {
+          enteredAt,
+          skippedBundles: configuredExternalBundles(options.profile),
+          skippedUserLayers: true,
+        },
+      },
+    ))
+    process.stderr.write(`${NAME}: diagnostic safe mode active for profile ${JSON.stringify(options.profile)}\n`)
+  }
   // A surface can dispose the whole tree while boot or this post-boot watcher
   // setup is still in flight — a signal, or a fast one-shot's appExit. Loader
   // presence and fiber state own liveness; the initial check skips a tree
@@ -397,7 +474,8 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // landed mid-setup. Watching is unconditional: a one-shot surface exits
   // through its bounded shutdown, which disposes the watchers before the
   // loop drains.
-  if (!signalShutdown.signal.aborted
+  if (!safeMode
+    && !signalShutdown.signal.aborted
     && ctx.fiber.state === FiberState.ACTIVE
     && ctx.get('loader') !== undefined) {
     try {
@@ -429,4 +507,41 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     }
   }
   return { ctx, shutdown }
+}
+
+/**
+ * Boot one Profile and retain a structured failure for desktop safe-mode recovery.
+ * @param options - Profile composition, application arguments, and optional recovery policy.
+ * @returns Settled root context and shutdown controller.
+ */
+export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+  try {
+    return await runProfileAttempt(options)
+  } catch (error) {
+    const issue = classifyProfileDiagnostic({
+      source: options.safeMode === true ? 'runtime' : 'profile',
+      phase: startupFailurePhase(error),
+      value: error,
+      home: resolveDshHome(),
+    })
+    let previous: readonly ProfileDiagnostic[] = []
+    try {
+      previous = readProfileDiagnosticReport(options.profile)?.issues ?? []
+    } catch {
+      // The fresh report below replaces an unreadable diagnostic file; user Profile data is untouched.
+    }
+    writeProfileDiagnosticReport(createProfileDiagnosticReport(
+      options.profile,
+      deduplicateStartupIssues([...previous, issue]),
+    ))
+    if (options.safeMode !== true
+      && options.safeModeOnFailure === true
+      && isDeterministicSafeModeFailure(issue)) {
+      process.stderr.write(`${NAME}: profile safe mode eligible ${JSON.stringify({
+        schema: 'dsh/profile-diagnostic/v2',
+        code: issue.code,
+      })}\n`)
+    }
+    throw error
+  }
 }

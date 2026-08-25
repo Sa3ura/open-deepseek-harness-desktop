@@ -13,6 +13,7 @@ import type {
 } from '@deepseek-ai/dsh-subprocess'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import PluginInventoryGateway from '../src/index.ts'
+import type { PluginDiagnosticExport } from '../src/types.ts'
 
 const contexts: Context[] = []
 const temporaryDirectories: string[] = []
@@ -77,6 +78,7 @@ async function harness(): Promise<{
   inventory: PluginInventoryGateway
   subprocess: StubSubprocessRuntime
 }> {
+  if (process.env.DSH_HOME === undefined) vi.stubEnv('DSH_HOME', temporaryDirectory())
   const ctx = new Context()
   contexts.push(ctx)
   await ctx.plugin(Loader)
@@ -102,6 +104,9 @@ describe('PluginInventoryGateway', () => {
       { method: 'dismissDependencyHealth', invocation: { kind: 'direct' } },
       { method: 'uninstallQuarantine', invocation: { kind: 'direct' } },
       { method: 'startQuarantineRetry', invocation: { kind: 'direct' } },
+      { method: 'approveQuarantineBuild', invocation: { kind: 'direct' } },
+      { method: 'approveDiagnosticBuild', invocation: { kind: 'direct' } },
+      { method: 'exportDiagnostics', invocation: { kind: 'direct' } },
       { method: 'startInstall', invocation: { kind: 'direct' } },
       { method: 'startUninstall', invocation: { kind: 'direct' } },
       { method: 'startDependencyDoctor', invocation: { kind: 'direct' } },
@@ -194,6 +199,12 @@ describe('PluginInventoryGateway', () => {
 
     const snapshot = inventory.list()
     expect(snapshot.entries).toHaveLength(3)
+    expect(snapshot.dependencyHealth.issues).toEqual([
+      expect.objectContaining({
+        code: 'loader.unresolved-injection',
+        attribution: { entryId: pendingId, moduleName: 'cordis:pending' },
+      }),
+    ])
     expect(snapshot.entries).toEqual(expect.arrayContaining([
       {
         entryId: activeId,
@@ -225,6 +236,65 @@ describe('PluginInventoryGateway', () => {
 
     await ctx.loader.remove(pendingId)
     expect(inventory.list().entries.some(entry => entry.entryId === pendingId)).toBe(false)
+  })
+
+  it('exports a redacted current diagnostic bundle with runtime and Loader facts', async () => {
+    const { ctx, inventory } = await harness()
+    await ctx.loader.create({ name: 'cordis:pending' })
+    const exported = JSON.parse(inventory.exportDiagnostics()) as PluginDiagnosticExport
+    expect(exported).toMatchObject({
+      schema: 'dsh/profile-diagnostic-export/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      rulesVersion: 2,
+      profile: 'web',
+      runtime: {
+        platform: process.platform,
+        architecture: process.arch,
+        node: process.version,
+      },
+    })
+    expect(exported).not.toHaveProperty('home')
+    expect(exported.rules.some(rule => (
+      rule.code === 'pnpm.build-script-blocked' && rule.actions.includes('approve-build')
+    ))).toBe(true)
+    expect(exported.rules.some(rule => (
+      rule.code === 'profile.unknown' && rule.actions.length === 1 && rule.actions[0] === 'export'
+    ))).toBe(true)
+    expect(JSON.stringify(exported)).not.toContain(process.env.HOME ?? '/Users')
+  })
+
+  it('approves only the exact retained build key and retries the retained package once', async () => {
+    const home = temporaryDirectory()
+    vi.stubEnv('DSH_HOME', home)
+    const diagnosticId = '00000000-0000-4000-8000-000000000002'
+    writeJson(join(home, 'profile-health', 'web.diagnostics.json'), {
+      schema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      generatedAt: '2026-08-25T00:00:00.000Z',
+      issues: [{
+        diagnosticId,
+        code: 'pnpm.build-script-blocked',
+        nativeCode: 'ERR_PNPM_IGNORED_BUILDS',
+        source: 'pnpm',
+        phase: 'install',
+        severity: 'security',
+        attribution: { rootPackage: 'fixture-plugin@1.2.3' },
+        buildApprovalKey: 'node-pty',
+        actions: ['approve-build', 'isolate', 'export'],
+        evidence: ['ERR_PNPM_IGNORED_BUILDS: Ignored build scripts: node-pty'],
+      }],
+    })
+    const { inventory, subprocess } = await harness()
+
+    const started = inventory.approveDiagnosticBuild({ diagnosticId })
+    await expect.poll(() => inventory.getInstall(started.installId).phase).toBe('succeeded')
+    expect(subprocess.spawns.map(spawn => spawn.argv.slice(-5))).toEqual([
+      ['plugin', '--profile', 'web', 'approve-build-key', 'node-pty'],
+      ['plugin', '--profile', 'web', 'add', 'fixture-plugin@1.2.3'],
+    ])
+    expect(() => inventory.approveDiagnosticBuild({
+      diagnosticId: '00000000-0000-4000-8000-000000000003',
+    })).toThrow(/no approvable build operation/)
   })
 
   it('starts a structured CLI install, deduplicates it while running, and publishes completion', async () => {

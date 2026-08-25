@@ -90,6 +90,21 @@ export function apply(ctx: ClientContext): void {
       if (!result.ok) throw new Error(`pluginInventory.startQuarantineRetry failed: ${result.error.code}: ${result.error.message}`)
       return result.value
     },
+    approveQuarantineBuild: async (request) => {
+      const result = await ctx.remote.pluginInventory.approveQuarantineBuild(request)
+      if (!result.ok) throw new Error(`pluginInventory.approveQuarantineBuild failed: ${result.error.code}: ${result.error.message}`)
+      return result.value
+    },
+    approveDiagnosticBuild: async (request) => {
+      const result = await ctx.remote.pluginInventory.approveDiagnosticBuild(request)
+      if (!result.ok) throw new Error(`pluginInventory.approveDiagnosticBuild failed: ${result.error.code}: ${result.error.message}`)
+      return result.value
+    },
+    exportDiagnostics: async () => {
+      const result = await ctx.remote.pluginInventory.exportDiagnostics()
+      if (!result.ok) throw new Error(`pluginInventory.exportDiagnostics failed: ${result.error.code}: ${result.error.message}`)
+      return result.value
+    },
     uninstallQuarantine: async (request) => {
       const result = await ctx.remote.pluginInventory.uninstallQuarantine(request)
       if (!result.ok) throw new Error(`pluginInventory.uninstallQuarantine failed: ${result.error.code}: ${result.error.message}`)

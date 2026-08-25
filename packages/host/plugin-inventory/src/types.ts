@@ -1,4 +1,5 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { ProfileDiagnostic, ProfileDiagnosticRuleSummary } from '@deepseek-ai/dsh-app-boot'
 
 /** Stable Loader-tree identity of one configured plugin entry. */
 export type PluginEntryId = Branded<'PluginEntryId'>
@@ -44,6 +45,7 @@ export interface PluginDependencyRepairNotice {
   readonly status: 'repaired' | 'quarantined' | 'failed'
   readonly conflicts: readonly PluginDependencyConflict[]
   readonly diagnostic?: string
+  readonly issues: readonly ProfileDiagnostic[]
 }
 
 /** Client-safe durable quarantine record. */
@@ -54,7 +56,8 @@ export interface PluginQuarantineRecord {
   readonly packageSpec: string
   readonly installedVersion?: string
   readonly quarantinedAt: string
-  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle'
+  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked'
+  readonly buildApprovalKey?: string
   readonly conflicts: readonly PluginDependencyConflict[]
 }
 
@@ -62,6 +65,12 @@ export interface PluginQuarantineRecord {
 export interface PluginDependencyHealthSnapshot {
   readonly lastRepair: PluginDependencyRepairNotice | null
   readonly quarantined: readonly PluginQuarantineRecord[]
+  readonly issues: readonly ProfileDiagnostic[]
+  readonly safeMode: {
+    readonly enteredAt: string
+    readonly skippedBundles: readonly string[]
+    readonly skippedUserLayers: boolean
+  } | null
 }
 
 /** One Loader bundle that remains configured without a manageable profile dependency. */
@@ -75,11 +84,13 @@ export interface PluginOrphanedBundle {
 /** Client-safe result returned by the core profile dependency doctor. */
 export interface PluginDependencyDoctorReport {
   readonly schema: 'dsh/profile-dependency-repair/v1'
+  readonly diagnosticSchema: 'dsh/profile-diagnostic/v2'
   readonly profile: string
   readonly status: 'healthy' | 'repaired' | 'quarantined' | 'failed'
   readonly conflicts: readonly PluginDependencyConflict[]
   readonly orphanedBundles: readonly PluginOrphanedBundle[]
   readonly quarantined: readonly PluginQuarantineRecord[]
+  readonly issues: readonly ProfileDiagnostic[]
   readonly diagnostic?: string
 }
 
@@ -106,6 +117,35 @@ export interface PluginDoctorSnapshot {
 /** Opaque durable quarantine selection. */
 export interface PluginQuarantineRequest {
   readonly quarantineId: string
+}
+
+/** Explicit approval of the exact build key retained by one quarantine. */
+export interface PluginBuildApprovalRequest {
+  readonly quarantineId: string
+}
+
+/** Explicit approval of a build key retained by a failed package operation. */
+export interface PluginDiagnosticBuildApprovalRequest {
+  readonly diagnosticId: string
+}
+
+/** Redacted, portable diagnostics export assembled by the trusted Host. */
+export interface PluginDiagnosticExport {
+  readonly schema: 'dsh/profile-diagnostic-export/v1'
+  readonly diagnosticSchema: 'dsh/profile-diagnostic/v2'
+  readonly rulesVersion: 2
+  readonly rules: readonly ProfileDiagnosticRuleSummary[]
+  readonly generatedAt: string
+  readonly runtime: {
+    readonly platform: string
+    readonly architecture: string
+    readonly node: string
+  }
+  readonly profile: string
+  readonly safeMode: PluginDependencyHealthSnapshot['safeMode']
+  readonly issues: readonly ProfileDiagnostic[]
+  readonly quarantined: readonly PluginQuarantineRecord[]
+  readonly entries: readonly PluginInventoryEntry[]
 }
 
 /** Profile whose retained repair notification should be dismissed. */

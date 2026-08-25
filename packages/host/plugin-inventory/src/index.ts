@@ -7,12 +7,17 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import {
   clearLastProfileRepairReport,
   clearQuarantinedProfilePlugin,
+  classifyProfileDiagnostic,
+  profileDiagnosticRuleCatalog,
   listQuarantinedProfilePlugins,
   readLastProfileRepairReport,
+  readProfileDiagnosticReport,
   uninstallQuarantinedProfilePlugin,
   type ProfileDependencyConflict,
   type ProfileRepairReport,
   type QuarantinedProfilePlugin,
+  type ProfileDiagnostic,
+  type ProfileDiagnosticReport,
 } from '@deepseek-ai/dsh-app-boot'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-agent-presets'
@@ -25,6 +30,9 @@ import type {
   PluginDoctorId,
   PluginDoctorRequest,
   PluginDoctorSnapshot,
+  PluginBuildApprovalRequest,
+  PluginDiagnosticBuildApprovalRequest,
+  PluginDiagnosticExport,
   PluginFiberPhase,
   PluginInventoryEntry,
   PluginInventorySnapshot,
@@ -86,7 +94,10 @@ export interface Config {
 interface InstallJob {
   snapshot: PluginInstallSnapshot
   target: string
-  args: readonly string[]
+  steps: readonly {
+    readonly args: readonly string[]
+    readonly acceptedExitCodes?: readonly number[]
+  }[]
   quarantineId?: string
 }
 
@@ -190,14 +201,58 @@ function projectQuarantine(record: QuarantinedProfilePlugin) {
     ...(record.installedVersion === undefined ? {} : { installedVersion: record.installedVersion }),
     quarantinedAt: record.quarantinedAt,
     reason: record.reason,
+    ...(record.buildApprovalKey === undefined ? {} : { buildApprovalKey: record.buildApprovalKey }),
     conflicts: record.conflicts.map(projectConflict),
   }
+}
+
+function readCurrentDiagnostics(profile: string): ProfileDiagnosticReport | undefined {
+  try {
+    return readProfileDiagnosticReport(profile)
+  } catch (error) {
+    return {
+      schema: 'dsh/profile-diagnostic/v2',
+      profile,
+      generatedAt: new Date().toISOString(),
+      status: 'issues',
+      issues: [classifyProfileDiagnostic({
+        source: 'config',
+        phase: 'preflight',
+        value: error,
+      })],
+    }
+  }
+}
+
+function liveLoaderDiagnostic(entry: {
+  readonly id: string
+  readonly options: { readonly name: string }
+  readonly fiber?: { readonly state: FiberState; readonly inject: Record<string, unknown>; readonly ctx: Context }
+}): ProfileDiagnostic | undefined {
+  if (entry.fiber?.state !== FIBER_STATE.FAILED && entry.fiber?.state !== FIBER_STATE.PENDING) return undefined
+  const attribution = { entryId: entry.id, moduleName: entry.options.name }
+  if (entry.fiber.state === FIBER_STATE.PENDING) {
+    const missing = Object.keys(entry.fiber.inject).filter(service => entry.fiber?.ctx.get(service) === undefined)
+    return classifyProfileDiagnostic({
+      source: 'loader',
+      phase: 'activate',
+      attribution,
+      value: `${entry.options.name}: pending (waiting for services: ${missing.join(', ') || 'unknown'})`,
+    })
+  }
+  return classifyProfileDiagnostic({
+    source: 'loader',
+    phase: 'activate',
+    attribution,
+    value: `${entry.options.name}: activation failed`,
+  })
 }
 
 /** Remove local filesystem paths from one core doctor report. */
 function projectDoctorReport(report: ProfileRepairReport) {
   return {
     schema: report.schema,
+    diagnosticSchema: report.diagnosticSchema ?? 'dsh/profile-diagnostic/v2' as const,
     profile: report.profile,
     status: report.status,
     conflicts: report.conflicts.map(projectConflict),
@@ -208,6 +263,7 @@ function projectDoctorReport(report: ProfileRepairReport) {
       ...(bundle.installedVersion === undefined ? {} : { installedVersion: bundle.installedVersion }),
     })),
     quarantined: report.quarantined.map(projectQuarantine),
+    issues: report.issues ?? [],
     ...(report.diagnostic === undefined ? {} : { diagnostic: report.diagnostic }),
   }
 }
@@ -295,6 +351,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
   @Remote('list')
   list(): PluginInventorySnapshot {
     const entries: PluginInventoryEntry[] = []
+    const liveIssues: ProfileDiagnostic[] = []
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.group) continue
       entries.push({
@@ -303,21 +360,33 @@ export class PluginInventoryGateway extends TypertRemoteService {
         enabled: !entry.disabled,
         fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
       })
+      const liveIssue = liveLoaderDiagnostic(entry)
+      if (liveIssue !== undefined) liveIssues.push(liveIssue)
     }
     const lastRepair = readLastProfileRepairReport(this.profile)
+    const currentDiagnostics = readCurrentDiagnostics(this.profile)
+    const issues = [...(currentDiagnostics?.issues ?? [])]
+    for (const issue of liveIssues) {
+      if (issues.some(candidate => candidate.code === issue.code
+        && candidate.attribution?.entryId === issue.attribution?.entryId)) continue
+      issues.push(issue)
+    }
     return {
       entries,
       dependencyHealth: {
-        lastRepair: lastRepair === undefined || lastRepair.status === 'healthy'
+        lastRepair: lastRepair === undefined || lastRepair.status === 'healthy' || lastRepair.status === 'repaired'
           ? null
           : {
             status: lastRepair.status,
             conflicts: lastRepair.conflicts.map(projectConflict),
+            issues: lastRepair.issues ?? issues,
             ...(lastRepair.diagnostic === undefined ? {} : { diagnostic: lastRepair.diagnostic }),
           },
         quarantined: listQuarantinedProfilePlugins()
           .filter(record => record.profile === this.profile)
           .map(projectQuarantine),
+        issues,
+        safeMode: currentDiagnostics?.safeMode ?? null,
       },
     }
   }
@@ -340,12 +409,13 @@ export class PluginInventoryGateway extends TypertRemoteService {
    */
   @Remote('setExternalTool')
   async setExternalTool(request: ExternalToolToggleRequest): Promise<ExternalToolsSnapshot> {
-    if (request.tool !== 'codex' && request.tool !== 'claude-code') {
-      throw new TypeError(`pluginInventory: unsupported external tool ${JSON.stringify(request.tool)}`)
+    const tool: unknown = request.tool
+    if (tool !== 'codex' && tool !== 'claude-code') {
+      throw new TypeError(`pluginInventory: unsupported external tool ${JSON.stringify(tool)}`)
     }
     const presets = this.ctx.get('agentPresets')
     if (presets === undefined) throw new Error('pluginInventory: agent preset roster is unavailable')
-    return await presets.setExternalTool(request.tool, request.enabled)
+    return await presets.setExternalTool(tool, request.enabled)
   }
 
   /**
@@ -384,7 +454,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const record = this.expectQuarantine(request.quarantineId)
     if (record.profile !== this.profile) throw new TypeError('pluginInventory: quarantine belongs to another profile')
     const packageSpec = retryPackageSpec(record)
-    const target = `retry\0${record.profile}\0${request.quarantineId}`
+    const target = `quarantine\0${record.profile}\0${request.quarantineId}`
     const activeId = this.activeTargets.get(target)
     if (activeId !== undefined) return this.expectJob(activeId).snapshot
 
@@ -399,13 +469,128 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const job: InstallJob = {
       snapshot,
       target,
-      args: ['doctor', '--retry', request.quarantineId],
+      steps: [{ args: ['doctor', '--retry', request.quarantineId] }],
       quarantineId: request.quarantineId,
     }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
     void this.runInstall(job)
     return snapshot
+  }
+
+  /**
+   * Approve one retained exact build key and retry only its quarantined plugin.
+   * @param request - Quarantine selected after a separate user confirmation.
+   * @returns Initial running state, or the existing mutation for this quarantine.
+   */
+  @Remote('approveQuarantineBuild')
+  approveQuarantineBuild(request: PluginBuildApprovalRequest): PluginInstallSnapshot {
+    validateQuarantineId(request.quarantineId)
+    const record = this.expectQuarantine(request.quarantineId)
+    if (record.profile !== this.profile) throw new TypeError('pluginInventory: quarantine belongs to another profile')
+    if (record.reason !== 'build-script-blocked' || record.buildApprovalKey === undefined) {
+      throw new TypeError('pluginInventory: quarantine has no exact blocked build key')
+    }
+    const packageSpec = retryPackageSpec(record)
+    const target = `quarantine\0${record.profile}\0${request.quarantineId}`
+    const activeId = this.activeTargets.get(target)
+    if (activeId !== undefined) return this.expectJob(activeId).snapshot
+
+    const installId = pluginInstallId(crypto.randomUUID())
+    const snapshot: PluginInstallSnapshot = {
+      installId,
+      profile: record.profile,
+      packageSpec,
+      command: `dsh plugin --profile ${record.profile} approve retained build and retry ${record.packageName}`,
+      phase: 'running',
+    }
+    const job: InstallJob = {
+      snapshot,
+      target,
+      steps: [
+        { args: ['approve-build-key', record.buildApprovalKey], acceptedExitCodes: [0] },
+        { args: ['doctor', '--retry', request.quarantineId] },
+      ],
+      quarantineId: request.quarantineId,
+    }
+    this.jobs.set(installId, job)
+    this.activeTargets.set(target, installId)
+    void this.runInstall(job)
+    return snapshot
+  }
+
+  /**
+   * Approve the exact build key retained by a failed install and retry its original package specifier.
+   * @param request - Opaque diagnostic id selected after a separate user confirmation.
+   * @returns Initial running state, or the existing matching approval operation.
+   */
+  @Remote('approveDiagnosticBuild')
+  approveDiagnosticBuild(request: PluginDiagnosticBuildApprovalRequest): PluginInstallSnapshot {
+    if (!QUARANTINE_ID.test(request.diagnosticId)) {
+      throw new TypeError(`pluginInventory: invalid diagnostic id ${JSON.stringify(request.diagnosticId)}`)
+    }
+    const diagnostic = readProfileDiagnosticReport(this.profile)?.issues
+      .find(issue => issue.diagnosticId === request.diagnosticId)
+    const packageSpec = diagnostic?.attribution?.rootPackage
+    if (diagnostic?.code !== 'pnpm.build-script-blocked'
+      || diagnostic.buildApprovalKey === undefined
+      || packageSpec === undefined
+      || packageSpec === ''
+      || packageSpec.length > 4096
+      || /[\0\r\n]/u.test(packageSpec)) {
+      throw new TypeError('pluginInventory: diagnostic has no approvable build operation')
+    }
+    const target = `diagnostic-build\0${this.profile}\0${request.diagnosticId}`
+    const activeId = this.activeTargets.get(target)
+    if (activeId !== undefined) return this.expectJob(activeId).snapshot
+
+    const installId = pluginInstallId(crypto.randomUUID())
+    const snapshot: PluginInstallSnapshot = {
+      installId,
+      profile: this.profile,
+      packageSpec,
+      command: `dsh plugin --profile ${this.profile} approve retained build and retry install`,
+      phase: 'running',
+    }
+    const job: InstallJob = {
+      snapshot,
+      target,
+      steps: [
+        { args: ['approve-build-key', diagnostic.buildApprovalKey], acceptedExitCodes: [0] },
+        { args: ['add', packageSpec] },
+      ],
+    }
+    this.jobs.set(installId, job)
+    this.activeTargets.set(target, installId)
+    void this.runInstall(job)
+    return snapshot
+  }
+
+  /**
+   * Export the current redacted incident, runtime facts, quarantine state, and Loader summary.
+   * @returns Portable JSON that intentionally excludes local paths, credentials, and raw configuration bodies.
+   */
+  @Remote('exportDiagnostics')
+  exportDiagnostics(): string {
+    const snapshot = this.list()
+    const report: PluginDiagnosticExport = {
+      schema: 'dsh/profile-diagnostic-export/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      rulesVersion: 2,
+      rules: profileDiagnosticRuleCatalog(),
+      generatedAt: new Date().toISOString(),
+      runtime: {
+        platform: process.platform,
+        architecture: process.arch,
+        node: process.version,
+      },
+      profile: this.profile,
+      safeMode: snapshot.dependencyHealth.safeMode,
+      issues: snapshot.dependencyHealth.issues,
+      quarantined: snapshot.dependencyHealth.quarantined,
+      entries: snapshot.entries,
+    }
+    return `${JSON.stringify(report, undefined, 2)}\n`
   }
 
   /**
@@ -430,7 +615,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
       command: `dsh plugin --profile ${request.profile} add ${request.packageSpec}`,
       phase: 'running',
     }
-    const job: InstallJob = { snapshot, target, args: ['add', request.packageSpec] }
+    const job: InstallJob = { snapshot, target, steps: [{ args: ['add', request.packageSpec] }] }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
     void this.runInstall(job)
@@ -457,7 +642,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
       command: `dsh plugin --profile ${request.profile} remove ${request.packageName}`,
       phase: 'running',
     }
-    const job: InstallJob = { snapshot, target, args: ['remove', request.packageName] }
+    const job: InstallJob = { snapshot, target, steps: [{ args: ['remove', request.packageName] }] }
     this.jobs.set(installId, job)
     this.activeTargets.set(target, installId)
     void this.runInstall(job)
@@ -530,28 +715,36 @@ export class PluginInventoryGateway extends TypertRemoteService {
   private async runInstall(job: InstallJob): Promise<void> {
     try {
       const launcher = dshLauncherArgv()
-      const handle = this.ctx.subprocess.spawn({
-        argv: [
-          ...launcher,
-          'plugin', '--profile', job.snapshot.profile, ...job.args,
-        ],
-        cwd: process.cwd(),
-        stdio: {
-          stdin: 'ignore',
-          stdout: { maxBytes: this.outputMaxBytes },
-          stderr: { maxBytes: this.outputMaxBytes },
-        },
-        graceMs: this.terminationGraceMs,
-      })
-      const outcome = await handle.done
-      const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
-      const stderr = handle.collected.stderr?.readFrom(0).text.trim() ?? ''
-      const diagnostic = [stdout, stderr].filter(value => value !== '').join('\n')
+      const outputs: string[] = []
+      let exitCode: number | null = 1
+      for (const [index, step] of job.steps.entries()) {
+        const handle = this.ctx.subprocess.spawn({
+          argv: [
+            ...launcher,
+            'plugin', '--profile', job.snapshot.profile, ...step.args,
+          ],
+          cwd: process.cwd(),
+          stdio: {
+            stdin: 'ignore',
+            stdout: { maxBytes: this.outputMaxBytes },
+            stderr: { maxBytes: this.outputMaxBytes },
+          },
+          graceMs: this.terminationGraceMs,
+        })
+        const outcome = await handle.done
+        exitCode = outcome.exitCode
+        const stdout = handle.collected.stdout?.readFrom(0).text.trim() ?? ''
+        const stderr = handle.collected.stderr?.readFrom(0).text.trim() ?? ''
+        outputs.push(...[stdout, stderr].filter(value => value !== ''))
+        const accepted = step.acceptedExitCodes ?? (index + 1 < job.steps.length ? [0] : undefined)
+        if (accepted !== undefined && !accepted.includes(exitCode ?? -1)) break
+      }
+      const diagnostic = outputs.join('\n')
       const repair = parseRepairReport(diagnostic)
-      const repairSucceeded = repair?.status === 'repaired' && outcome.exitCode === 10
-        || repair?.status === 'quarantined' && outcome.exitCode === 11
-        || repair?.status === 'healthy' && outcome.exitCode === 0
-      const phase = outcome.exitCode !== 0 && !repairSucceeded
+      const repairSucceeded = repair?.status === 'repaired' && exitCode === 10
+        || repair?.status === 'quarantined' && exitCode === 11
+        || repair?.status === 'healthy' && exitCode === 0
+      const phase = exitCode !== 0 && !repairSucceeded
         ? 'failed'
         : repair?.status === 'quarantined'
           ? 'quarantined'
@@ -561,8 +754,8 @@ export class PluginInventoryGateway extends TypertRemoteService {
       job.snapshot = {
         ...job.snapshot,
         phase,
-        exitCode: outcome.exitCode,
-        ...(diagnostic !== '' && (outcome.exitCode !== 0 || repair !== undefined) ? { diagnostic } : {}),
+        exitCode,
+        ...(diagnostic !== '' && (exitCode !== 0 || repair !== undefined) ? { diagnostic } : {}),
       }
       if (job.quarantineId !== undefined && (phase === 'succeeded' || phase === 'repaired')) {
         clearQuarantinedProfilePlugin(job.quarantineId)

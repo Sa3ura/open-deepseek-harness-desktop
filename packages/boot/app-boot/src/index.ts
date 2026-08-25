@@ -33,6 +33,7 @@ export {
   DEFAULT_PROFILE_BUNDLES,
   healProfilesModuleFallback,
   initProfile,
+  loadDiagnosticProfile,
   loadProfile,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -76,6 +77,31 @@ export {
   type ProfileQuarantineRetryOptions,
   type QuarantinedProfilePlugin,
 } from './profile-health.ts'
+
+export {
+  classifyProfileDiagnostic,
+  clearProfileDiagnosticReport,
+  createProfileDiagnosticReport,
+  extractProfileBuildApprovalKey,
+  orphanedBundleDiagnostic,
+  PROFILE_DIAGNOSTIC_SCHEMA,
+  profileDiagnosticRuleCatalog,
+  profileDependencyConflictDiagnostic,
+  quarantinedPluginDiagnostic,
+  readProfileDiagnosticReport,
+  sanitizeProfileDiagnostic,
+  writeProfileDiagnosticReport,
+  type ClassifyProfileDiagnosticOptions,
+  type ProfileDiagnostic,
+  type ProfileDiagnosticAction,
+  type ProfileDiagnosticAttribution,
+  type ProfileDiagnosticCode,
+  type ProfileDiagnosticPhase,
+  type ProfileDiagnosticReport,
+  type ProfileDiagnosticRuleSummary,
+  type ProfileDiagnosticSeverity,
+  type ProfileDiagnosticSource,
+} from './profile-diagnostics.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for

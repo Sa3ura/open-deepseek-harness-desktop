@@ -171,6 +171,57 @@
   overflow-wrap: anywhere;
 }
 
+.safeModeNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 28%, var(--dsw-alias-border-l2));
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.safeModeNotice > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.safeModeNotice strong {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+}
+
+.safeModeNotice p,
+.safeModeNotice code {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+  overflow-wrap: anywhere;
+}
+
+.evidence {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding-top: 6px;
+}
+
+.evidence summary {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.evidence code {
+  display: block;
+  max-height: 180px;
+  margin-top: 6px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 .fixtureDialog {
   width: min(420px, 100%);
   padding: 0;
@@ -207,6 +258,17 @@
   color: #646a73;
   font-size: 13px;
   line-height: 20px;
+}
+
+.buildKey {
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: #f5f6f7;
+  color: #25282d;
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 17px;
+  overflow-wrap: anywhere;
 }
 
 .fixtureDialogActions {

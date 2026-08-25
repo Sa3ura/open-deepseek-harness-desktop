@@ -215,6 +215,38 @@ describe('profile shared Host dependency inspection', () => {
 })
 
 describe('profile composition inspection', () => {
+  it('treats an uninstalled official add-on as orphaned instead of an in-box layer', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'])
+    const packageName = '@deepseek-ai/dsh-subagent-claude-code'
+    const packageDir = join(dirname(anchor), 'node_modules', packageName)
+    writeManifest(join(packageDir, 'package.json'), {
+      name: packageName,
+      version: '0.1.1-rc.2',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    writeProfileManifest(profileDir, {
+      name: 'dsh-profile-web',
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', packageName] } },
+    })
+
+    expect(inspectOrphanedProfileBundles({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+    })).toEqual([
+      expect.objectContaining({
+        packageName,
+        bundleIndex: 2,
+        installedVersion: '0.1.1-rc.2',
+      }),
+    ])
+  })
+
   it('detects and quarantines a third-party bundle left outside profile dependencies', () => {
     const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')
@@ -267,7 +299,7 @@ describe('profile composition inspection', () => {
     })).toEqual([])
   })
 
-  it('retries orphan pruning with a one-shot release-age override before reporting quarantine', () => {
+  it('never lowers release-age protection while pruning an orphaned plugin', () => {
     const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')
     const { profileDir, pluginDir } = stageProfile(home, {})
@@ -282,10 +314,6 @@ describe('profile composition inspection', () => {
       home,
       runPackageManager: (args) => {
         calls.push([...args])
-        if (args.includes('--config.minimumReleaseAge=0')) {
-          rmSync(pluginDir, { recursive: true, force: true })
-          return { exitCode: 0 }
-        }
         return {
           exitCode: 1,
           diagnostic: '[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] minimum release age rejected an unrelated package',
@@ -299,8 +327,9 @@ describe('profile composition inspection', () => {
     })
     expect(calls).toEqual([
       ['install'],
-      ['install', '--config.minimumReleaseAge=0'],
+      ['install'],
     ])
+    expect(existsSync(pluginDir)).toBe(false)
     expect(readProfileManifest('test', profileDir).dsh?.profile?.bundles).not.toContain('fixture-plugin')
   })
 
@@ -345,7 +374,7 @@ describe('profile composition inspection', () => {
       },
     })
 
-    expect(calls).toEqual([['install', '--config.minimumReleaseAge=0']])
+    expect(calls).toEqual([['install']])
     expect(result.status).toBe('quarantined')
     expect(listQuarantinedProfilePlugins(home)).toEqual([
       expect.objectContaining({ packageName: 'fixture-plugin' }),
@@ -381,10 +410,8 @@ describe('profile composition inspection', () => {
       runPackageManager: () => ({ exitCode: 1, diagnostic: 'pnpm peer resolver crashed' }),
     })
 
-    expect(result).toMatchObject({
-      status: 'quarantined',
-      diagnostic: expect.stringContaining('removed directly'),
-    })
+    expect(result.status).toBe('quarantined')
+    expect(result.diagnostic).toContain('removed directly')
     expect(existsSync(pluginDir)).toBe(false)
     expect(realpathSync.native(profileTools)).toBe(realpathSync.native(packageDirs.get('@deepseek-ai/dsh-tools')!))
     expect(listQuarantinedProfilePlugins(home)).toEqual([
@@ -582,6 +609,38 @@ describe('profile shared Host dependency repair', () => {
     expect(readProfileManifest('test', profileDir).dependencies?.['fixture-plugin']).toBeUndefined()
     expect(listQuarantinedProfilePlugins(home)).toEqual([
       expect.objectContaining({ packageName: 'fixture-plugin', reason: 'convergence-failed' }),
+    ])
+  })
+
+  it('enters a durable quarantine when pnpm blocks build scripts during cleanup', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir, pluginDir } = stageProfile(home, {
+      dependencies: { '@deepseek-ai/dsh-tools': '^0.1.0-rc.6' },
+    })
+    stageDuplicate(pluginDir, '@deepseek-ai/dsh-tools')
+    const diagnostic = [
+      'ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED',
+      'dsh: pnpm allowBuilds key "fixture-plugin@git+https://example.invalid/fixture-plugin.git"',
+    ].join('\n')
+
+    const result = repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => ({ exitCode: 1, diagnostic }),
+    })
+
+    expect(result.status).toBe('quarantined')
+    expect(result.diagnostic).toContain('ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED')
+    expect(result.quarantined).toEqual([
+      expect.objectContaining({ packageName: 'fixture-plugin', reason: 'build-script-blocked' }),
+    ])
+    expect(existsSync(pluginDir)).toBe(false)
+    expect(readProfileManifest('test', profileDir).dependencies?.['fixture-plugin']).toBeUndefined()
+    expect(listQuarantinedProfilePlugins(home)).toEqual([
+      expect.objectContaining({ packageName: 'fixture-plugin' }),
     ])
   })
 

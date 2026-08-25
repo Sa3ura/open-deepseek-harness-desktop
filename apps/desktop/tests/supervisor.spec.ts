@@ -11,6 +11,37 @@ afterEach(async () => {
 })
 
 describe('Harness supervisor startup failures', () => {
+  it('enters the installation-owned diagnostic profile after one deterministic failure', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-safe-mode-'))
+    roots.push(root)
+    const script = join(root, 'safe-mode.mjs')
+    const logPath = join(root, 'harness.log')
+    await writeFile(script, `
+      if (process.env.DSH_PROFILE_SAFE_MODE !== '1') {
+        console.error('dsh: profile safe mode eligible {"code":"config.credentials-invalid"}')
+        process.exit(17)
+      }
+      console.log('dsh web: http://127.0.0.1:43124')
+      setInterval(() => {}, 1000)
+    `)
+    const states: HarnessState[] = []
+    let resolveReady: (url: string) => void = () => {}
+    const ready = new Promise<string>((resolve) => { resolveReady = resolve })
+    const supervisor = new HarnessSupervisor({
+      launch: { command: process.execPath, args: [script] },
+      logPath,
+      environment: { ...process.env },
+      onReady: resolveReady,
+      onState: (state) => { states.push(state) },
+      onFailure: (failure) => { throw new Error(failure.message) },
+    })
+    supervisor.start()
+    await expect(ready).resolves.toBe('http://127.0.0.1:43124')
+    expect(states).toContain('restarting')
+    expect(await readFile(logPath, 'utf8')).toContain('installation-owned diagnostic profile')
+    await supervisor.stop()
+  }, 10_000)
+
   it('stops retrying after three exits before readiness', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-failure-'))
     roots.push(root)

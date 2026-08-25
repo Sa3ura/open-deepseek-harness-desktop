@@ -29,7 +29,10 @@ interface DesktopShellBridge {
   restart?(): Promise<unknown>
 }
 
-/** Install the fixed source-mode fixture through the trusted Electron host. */
+/**
+ * Install the fixed source-mode fixture through the trusted Electron host.
+ * @returns The real diagnostic output, or undefined outside the desktop fixture bridge.
+ */
 export async function installDesktopDiagnosticFixture(): Promise<string | undefined> {
   const desktop = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop
   if (desktop === null || typeof desktop !== 'object') return undefined
@@ -55,10 +58,14 @@ function readDesktopShellBridge(): DesktopShellBridge | undefined {
   const desktop = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop
   if (desktop === null || typeof desktop !== 'object') return undefined
   const shell = (desktop as { shell?: unknown }).shell
-  return shell !== null && typeof shell === 'object' ? shell as DesktopShellBridge : undefined
+  return shell !== null && typeof shell === 'object' ? shell : undefined
 }
 
-/** Start the first-run packaged Better Sidebar job without falling back to Host Remote. */
+/**
+ * Start the first-run packaged Better Sidebar job without falling back to Host Remote.
+ * @param request - Structured profile and package spec selected by the user.
+ * @returns The initial desktop-owned job, or undefined when the bridge does not own it.
+ */
 export async function startDeferredPluginInstall(
   request: PluginInstallRequest,
 ): Promise<DesktopBundledPluginInstallSnapshot | undefined> {
@@ -68,7 +75,11 @@ export async function startDeferredPluginInstall(
   return result.handled ? result.snapshot : undefined
 }
 
-/** Poll one desktop-owned deferred installation. */
+/**
+ * Poll one desktop-owned deferred installation.
+ * @param installId - Stable id returned by the desktop bridge.
+ * @returns The current desktop-owned installation snapshot.
+ */
 export async function getDeferredPluginInstall(
   installId: PluginInstallId,
 ): Promise<DesktopBundledPluginInstallSnapshot> {
@@ -77,19 +88,25 @@ export async function getDeferredPluginInstall(
   return bridge.getInstall(String(installId)) as Promise<DesktopBundledPluginInstallSnapshot>
 }
 
-/** Reveal the existing desktop Harness log without exposing a filesystem primitive. */
+/**
+ * Reveal the existing desktop Harness log without exposing a filesystem primitive.
+ * @returns Whether the trusted desktop shell bridge handled the request.
+ */
 export async function openDesktopHarnessLog(): Promise<boolean> {
-  const openLog = readDesktopShellBridge()?.openLog
-  if (openLog === undefined) return false
-  await openLog()
+  const bridge = readDesktopShellBridge()
+  if (bridge?.openLog === undefined) return false
+  await bridge.openLog()
   return true
 }
 
-/** Ask the trusted desktop host to relaunch the application. */
+/**
+ * Ask the trusted desktop host to relaunch the application.
+ * @returns Whether the trusted desktop shell bridge handled the request.
+ */
 export async function restartDesktopApplication(): Promise<boolean> {
-  const restart = readDesktopShellBridge()?.restart
-  if (restart === undefined) return false
-  await restart()
+  const bridge = readDesktopShellBridge()
+  if (bridge?.restart === undefined) return false
+  await bridge.restart()
   return true
 }
 

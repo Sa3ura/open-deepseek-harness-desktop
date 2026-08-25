@@ -12,6 +12,7 @@ import {
   composeEntries,
   healProfilesModuleFallback,
   initProfile,
+  loadDiagnosticProfile,
   loadProfile,
   PROFILE_PATCH_FILENAME,
   PROFILE_TEMPLATES,
@@ -119,6 +120,20 @@ describe('resolveBundleDir', () => {
 })
 
 describe('loadProfile', () => {
+  it('loads only installation-owned templates when the user Profile is corrupt', () => {
+    const templates = PROFILE_TEMPLATES.web ?? []
+    const anchor = stageInstallation(Object.fromEntries(templates.map(name => [name, { patch: '[]\n' }])))
+    const home = tmp()
+    const dir = resolveProfileDir('web', home)
+    initProfile(dir, [...templates, '@fixture/untrusted'])
+    writeFileSync(join(dir, 'package.json'), '{ invalid json')
+    writeFileSync(join(dir, PROFILE_PATCH_FILENAME), '- !!js/function broken\n')
+
+    const profile = loadDiagnosticProfile('t', 'web', anchor, home)
+    expect(profile.layers.map(layer => layer.packageName)).toEqual(templates)
+    expect(profile.patches).toEqual([])
+  })
+
   it('resolves each dsh.profile.bundles entry to its patch layer in order, plus the user layer', () => {
     const anchor = stageInstallation({
       'bundle-a': { patch: '- insert:\n    - id: a\n      name: pkg-a\n' },

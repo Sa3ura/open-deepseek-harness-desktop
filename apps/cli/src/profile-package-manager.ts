@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { extname, isAbsolute } from 'node:path'
-import { allowProfilePackageBuild, type ProfilePackageManagerResult } from '@deepseek-ai/dsh-app-boot'
+import type { ProfilePackageManagerResult } from '@deepseek-ai/dsh-app-boot'
 
 const NAME = 'dsh'
 
@@ -51,18 +51,50 @@ export function extractGitPrepareBuildKey(diagnostic: string): string | undefine
 }
 
 /**
+ * Read one unambiguous registry package from pnpm's strict ignored-builds error.
+ * Multiple blocked packages deliberately return undefined so the UI cannot
+ * turn one confirmation into a broader build-script grant.
+ * @param diagnostic - Combined pnpm reporter output.
+ * @returns One exact registry package name, or undefined when the failure is ambiguous.
+ */
+export function extractIgnoredBuildKey(diagnostic: string): string | undefined {
+  if (!diagnostic.includes('ERR_PNPM_IGNORED_BUILDS')) return undefined
+  const candidates = [diagnostic, diagnostic.replaceAll('\\n', '\n').replaceAll('\\"', '"')]
+  for (const line of diagnostic.split(/\r?\n/u)) {
+    try {
+      diagnosticStrings(JSON.parse(line) as unknown, candidates)
+    } catch {
+      // A reporter may mix ordinary text with NDJSON.
+    }
+  }
+  for (const candidate of candidates) {
+    const listed = /Ignored build scripts:\s*([^\r\n"}]+)/u.exec(candidate)?.[1]
+    if (listed === undefined) continue
+    const names = listed.split(',').map(value => value.trim()).filter(Boolean)
+    if (names.length !== 1) return undefined
+    const [name] = names
+    if (name === undefined) continue
+    if (/^(?:@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*|[a-z0-9][a-z0-9._~-]*)$/iu.test(name)) {
+      return name
+    }
+  }
+  return undefined
+}
+
+/**
  * Recover pnpm's human-readable Git prepare diagnostic when an NDJSON reporter
  * has JSON-escaped it. Third-party callers can then recognize the existing
  * pnpm approval flow without needing to parse a reporter-specific envelope.
  */
 export function normalizePnpmDiagnostic(diagnostic: string): string {
-  if (!diagnostic.includes('ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED')) return diagnostic
+  if (!diagnostic.includes('ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED')
+    && !diagnostic.includes('ERR_PNPM_IGNORED_BUILDS')) return diagnostic
   const readable = diagnostic.replaceAll('\\"', '"')
   const match = /The git-hosted package "([^"\r\n]+)" needs to execute build scripts/.exec(readable)
   const canonical = match === null
     ? undefined
     : `The git-hosted package "${match[1]}" needs to execute build scripts but is not in the "allowBuilds" allowlist.`
-  const packageBuildKey = extractGitPrepareBuildKey(diagnostic)
+  const packageBuildKey = extractGitPrepareBuildKey(diagnostic) ?? extractIgnoredBuildKey(diagnostic)
   const retained = packageBuildKey === undefined
     ? undefined
     : `${NAME}: pnpm allowBuilds key ${JSON.stringify(packageBuildKey)}`
@@ -143,39 +175,5 @@ export function runProfilePackageManager(
   return {
     exitCode: result.status ?? 1,
     ...(diagnostic === '' ? {} : { diagnostic: diagnostic.slice(-64 * 1024) }),
-  }
-}
-
-/**
- * Run an explicit profile operation and retry one Git add after recording pnpm's exact build key.
- * @param profileDir - Profile working directory and owner of pnpm-workspace.yaml.
- * @param args - Exact pnpm arguments.
- * @returns The first result, or the single retry result with a concise approval diagnostic.
- */
-export function runProfilePackageManagerWithGitBuildApproval(
-  profileDir: string,
-  args: readonly string[],
-): ProfilePackageManagerResult {
-  const first = runProfilePackageManager(profileDir, args)
-  if (first.exitCode === 0 || args[0] !== 'add' || first.diagnostic === undefined) return first
-  const packageBuildKey = extractGitPrepareBuildKey(first.diagnostic)
-  if (packageBuildKey === undefined) return first
-  let allowance
-  try {
-    allowance = allowProfilePackageBuild(profileDir, packageBuildKey)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    return { exitCode: first.exitCode, diagnostic: `${first.diagnostic}\n${NAME}: ${message}` }
-  }
-  if (allowance !== 'added') return first
-  const retry = runProfilePackageManager(profileDir, args)
-  const approval = `${NAME}: allowed reviewed Git build ${JSON.stringify(packageBuildKey)} in ${profileDir} and retried installation`
-  return {
-    exitCode: retry.exitCode,
-    diagnostic: [
-      approval,
-      ...(retry.exitCode === 0 ? [] : [first.diagnostic]),
-      ...(retry.diagnostic === undefined ? [] : [retry.diagnostic]),
-    ].join('\n'),
   }
 }

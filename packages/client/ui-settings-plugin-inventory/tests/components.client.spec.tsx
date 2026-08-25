@@ -25,7 +25,11 @@ import type {
 } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import { en, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 type Snapshot = Awaited<ReturnType<PluginInventorySettingsTabInjected['list']>>
 const t = ((key: PluginInventoryLocaleKey): string => en[key]) as PluginInventorySettingsTabProps['t']
@@ -50,7 +54,7 @@ const SNAPSHOT = {
     { entryId: 'disabled-entry', moduleName: '@deepseek-ai/dsh-host-directory-picker-native', enabled: false, fiberPhase: null },
     { entryId: 'dsh-market', moduleName: 'dshmarket', enabled: true, fiberPhase: 'active' },
   ],
-  dependencyHealth: { lastRepair: null, quarantined: [] },
+  dependencyHealth: { lastRepair: null, issues: [], quarantined: [], safeMode: null },
 } as unknown as Snapshot
 
 describe('PluginInventorySettingsTab', () => {
@@ -140,7 +144,10 @@ describe('PluginInventorySettingsTab', () => {
   it('shows a generic failure and retries into the empty state', async () => {
     const list = vi.fn<PluginInventorySettingsTabInjected['list']>()
       .mockRejectedValueOnce(new Error('private transport detail'))
-      .mockResolvedValueOnce({ entries: [], dependencyHealth: { lastRepair: null, quarantined: [] } })
+      .mockResolvedValueOnce({
+        entries: [],
+        dependencyHealth: { lastRepair: null, issues: [], quarantined: [], safeMode: null },
+      })
     render(<PluginInventorySettingsTab {...props(list)} />)
 
     expect((await screen.findByRole('alert')).textContent).toBe(en.error)
@@ -176,7 +183,7 @@ describe('ExternalToolsSection', () => {
       enabled: true,
       fiberPhase: 'active',
     }],
-    dependencyHealth: { lastRepair: null, quarantined: [] },
+    dependencyHealth: { lastRepair: null, issues: [], quarantined: [], safeMode: null },
   } as unknown as Snapshot
 
   it('shows supported connections and honest placeholders for providers without an official bundle', async () => {
@@ -271,7 +278,10 @@ describe('ExternalToolsSection', () => {
 })
 
 describe('PluginDiagnosticsSection', () => {
-  const diagnosticsSnapshot = { entries: [], dependencyHealth: { lastRepair: null, quarantined: [] } } as unknown as Snapshot
+  const diagnosticsSnapshot = {
+    entries: [],
+    dependencyHealth: { lastRepair: null, issues: [], quarantined: [], safeMode: null },
+  } as unknown as Snapshot
   const doctorId = 'doctor-1' as PluginDoctorId
   const healthy: PluginDoctorSnapshot = {
     doctorId,
@@ -281,11 +291,13 @@ describe('PluginDiagnosticsSection', () => {
     exitCode: 0,
     report: {
       schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
       profile: 'web',
       status: 'healthy',
       conflicts: [],
       orphanedBundles: [],
       quarantined: [],
+      issues: [],
     },
   }
 
@@ -317,6 +329,8 @@ describe('PluginDiagnosticsSection', () => {
       entries: [],
       dependencyHealth: {
         lastRepair: { status: 'quarantined', conflicts: [] },
+        issues: [],
+        safeMode: null,
         quarantined: [{
           quarantineId: 'fixture-quarantine',
           profile: 'web',
@@ -403,7 +417,9 @@ describe('PluginDiagnosticsSection', () => {
       entries: [],
       dependencyHealth: {
         lastRepair: { status: 'quarantined', conflicts: [] },
+        issues: [],
         quarantined: [],
+        safeMode: null,
       },
     } as unknown as Snapshot
     render(<PluginDiagnosticsSection {...({
@@ -502,6 +518,8 @@ describe('PluginDiagnosticsSection', () => {
       entries: [],
       dependencyHealth: {
         lastRepair: null,
+        issues: [],
+        safeMode: null,
         quarantined: [{
           quarantineId: 'quarantine-1',
           profile: 'web',
@@ -549,6 +567,39 @@ describe('PluginDiagnosticsSection', () => {
     expect(await screen.findByText(en['diagnostics.runtimeIssues'])).toBeTruthy()
     expect(screen.getByText('@fixture/failed-name')).toBeTruthy()
     expect(screen.getByText(en['diagnostics.runtimeDescription'])).toBeTruthy()
+  })
+
+  it('downloads the structured redacted diagnostic export on demand', async () => {
+    const createObjectURL = vi.fn(() => 'blob:dsh-diagnostics')
+    const revokeObjectURL = vi.fn()
+    const OriginalURL = URL
+    class DiagnosticURL extends OriginalURL {
+      static override createObjectURL = createObjectURL
+      static override revokeObjectURL = revokeObjectURL
+    }
+    vi.stubGlobal('URL', DiagnosticURL)
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const exportDiagnostics = vi.fn(async () => '{"schema":"dsh/profile-diagnostic-export/v1"}\n')
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => diagnosticsSnapshot,
+      startDependencyDoctor: vi.fn(),
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(),
+      startUninstall: vi.fn(),
+      startQuarantineRetry: vi.fn(),
+      approveQuarantineBuild: vi.fn(),
+      approveDiagnosticBuild: vi.fn(),
+      exportDiagnostics,
+      uninstallQuarantine: vi.fn(),
+      dismissDependencyHealth: vi.fn(),
+    } as PluginDiagnosticsSectionProps)} />)
+
+    fireEvent.click(screen.getByRole('button', { name: en['diagnostics.export'] }))
+    await waitFor(() => { expect(exportDiagnostics).toHaveBeenCalledOnce() })
+    expect(createObjectURL).toHaveBeenCalledOnce()
+    expect(click).toHaveBeenCalledOnce()
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:dsh-diagnostics')
   })
 })
 

@@ -404,6 +404,50 @@ export function loadProfile(
 }
 
 /**
+ * Load only installation-owned template bundles for a diagnostic startup.
+ * The profile manifest and user patch are deliberately not parsed, so either
+ * file may be the failure that this built-in composition needs to report.
+ * @param binName - Diagnostic prefix on thrown errors.
+ * @param name - Shipped profile name whose built-in UI should start.
+ * @param installAnchor - Absolute package.json of the running Harness installation.
+ * @param home - Harness home; defaults to {@link resolveDshHome}.
+ * @returns A Profile containing only installation-owned template layers.
+ */
+export function loadDiagnosticProfile(
+  binName: string,
+  name: string,
+  installAnchor: string,
+  home: string = resolveDshHome(),
+): Profile {
+  const bundles = PROFILE_TEMPLATES[name]
+  if (bundles === undefined) {
+    throw new Error(`${binName}: profile ${JSON.stringify(name)} has no installation-owned diagnostic composition`)
+  }
+  const dir = resolveProfileDir(name, home)
+  mkdirSync(dir, { recursive: true })
+  const layers = bundles.map((packageName): ProfileLayer => {
+    const packageDir = packageDirFromAnchor(installAnchor, packageName)
+    if (packageDir === undefined) {
+      throw new Error(`${binName}: diagnostic bundle ${JSON.stringify(packageName)} is unavailable from the dsh installation`)
+    }
+    const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
+    const declared = bundleManifest.dsh?.bundle?.patch
+    if (declared === undefined) {
+      throw new Error(`${binName}: diagnostic bundle ${JSON.stringify(packageName)} declares no dsh.bundle`)
+    }
+    const patchPath = join(packageDir, declared)
+    return { packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) }
+  })
+  return {
+    name,
+    dir,
+    layers,
+    patchPath: join(dir, PROFILE_PATCH_FILENAME),
+    patches: [],
+  }
+}
+
+/**
  * Compose patch layers into the effective entry list over an empty root —
  * the same single `applyEntryPatches` call the boot include makes, so flag
  * derivation and config dumps see exactly what mounts.

@@ -18,12 +18,26 @@ import { satisfies, validRange } from 'semver'
 import { isMap, parseDocument, YAMLMap } from 'yaml'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
+  DEFAULT_PROFILE_BUNDLES,
+  PROFILE_TEMPLATES,
   PROFILES_DIR,
   readProfileManifest,
   resolveProfileDir,
   writeProfileManifest,
   type ProfileManifest,
 } from './profile.ts'
+import {
+  classifyProfileDiagnostic,
+  clearProfileDiagnosticReport,
+  createProfileDiagnosticReport,
+  extractProfileBuildApprovalKey,
+  orphanedBundleDiagnostic,
+  profileDependencyConflictDiagnostic,
+  quarantinedPluginDiagnostic,
+  sanitizeProfileDiagnostic,
+  writeProfileDiagnosticReport,
+  type ProfileDiagnostic,
+} from './profile-diagnostics.ts'
 
 /** Version of durable quarantine records written under the Harness home. */
 export const PROFILE_QUARANTINE_SCHEMA = 1 as const
@@ -45,8 +59,6 @@ const QUARANTINE_DIRECTORY = 'quarantine'
 const QUARANTINE_FILENAME = 'profile-plugins.json'
 const PROFILE_HEALTH_DIRECTORY = 'profile-health'
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu
-const MINIMUM_RELEASE_AGE_ERROR = 'ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION'
-const MINIMUM_RELEASE_AGE_OVERRIDE = '--config.minimumReleaseAge=0'
 
 interface PackageManifest extends ProfileManifest {
   version?: string
@@ -86,7 +98,8 @@ export interface QuarantinedProfilePlugin {
   readonly installedVersion?: string
   readonly bundleIndex: number | null
   readonly quarantinedAt: string
-  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle'
+  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked'
+  readonly buildApprovalKey?: string
   readonly conflicts: readonly ProfileDependencyConflict[]
 }
 
@@ -98,12 +111,14 @@ interface ProfileQuarantineFile {
 /** Observable result of one dependency-health repair attempt. */
 export interface ProfileRepairReport {
   readonly schema: 'dsh/profile-dependency-repair/v1'
+  readonly diagnosticSchema?: 'dsh/profile-diagnostic/v2'
   readonly profile: string
   readonly status: 'healthy' | 'repaired' | 'quarantined' | 'failed'
   readonly conflicts: readonly ProfileDependencyConflict[]
   readonly orphanedBundles?: readonly OrphanedProfileBundle[]
   readonly quarantined: readonly QuarantinedProfilePlugin[]
   readonly diagnostic?: string
+  readonly issues?: readonly ProfileDiagnostic[]
 }
 
 function profileRepairReportPath(home: string, profile: string): string {
@@ -310,8 +325,9 @@ export function inspectProfileDependencies(options: ProfileDependencyOptions): P
 }
 
 /**
- * Find third-party Loader bundles that are still composed but cannot be managed or removed by pnpm.
- * Built-in `@deepseek-ai/*` layers intentionally come from the Host installation and are excluded.
+ * Find Loader bundles that are still composed but cannot be managed or removed by pnpm.
+ * Only the active profile template's installation-owned layers are excluded;
+ * separately installed official plugins remain dependency-managed like every other plugin.
  * @param options - profile, installation anchor, and optional Harness home.
  * @returns orphaned third-party bundles in Loader order.
  */
@@ -321,9 +337,10 @@ export function inspectOrphanedProfileBundles(options: ProfileDependencyOptions)
   const manifest = readProfileManifest(options.binName, profileDir)
   const dependencies = manifest.dependencies ?? {}
   const bundles = manifest.dsh?.profile?.bundles ?? []
+  const installationOwned = new Set(PROFILE_TEMPLATES[options.profile] ?? DEFAULT_PROFILE_BUNDLES)
   const issues: OrphanedProfileBundle[] = []
   for (const [bundleIndex, packageName] of bundles.entries()) {
-    if (packageName.startsWith('@deepseek-ai/') || dependencies[packageName] !== undefined) continue
+    if (installationOwned.has(packageName) || dependencies[packageName] !== undefined) continue
     const packageDir = packageDirFromAnchor(join(profileDir, 'package.json'), packageName)
     if (packageDir === undefined) {
       issues.push({ profile: options.profile, packageName, bundleIndex })
@@ -417,7 +434,7 @@ function pruneStaleLockfileImporter(profileDir: string): string[] {
     if (group === undefined) continue
     if (!isMap(group)) throw new Error(`dsh: ${lockfilePath} importer ${groupName} must be a YAML mapping`)
     for (const item of [...group.items]) {
-      const packageName = String(item.key)
+      const packageName = String((item as { readonly key: unknown }).key)
       if (declarations[packageName] !== undefined) continue
       group.delete(packageName)
       removed.push(packageName)
@@ -615,8 +632,9 @@ function report(
   diagnostic?: string,
   orphanedBundles: readonly OrphanedProfileBundle[] = [],
 ): ProfileRepairReport {
-  return {
+  const base: ProfileRepairReport = {
     schema: 'dsh/profile-dependency-repair/v1',
+    diagnosticSchema: 'dsh/profile-diagnostic/v2',
     profile,
     status,
     conflicts,
@@ -624,25 +642,66 @@ function report(
     quarantined,
     ...(diagnostic === undefined ? {} : { diagnostic }),
   }
+  return { ...base, issues: diagnosticsForRepair(base) }
+}
+
+function diagnosticsForRepair(value: ProfileRepairReport): ProfileDiagnostic[] {
+  const issues: ProfileDiagnostic[] = [
+    ...value.conflicts.map(conflict => profileDependencyConflictDiagnostic(
+      conflict.rootPackage,
+      conflict.dependencyChain,
+    )),
+    ...(value.orphanedBundles ?? []).map(bundle => orphanedBundleDiagnostic(bundle.packageName)),
+    ...value.quarantined.map(record => quarantinedPluginDiagnostic(record.packageName, record.reason)),
+  ]
+  if (value.diagnostic !== undefined) {
+    issues.push(classifyProfileDiagnostic({
+      source: 'profile',
+      phase: 'repair',
+      value: value.diagnostic,
+    }))
+  }
+  return deduplicateDiagnostics(issues)
 }
 
 function retainMaterialReport(home: string, value: ProfileRepairReport): ProfileRepairReport {
   if (value.status !== 'healthy') {
     atomicWrite(profileRepairReportPath(home, value.profile), `${JSON.stringify(value, undefined, 2)}\n`)
   }
+  if (value.status === 'healthy' || value.status === 'repaired') {
+    clearProfileDiagnosticReport(value.profile, home)
+  } else {
+    const issues = (value.issues ?? diagnosticsForRepair(value)).map(issue => ({
+      ...issue,
+      evidence: issue.evidence.map(evidence => sanitizeProfileDiagnostic(evidence, home)),
+    }))
+    writeProfileDiagnosticReport(createProfileDiagnosticReport(value.profile, issues), home)
+  }
   return value
 }
 
-function releaseAgeBlocked(result: ProfilePackageManagerResult): boolean {
-  const diagnostic = result.diagnostic ?? ''
-  return diagnostic.includes(MINIMUM_RELEASE_AGE_ERROR)
-    || diagnostic.toLowerCase().includes('minimum release age')
+function deduplicateDiagnostics(issues: readonly ProfileDiagnostic[]): ProfileDiagnostic[] {
+  const seen = new Set<string>()
+  return issues.filter((issue) => {
+    const key = `${issue.code}\0${issue.attribution?.rootPackage ?? ''}\0${issue.attribution?.entryId ?? ''}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
-function cleanupInstallArgs(blocked: ProfilePackageManagerResult): readonly string[] {
-  return releaseAgeBlocked(blocked)
-    ? ['install', MINIMUM_RELEASE_AGE_OVERRIDE]
-    : ['install']
+function markBuildScriptBlocked(
+  records: readonly QuarantinedProfilePlugin[],
+  result: ProfilePackageManagerResult,
+): QuarantinedProfilePlugin[] {
+  if (!result.diagnostic?.includes('ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED')
+    && !result.diagnostic?.includes('ERR_PNPM_IGNORED_BUILDS')) return [...records]
+  const buildApprovalKey = extractProfileBuildApprovalKey(result.diagnostic)
+  return records.map(record => ({
+    ...record,
+    reason: 'build-script-blocked',
+    ...(buildApprovalKey === undefined ? {} : { buildApprovalKey }),
+  }))
 }
 
 function recoverableQuarantines(
@@ -738,10 +797,7 @@ function recoverInterruptedQuarantine(
   )
   if (pending.length === 0) return undefined
   const retained = readLastProfileRepairReport(options.profile, home)
-  const cleanup = options.runPackageManager(cleanupInstallArgs({
-    exitCode: 1,
-    ...(retained?.diagnostic === undefined ? {} : { diagnostic: retained.diagnostic }),
-  }))
+  const cleanup = options.runPackageManager(['install'])
   if (cleanup.exitCode !== 0) {
     try {
       removeInterruptedQuarantineResidue(options, home, profileDir, pending)
@@ -817,7 +873,7 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
         diagnostics.join('\n'),
       ))
     }
-    return report(options.profile, 'healthy', [])
+    return retainMaterialReport(home, report(options.profile, 'healthy', []))
   }
 
   writeSharedHostOverrides(profileDir)
@@ -912,16 +968,42 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
     orphanedRoots,
   )
   writeProfileManifest(profileDir, withoutRoots(originalManifest, fallbackRoots))
-  const fallbackInstall = options.runPackageManager(cleanupInstallArgs(firstInstall))
+  const fallbackInstall = options.runPackageManager(['install'])
+  const fallbackRecordsWithReason = markBuildScriptBlocked(fallbackRecords, firstInstall)
   if (fallbackInstall.exitCode === 0
     && inspectProfileDependencies({ ...options, home }).length === 0
     && inspectOrphanedProfileBundles({ ...options, home }).length === 0
-    && retainedPluginDirectories(profileDir, fallbackRecords).length === 0) {
-    persistQuarantines(home, fallbackRecords)
+    && retainedPluginDirectories(profileDir, fallbackRecordsWithReason).length === 0) {
+    persistQuarantines(home, fallbackRecordsWithReason)
     return retainMaterialReport(
       home,
-      report(options.profile, 'quarantined', initial, fallbackRecords, firstInstall.diagnostic, initialOrphans),
+      report(options.profile, 'quarantined', initial, fallbackRecordsWithReason, firstInstall.diagnostic, initialOrphans),
     )
+  }
+  // The manifest already deactivated every implicated root. A blocked lifecycle
+  // script must not force the whole application to remain unavailable: remove
+  // only those inactive package directories, retain their ordinary quarantine
+  // records, and let the client explain/retry them through Diagnostics.
+  try {
+    removeInterruptedQuarantineResidue(options, home, profileDir, fallbackRecordsWithReason)
+    const remainingConflicts = inspectProfileDependencies({ ...options, home })
+    const remainingOrphans = inspectOrphanedProfileBundles({ ...options, home })
+    if (remainingConflicts.length === 0
+      && remainingOrphans.length === 0
+      && retainedPluginDirectories(profileDir, fallbackRecordsWithReason).length === 0) {
+      persistQuarantines(home, fallbackRecordsWithReason)
+      return retainMaterialReport(home, report(
+        options.profile,
+        'quarantined',
+        initial,
+        fallbackRecordsWithReason,
+        `pnpm cleanup failed; inactive plugin residue was removed directly\n${fallbackInstall.diagnostic ?? firstInstall.diagnostic ?? ''}`.trim(),
+        initialOrphans,
+      ))
+    }
+  } catch {
+    // Restore the original manifest below and retain the package-manager
+    // diagnostic when even the bounded inactive-root fallback is unsafe.
   }
   writeProfileManifest(profileDir, originalManifest)
   return retainMaterialReport(home, report(
@@ -1006,6 +1088,9 @@ export function retryQuarantinedProfilePlugin(
   }
   const requarantined = outcome.quarantined.some(item => item.packageName === record.packageName)
   if (!requarantined) clearQuarantinedProfilePlugin(quarantineId, home)
-  if (outcome.status === 'healthy') clearLastProfileRepairReport(options.profile, home)
+  if (outcome.status === 'healthy') {
+    clearLastProfileRepairReport(options.profile, home)
+    clearProfileDiagnosticReport(options.profile, home)
+  }
   return outcome
 }

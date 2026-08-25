@@ -34,6 +34,8 @@ switch (invocation.mode) {
       profile: invocation.profile,
       patchFiles: invocation.patches,
       args: invocation.args,
+      safeMode: process.env.DSH_PROFILE_SAFE_MODE === '1',
+      safeModeOnFailure: process.env.DSH_PROFILE_SAFE_MODE_ON_FAILURE === '1',
     })
     break
   }

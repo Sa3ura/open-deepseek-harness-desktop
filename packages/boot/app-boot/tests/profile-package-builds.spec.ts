@@ -43,12 +43,13 @@ describe('profile package build approvals', () => {
   it('adds a reviewed registry package without overriding an explicit denial', () => {
     const profile = mkdtempSync(join(tmpdir(), 'dsh-profile-registry-builds-'))
     const workspace = join(profile, 'pnpm-workspace.yaml')
-    writeFileSync(workspace, 'packages:\n  - .\n\n# keep user settings\nnodeLinker: hoisted\n')
+    writeFileSync(workspace, 'packages:\n  - .\n\n# keep user settings\nnodeLinker: hoisted\nallowBuilds:\n  sharp: true\n')
     try {
       expect(allowProfileRegistryPackageBuild(profile, 'node-pty')).toBe('added')
       expect(allowProfileRegistryPackageBuild(profile, 'node-pty')).toBe('already-allowed')
       const content = readFileSync(workspace, 'utf8')
       expect(content).toContain('# keep user settings')
+      expect(content).toContain('sharp: true')
       expect(content).toContain('node-pty: true')
 
       writeFileSync(workspace, 'packages:\n  - .\nallowBuilds:\n  node-pty: false\n')

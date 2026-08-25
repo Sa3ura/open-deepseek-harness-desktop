@@ -10,6 +10,7 @@ const RESTART_BASE_DELAY_MS = 500
 const RESTART_MAX_DELAY_MS = 15_000
 const PRE_READY_EXIT_LIMIT = 3
 const STOP_TIMEOUT_MS = 5_000
+const SAFE_MODE_ELIGIBLE_MARKER = 'dsh: profile safe mode eligible '
 
 /** Observable lifecycle states for the desktop chrome. */
 export type HarnessState = 'starting' | 'ready' | 'restarting' | 'failed' | 'stopped'
@@ -38,6 +39,7 @@ export class HarnessSupervisor {
   #restartCount = 0
   #preReadyExitCount = 0
   #failed = false
+  #safeMode = false
   #stopping = false
 
   /** @param options - Process launch, log destination, and lifecycle observers. */
@@ -53,14 +55,20 @@ export class HarnessSupervisor {
     this.#options.onState(this.#restartCount === 0 ? 'starting' : 'restarting')
 
     const child = spawn(this.#options.launch.command, this.#options.launch.args, {
-      env: { ...this.#options.environment, ...this.#options.launch.environment },
+      env: {
+        ...this.#options.environment,
+        ...this.#options.launch.environment,
+        ...(this.#safeMode ? { DSH_PROFILE_SAFE_MODE: '1' } : {}),
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     })
     this.#child = child
     let ready = false
     let spawnError: Error | undefined
+    let safeModeEligible = false
     const stdoutLines = new LineBuffer()
+    const stderrLines = new LineBuffer()
 
     child.stdout.on('data', (chunk: Buffer) => {
       this.#log?.write(chunk)
@@ -74,13 +82,20 @@ export class HarnessSupervisor {
         this.#options.onReady(url)
       }
     })
-    child.stderr.on('data', (chunk: Buffer) => this.#log?.write(chunk))
+    child.stderr.on('data', (chunk: Buffer) => {
+      this.#log?.write(chunk)
+      for (const line of stderrLines.push(chunk.toString('utf8'))) {
+        if (line.includes(SAFE_MODE_ELIGIBLE_MARKER)) safeModeEligible = true
+      }
+    })
     child.on('error', (error) => {
       spawnError = error
       this.#log?.write(`[desktop] failed to start Harness: ${error.message}\n`)
     })
     child.on('close', (code, signal) => {
       stdoutLines.flush()
+      const stderrTail = stderrLines.flush()
+      if (stderrTail?.includes(SAFE_MODE_ELIGIBLE_MARKER) === true) safeModeEligible = true
       this.#log?.write(`[desktop] Harness exited code=${String(code)} signal=${String(signal)}\n`)
       if (this.#child === child) this.#child = undefined
       if (this.#stopping) {
@@ -88,6 +103,16 @@ export class HarnessSupervisor {
         return
       }
       if (!ready) {
+        if (safeModeEligible && !this.#safeMode) {
+          this.#safeMode = true
+          this.#log?.write('[desktop] Restarting Harness once with the installation-owned diagnostic profile.\n')
+          this.#options.onState('restarting')
+          this.#restartTimer = setTimeout(() => {
+            this.#restartTimer = undefined
+            this.start()
+          }, 0)
+          return
+        }
         this.#preReadyExitCount += 1
         if (this.#preReadyExitCount >= PRE_READY_EXIT_LIMIT) {
           this.#failed = true
@@ -116,6 +141,7 @@ export class HarnessSupervisor {
     this.#failed = false
     this.#restartCount = 0
     this.#preReadyExitCount = 0
+    this.#safeMode = false
     this.start()
     return true
   }

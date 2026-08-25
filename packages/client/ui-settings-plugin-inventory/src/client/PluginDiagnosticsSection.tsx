@@ -3,6 +3,8 @@ import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/clien
 import type {
   PluginDoctorRequest,
   PluginDoctorSnapshot,
+  PluginBuildApprovalRequest,
+  PluginDiagnosticBuildApprovalRequest,
   PluginInstallSnapshot,
   PluginQuarantineRequest,
   PluginRepairNoticeRequest,
@@ -36,6 +38,12 @@ export interface PluginDiagnosticsSectionInjected {
   startUninstall: (request: PluginUninstallRequest) => Promise<PluginInstallSnapshot>
   /** Retry one quarantined plugin from its retained package specifier. */
   startQuarantineRetry: (request: PluginQuarantineRequest) => Promise<PluginInstallSnapshot>
+  /** Approve one exact retained build key and retry its quarantined plugin. */
+  approveQuarantineBuild: (request: PluginBuildApprovalRequest) => Promise<PluginInstallSnapshot>
+  /** Approve one exact build key retained by a failed package operation. */
+  approveDiagnosticBuild: (request: PluginDiagnosticBuildApprovalRequest) => Promise<PluginInstallSnapshot>
+  /** Export the current redacted diagnostics bundle. */
+  exportDiagnostics: () => Promise<string>
   /** Physically remove one inactive quarantined plugin and its record. */
   uninstallQuarantine: (request: PluginQuarantineRequest) => Promise<boolean>
   /** Dismiss the retained startup repair notice. */
@@ -83,7 +91,34 @@ const QUARANTINE_REASON_KEYS = {
   'incompatible-host-dependency': 'health.quarantine.reason.incompatible',
   'convergence-failed': 'health.quarantine.reason.convergenceFailed',
   'orphaned-bundle': 'health.quarantine.reason.orphanedBundle',
+  'build-script-blocked': 'health.quarantine.reason.buildScriptBlocked',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
+
+type DiagnosticIssue = PluginInventorySnapshot['dependencyHealth']['issues'][number]
+
+const DIAGNOSTIC_ACTION_KEYS = {
+  retry: 'diagnostics.action.retry',
+  repair: 'diagnostics.action.repair',
+  'approve-build': 'diagnostics.action.approveBuild',
+  isolate: 'diagnostics.action.isolate',
+  restore: 'diagnostics.action.restore',
+  'open-config': 'diagnostics.action.openConfig',
+  export: 'diagnostics.action.export',
+} satisfies Record<DiagnosticIssue['actions'][number], PluginInventoryLocaleKey>
+
+function diagnosticIssueCopy(code: DiagnosticIssue['code']): PluginInventoryLocaleKey {
+  if (code === 'pnpm.build-script-blocked') return 'diagnostics.issue.buildScript'
+  if (code === 'pnpm.minimum-release-age' || code === 'pnpm.supply-chain' || code === 'pnpm.integrity') {
+    return 'diagnostics.issue.supplyChain'
+  }
+  if (code === 'pnpm.network' || code === 'pnpm.registry-auth') return 'diagnostics.issue.network'
+  if (code.startsWith('pnpm.')) return 'diagnostics.issue.packageManager'
+  if (code.startsWith('loader.') || code === 'profile.module-resolution') return 'diagnostics.issue.loader'
+  if (code.startsWith('config.') || code === 'profile.patch-invalid') return 'diagnostics.issue.config'
+  if (code.startsWith('runtime.')) return 'diagnostics.issue.runtime'
+  if (code.startsWith('profile.')) return 'diagnostics.issue.profile'
+  return 'diagnostics.issue.unknown'
+}
 
 type UninstallTarget =
   | { readonly kind: 'active'; readonly packageName: string }
@@ -93,6 +128,13 @@ type QuarantineRemoval = {
   readonly quarantineId: string
   readonly phase: 'running' | 'succeeded' | 'failed'
 }
+
+type BuildApprovalTarget =
+  | {
+    readonly kind: 'quarantine'
+    readonly record: PluginInventorySnapshot['dependencyHealth']['quarantined'][number]
+  }
+  | { readonly kind: 'diagnostic'; readonly issue: DiagnosticIssue }
 
 function uninstallSucceeded(snapshot: PluginInstallSnapshot | undefined): boolean {
   return snapshot !== undefined && snapshot.phase !== 'running' && snapshot.phase !== 'failed'
@@ -107,6 +149,9 @@ export function PluginDiagnosticsSection({
   getInstall,
   startUninstall,
   startQuarantineRetry,
+  approveQuarantineBuild,
+  approveDiagnosticBuild,
+  exportDiagnostics,
   uninstallQuarantine,
   dismissDependencyHealth,
   t,
@@ -127,6 +172,11 @@ export function PluginDiagnosticsSection({
   } | null>(null)
   const [quarantineRemoval, setQuarantineRemoval] = useState<QuarantineRemoval | null>(null)
   const [uninstallTarget, setUninstallTarget] = useState<UninstallTarget | null>(null)
+  const [buildApprovalTarget, setBuildApprovalTarget] = useState<BuildApprovalTarget | null>(null)
+  const [diagnosticBuildInstall, setDiagnosticBuildInstall] = useState<{
+    diagnosticId: string
+    snapshot: PluginInstallSnapshot
+  } | null>(null)
   const [uninstallAcknowledged, setUninstallAcknowledged] = useState(false)
 
   useEffect(() => {
@@ -148,7 +198,7 @@ export function PluginDiagnosticsSection({
           setDoctor(snapshot)
           if (snapshot.phase !== 'running') setRevision(value => value + 1)
         },
-        (error) => { if (current) setActionError(errorMessage(error)) },
+        (error: unknown) => { if (current) setActionError(errorMessage(error)) },
       )
     }, 500)
     return () => {
@@ -167,7 +217,7 @@ export function PluginDiagnosticsSection({
           setQuarantineInstall(value => value === null ? null : { ...value, snapshot })
           if (snapshot.phase !== 'running') setRevision(value => value + 1)
         },
-        (error) => { if (current) setActionError(errorMessage(error)) },
+        (error: unknown) => { if (current) setActionError(errorMessage(error)) },
       )
     }, 500)
     return () => {
@@ -175,6 +225,25 @@ export function PluginDiagnosticsSection({
       window.clearInterval(timer)
     }
   }, [getInstall, quarantineInstall])
+
+  useEffect(() => {
+    if (diagnosticBuildInstall?.snapshot.phase !== 'running') return
+    let current = true
+    const timer = window.setInterval(() => {
+      void getInstall(diagnosticBuildInstall.snapshot.installId).then(
+        (snapshot) => {
+          if (!current) return
+          setDiagnosticBuildInstall(value => value === null ? null : { ...value, snapshot })
+          if (snapshot.phase !== 'running') setRevision(value => value + 1)
+        },
+        (error: unknown) => { if (current) setActionError(errorMessage(error)) },
+      )
+    }, 500)
+    return () => {
+      current = false
+      window.clearInterval(timer)
+    }
+  }, [diagnosticBuildInstall, getInstall])
 
   useEffect(() => {
     if (activeUninstall?.snapshot.phase !== 'running') return
@@ -188,7 +257,7 @@ export function PluginDiagnosticsSection({
             setRevision(value => value + 1)
           }
         },
-        (error) => { if (current) setActionError(errorMessage(error)) },
+        (error: unknown) => { if (current) setActionError(errorMessage(error)) },
       )
     }, 500)
     return () => {
@@ -201,7 +270,7 @@ export function PluginDiagnosticsSection({
     setActionError(null)
     void startDependencyDoctor({ profile: 'web', repair }).then(
       setDoctor,
-      (error) => { setActionError(errorMessage(error)) },
+      (error: unknown) => { setActionError(errorMessage(error)) },
     )
   }
   const confirmDiagnosticFixture = (): void => {
@@ -215,7 +284,7 @@ export function PluginDiagnosticsSection({
         setDoctor(null)
         setRevision(value => value + 1)
       },
-      (error) => {
+      (error: unknown) => {
         setDiagnosticFixtureInstalling(false)
         setActionError(errorMessage(error))
       },
@@ -235,7 +304,7 @@ export function PluginDiagnosticsSection({
             setRevision(value => value + 1)
           }
         },
-        (error) => { setActionError(errorMessage(error)) },
+        (error: unknown) => { setActionError(errorMessage(error)) },
       )
       return
     }
@@ -250,33 +319,63 @@ export function PluginDiagnosticsSection({
         setQuarantineRemoval({ quarantineId: target.quarantineId, phase: 'succeeded' })
         setRevision(value => value + 1)
       },
-      (error) => {
+      (error: unknown) => {
         setQuarantineRemoval({ quarantineId: target.quarantineId, phase: 'failed' })
         setActionError(errorMessage(error))
       },
     )
   }
+  const confirmBuildApproval = (): void => {
+    if (buildApprovalTarget === null) return
+    const target = buildApprovalTarget
+    setBuildApprovalTarget(null)
+    setActionError(null)
+    if (target.kind === 'quarantine') {
+      void approveQuarantineBuild({ quarantineId: target.record.quarantineId }).then(
+        (snapshot) => { setQuarantineInstall({ quarantineId: target.record.quarantineId, snapshot }) },
+        (error: unknown) => { setActionError(errorMessage(error)) },
+      )
+      return
+    }
+    void approveDiagnosticBuild({ diagnosticId: target.issue.diagnosticId }).then(
+      (snapshot) => { setDiagnosticBuildInstall({ diagnosticId: target.issue.diagnosticId, snapshot }) },
+      (error: unknown) => { setActionError(errorMessage(error)) },
+    )
+  }
+  const downloadDiagnostics = (): void => {
+    setActionError(null)
+    void exportDiagnostics().then(
+      (content) => {
+        const url = URL.createObjectURL(new Blob([content], { type: 'application/json' }))
+        const link = document.createElement('a')
+        link.href = url
+        link.download = `dsh-profile-diagnostics-${new Date().toISOString().replaceAll(':', '-')}.json`
+        link.click()
+        URL.revokeObjectURL(url)
+      },
+      (error: unknown) => { setActionError(errorMessage(error)) },
+    )
+  }
   const report = doctor?.report
   const retained = inventory.status === 'ready' ? inventory.snapshot.dependencyHealth.lastRepair : null
   const quarantined = inventory.status === 'ready' ? inventory.snapshot.dependencyHealth.quarantined : []
+  const retainedIssues = inventory.status === 'ready' ? inventory.snapshot.dependencyHealth.issues : []
+  const safeMode = inventory.status === 'ready' ? inventory.snapshot.dependencyHealth.safeMode ?? null : null
+  const currentIssues = report?.issues ?? retainedIssues
   const failedEntries = inventory.status === 'ready'
     ? inventory.snapshot.entries.filter(entry => entry.enabled && entry.fiberPhase === 'failed')
     : []
-  const retainedConflicts = retained?.conflicts ?? []
-  const quarantinedConflicts = quarantined.flatMap(record => record.conflicts)
-  const visibleConflicts = report !== undefined && report.conflicts.length > 0
-    ? report.conflicts
-    : retainedConflicts.length > 0 ? retainedConflicts : quarantinedConflicts
-  const retainedOrphanCount = quarantined.filter(record => record.reason === 'orphaned-bundle').length
-  const visibleOrphanCount = report !== undefined && report.orphanedBundles.length > 0
-    ? report.orphanedBundles.length
-    : retainedOrphanCount
-  const issueCount = new Set([
-    ...(report?.conflicts ?? []).map(conflict => `plugin:${conflict.rootPackage}`),
-    ...(report?.orphanedBundles ?? []).map(bundle => `plugin:${bundle.packageName}`),
-    ...quarantined.map(record => `plugin:${record.packageName}`),
-    ...failedEntries.map(entry => `runtime:${entry.entryId}`),
-  ]).size
+  const quarantinedWithoutIssue = quarantined.filter(record => !currentIssues.some(issue => (
+    issue.attribution?.rootPackage === record.packageName
+  )))
+  const dependencyIssueCount = currentIssues.filter(issue => issue.code === 'profile.host-dependency-conflict').length
+    + quarantinedWithoutIssue.reduce((count, record) => count + record.conflicts.length, 0)
+  const loadIssueCount = currentIssues.filter(issue => (
+    issue.source === 'loader' || issue.source === 'cordis-runtime'
+  )).length
+    + failedEntries.length
+  const configIssueCount = currentIssues.filter(issue => issue.source === 'config' || issue.code === 'profile.patch-invalid').length
+  const issueCount = currentIssues.length + failedEntries.length + quarantinedWithoutIssue.length
   const effectiveDoctorPhase = doctor?.phase ?? retained?.status ?? (quarantined.length > 0 ? 'quarantined' : 'idle')
   const statusKey = doctor?.phase === 'healthy' && failedEntries.length > 0
     ? 'diagnostics.runtimeIssues'
@@ -294,6 +393,9 @@ export function PluginDiagnosticsSection({
           <p>{t('diagnostics.description')}</p>
         </div>
         <div className={css.actions}>
+          <Button variant="outline" onClick={downloadDiagnostics}>
+            {t('diagnostics.export')}
+          </Button>
           {installDiagnosticFixture !== undefined ? (
             <Tooltip
               label={t('diagnostics.fixture.description')}
@@ -328,9 +430,9 @@ export function PluginDiagnosticsSection({
         </div>
         <dl>
           <div><dt>{t('diagnostics.metric.issues')}</dt><dd>{issueCount}</dd></div>
-          <div><dt>{t('diagnostics.metric.conflicts')}</dt><dd>{visibleConflicts.length}</dd></div>
-          <div><dt>{t('diagnostics.metric.orphans')}</dt><dd>{visibleOrphanCount}</dd></div>
-          <div><dt>{t('diagnostics.metric.runtime')}</dt><dd>{failedEntries.length}</dd></div>
+          <div><dt>{t('diagnostics.metric.conflicts')}</dt><dd>{dependencyIssueCount}</dd></div>
+          <div><dt>{t('diagnostics.metric.load')}</dt><dd>{loadIssueCount}</dd></div>
+          <div><dt>{t('diagnostics.metric.config')}</dt><dd>{configIssueCount}</dd></div>
           <div><dt>{t('diagnostics.metric.quarantine')}</dt><dd>{quarantined.length}</dd></div>
         </dl>
         {quarantined.length > 0 ? (
@@ -356,6 +458,59 @@ export function PluginDiagnosticsSection({
           </div>
         ) : null}
       </div>
+
+      {safeMode !== null ? (
+        <article className={css.safeModeNotice} role="status">
+          <IconWarningOutline16 size={16} />
+          <div>
+            <strong>{t('diagnostics.safeMode.title')}</strong>
+            <p>{t('diagnostics.safeMode.description')}</p>
+            {safeMode.skippedBundles.length > 0 ? <code>{safeMode.skippedBundles.join(', ')}</code> : null}
+          </div>
+        </article>
+      ) : null}
+
+      {currentIssues.length > 0 ? (
+        <section className={css.findings} aria-labelledby="profile-current-diagnostics">
+          <h3 id="profile-current-diagnostics">{t('diagnostics.currentIssues')}</h3>
+          {currentIssues.map(issue => (
+            <article className={css.finding} key={issue.diagnosticId} data-diagnostic-code={issue.code}>
+              <div>
+                <strong>{t(diagnosticIssueCopy(issue.code))}</strong>
+                <span>{issue.nativeCode ?? issue.code}</span>
+              </div>
+              {issue.attribution?.rootPackage !== undefined ? <code>{issue.attribution.rootPackage}</code> : null}
+              {issue.attribution?.dependencyChain !== undefined ? (
+                <code>{issue.attribution.dependencyChain.join(' → ')}</code>
+              ) : null}
+              {issue.attribution?.moduleName !== undefined ? <code>{issue.attribution.moduleName}</code> : null}
+              {issue.attribution?.entryId !== undefined ? <code>{issue.attribution.entryId}</code> : null}
+              <p>{t('diagnostics.issue.phase')}: {issue.phase} · {t('diagnostics.issue.actions')}: {issue.actions.map(action => t(DIAGNOSTIC_ACTION_KEYS[action])).join(', ')}</p>
+              {issue.evidence.length > 0 ? (
+                <details className={css.evidence}>
+                  <summary>{t('diagnostics.issue.evidence')}</summary>
+                  {issue.evidence.map((evidence, index) => <code key={`${issue.diagnosticId}:${index}`}>{evidence}</code>)}
+                </details>
+              ) : null}
+              {issue.code === 'pnpm.build-script-blocked' && issue.buildApprovalKey !== undefined ? (
+                <div className={css.actions}>
+                  <Button
+                    variant="primary"
+                    disabled={diagnosticBuildInstall?.diagnosticId === issue.diagnosticId
+                      && diagnosticBuildInstall.snapshot.phase === 'running'}
+                    onClick={() => { setBuildApprovalTarget({ kind: 'diagnostic', issue }) }}
+                  >
+                    {diagnosticBuildInstall?.diagnosticId === issue.diagnosticId
+                      && diagnosticBuildInstall.snapshot.phase === 'running'
+                      ? t('health.retry.running')
+                      : t('health.approveBuild')}
+                  </Button>
+                </div>
+              ) : null}
+            </article>
+          ))}
+        </section>
+      ) : null}
 
       {inventory.status === 'loading' ? <p className={css.muted}>{t('diagnostics.loading')}</p> : null}
       {inventory.status === 'error' ? (
@@ -392,7 +547,7 @@ export function PluginDiagnosticsSection({
             setActionError(null)
             void dismissDependencyHealth({ profile: 'web' }).then(
               () => { setRevision(value => value + 1) },
-              (error) => { setActionError(errorMessage(error)) },
+              (error: unknown) => { setActionError(errorMessage(error)) },
             )
           }}>{t('health.dismiss')}</Button>
         </article>
@@ -477,11 +632,19 @@ export function PluginDiagnosticsSection({
                 <div className={css.actions}>
                   <Button variant="primary" disabled={active?.phase === 'running' || removal?.phase === 'running'} onClick={() => {
                     setActionError(null)
+                    if (record.reason === 'build-script-blocked' && record.buildApprovalKey !== undefined) {
+                      setBuildApprovalTarget({ kind: 'quarantine', record })
+                      return
+                    }
                     void startQuarantineRetry({ quarantineId: record.quarantineId }).then(
                       (snapshot) => { setQuarantineInstall({ quarantineId: record.quarantineId, snapshot }) },
-                      (error) => { setActionError(errorMessage(error)) },
+                      (error: unknown) => { setActionError(errorMessage(error)) },
                     )
-                  }}>{active?.phase === 'running' ? t('health.retry.running') : t('health.retry')}</Button>
+                  }}>{active?.phase === 'running'
+                      ? t('health.retry.running')
+                      : t(record.reason === 'build-script-blocked' && record.buildApprovalKey !== undefined
+                        ? 'health.approveBuild'
+                        : 'health.retry')}</Button>
                   <Button variant="outline" disabled={active?.phase === 'running' || removal?.phase === 'running' || removal?.phase === 'succeeded'} onClick={() => {
                     setUninstallAcknowledged(false)
                     setUninstallTarget({ kind: 'quarantine', quarantineId: record.quarantineId })
@@ -508,6 +671,36 @@ export function PluginDiagnosticsSection({
           <p>{t('diagnostics.safety.body')}</p>
         </details>
       </div>
+      <Modal
+        open={buildApprovalTarget !== null}
+        onClose={() => { setBuildApprovalTarget(null) }}
+        title={t('health.approveBuild.title')}
+        className={css.fixtureDialog ?? ''}
+        headless
+      >
+        <div className={css.fixtureDialogContent}>
+          <IconWarningOutline16 size={22} />
+          <div className={css.fixtureDialogCopy}>
+            <strong>{t('health.approveBuild.title')}</strong>
+            <p>{t('health.approveBuild.description')}</p>
+            {buildApprovalTarget === null ? null : (
+              <code className={css.buildKey}>
+                {buildApprovalTarget.kind === 'quarantine'
+                  ? buildApprovalTarget.record.buildApprovalKey
+                  : buildApprovalTarget.issue.buildApprovalKey}
+              </code>
+            )}
+          </div>
+          <div className={css.fixtureDialogActions}>
+            <button type="button" className={css.fixtureCancel} onClick={() => { setBuildApprovalTarget(null) }}>
+              {t('health.approveBuild.cancel')}
+            </button>
+            <button type="button" className={css.fixtureConfirm} onClick={confirmBuildApproval}>
+              {t('health.approveBuild.confirm')}
+            </button>
+          </div>
+        </div>
+      </Modal>
       <Modal
         open={diagnosticFixtureConfirmOpen}
         onClose={() => { setDiagnosticFixtureConfirmOpen(false) }}
