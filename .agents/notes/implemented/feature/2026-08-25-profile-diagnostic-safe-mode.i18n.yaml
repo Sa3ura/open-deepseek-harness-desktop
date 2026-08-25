@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-25-profile-diagnostic-safe-mode.md
+2026-08-25-profile-diagnostic-safe-mode.md: c34afe18e61ceda379c60e605dc5bdfae198d59e
+2026-08-25-profile-diagnostic-safe-mode.zh.md: 914bc50ef09bbc0ab60d7e0670f976edd216dd4c

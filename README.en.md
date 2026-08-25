@@ -55,9 +55,9 @@ Third-party plugins share the Host's Node.js runtime. One incompatible transitiv
 
 This capability must belong to the desktop client's boot layer rather than another ordinary diagnostic plugin. A plugin can run only after dependency resolution and Loader mounting have already succeeded, while this feature must handle failures before that point. Governing extension dependencies before extension code executes is the boundary that lets an open plugin ecosystem coexist with the stability expected by ordinary desktop users.
 
-### Official Codex connection available offline
+### User-triggered official Codex and Claude Code connections
 
-Each platform installer carries the official DeepSeek Harness [`@deepseek-ai/dsh-subagent-codex`](packages/subagent/subagent-codex/README.md) plugin, a pinned [`@openai/codex`](https://github.com/openai/codex) wrapper, and only the native payload matching that operating system and CPU. It is not installed during startup: onboarding and **Settings → External tools** expose an explicit install action, which uses the packaged target-native archive and does not depend on a system Node, pnpm, or Codex CLI. The plugin remains removable; restart and upgrade never silently restore it.
+Platform installers carry neither the official DeepSeek Harness [`@deepseek-ai/dsh-subagent-codex`](packages/subagent/subagent-codex/README.md) nor [`@deepseek-ai/dsh-subagent-claude-code`](packages/subagent/subagent-claude-code/README.md) Bundle. Onboarding and **Settings → External tools** expose explicit install actions; only after the user clicks one does the desktop client download that exact official package and its platform dependencies from npm. The action therefore requires a network connection, while the packaged runtime still supplies Node and pnpm so no system installation is required. Both connectors remain removable, and restart or upgrade never silently restores them.
 
 The official connector currently treats every delegation as an independent, ephemeral Codex task. Codex uses the parent session's working directory and the login, model, MCP, and Skill configuration already present under the local `CODEX_HOME`, but it does not inherit the Harness conversation transcript or persist its temporary Codex thread into the Harness session. The parent receives only the final answer or a sanitized failure diagnostic; intermediate reasoning, tool traffic, raw stderr, and the complete workspace diff are not copied back.
 
@@ -197,9 +197,9 @@ See the [desktop application reference](apps/desktop/README.md) for environment 
 | Platform | Current status | Next release work |
 | --- | --- | --- |
 | macOS Apple Silicon | Ad-hoc DMG/ZIP packaging exercised locally | Publish and validate the arm64 release assets |
-| macOS Intel | Dedicated x64 Node runtime, DMG/ZIP targets, and platform Codex payload configured | Complete native installation validation on an Intel-compatible runner |
+| macOS Intel | Dedicated x64 Node runtime and DMG/ZIP targets configured | Complete native installation validation on an Intel-compatible runner |
 | Windows x64 | Official Node runtime, NSIS target, and final-install smoke test configured | Continue validating real Windows 10/11, PTY, sandboxing, and paths with spaces or Chinese characters |
-| Linux x64 | Dedicated x64 Node runtime, DEB/RPM targets, and platform Codex payload configured | Complete native installation validation on target distributions |
+| Linux x64 | Dedicated x64 Node runtime and DEB/RPM targets configured | Complete native installation validation on target distributions |
 | Web | Available from source through `pnpm dsh web` | Continue sharing the same Harness services and configuration |
 
 ## Architecture
@@ -257,7 +257,7 @@ These items describe direction, not completed support. See the [desktop release 
 
 ## Acknowledgements
 
-Thank you to the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) maintainers for the official Codex Provider, and to [OpenAI Codex](https://github.com/openai/codex) for its pinned wrapper and native platform runtimes. This project packages those official components for each target and integrates them with the desktop connection center.
+Thank you to the [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) maintainers for the official Codex and Claude Code Providers, and to [OpenAI Codex](https://github.com/openai/codex) and [Anthropic Claude Code](https://github.com/anthropics/claude-code) for their product runtimes. This project integrates user-triggered npm installation of those official connectors with the desktop connection center.
 
 Thank you to the authors and maintainers of these community plugins. The startup set is removable, while the larger Better Sidebar remains an explicit install:
 

@@ -55,9 +55,9 @@ Electron 宿主仅向受监管的 Harness 页面授予经过净化的剪贴板�
 
 这项能力必须由桌面客户端的启动层持有，不能再做成一个普通诊断插件：插件只有在依赖解析和 Loader 挂载已经成功后才能运行，而本功能要处理的正是这个时点之前的失败。这种“在扩展代码之前治理扩展依赖”的边界，让开放的插件生态与普通用户需要的客户端稳定性可以同时存在。
 
-### 可离线安装的官方 Codex 连接
+### 用户触发安装的官方 Codex 与 Claude Code 连接
 
-各平台安装包携带 DeepSeek Harness 官方 [`@deepseek-ai/dsh-subagent-codex`](packages/subagent/subagent-codex/README.zh.md) 插件、固定版本的 [`@openai/codex`](https://github.com/openai/codex) wrapper，以及仅与当前系统和 CPU 匹配的原生载荷。它不会在启动阶段自动安装：首次引导与“设置 → 外部工具”提供明确的安装操作，点击后使用安装包内与平台匹配的归档，不依赖用户系统中另行安装 Node、pnpm 或 Codex CLI。该插件仍可卸载，应用升级或重启不会擅自装回。
+各平台安装包都不携带 DeepSeek Harness 官方 [`@deepseek-ai/dsh-subagent-codex`](packages/subagent/subagent-codex/README.zh.md) 与 [`@deepseek-ai/dsh-subagent-claude-code`](packages/subagent/subagent-claude-code/README.zh.md) Bundle。首次引导与“设置 → 外部工具”提供明确的安装操作；只有用户点击后，桌面客户端才从 npm 下载对应的精确官方包及其平台依赖，因此这一步需要联网。安装包内运行时仍提供 Node 与 pnpm，无需用户在系统中另行安装。两个连接都可以卸载，应用升级或重启不会擅自装回。
 
 官方连接当前把每次委派作为一个独立、临时的 Codex 任务：Codex 使用父会话的工作目录和本机 `CODEX_HOME` 中已有的登录、模型、MCP 与 Skill 配置，但不会继承 Harness 的对话正文，也不会把临时 Codex thread 保存到 Harness 会话。父会话只收到最终回答或经过脱敏的失败诊断；Codex 的中间推理、工具通信、原始 stderr 与完整工作区差异不会被复制回来。
 
@@ -197,9 +197,9 @@ pnpm dsh web
 | 平台 | 当前状态 | 后续发布工作 |
 | --- | --- | --- |
 | macOS Apple Silicon | 已在本地验证 ad-hoc DMG/ZIP 打包 | 发布并验证 arm64 发行产物 |
-| macOS Intel | 已配置独立 x64 Node 运行时、DMG/ZIP 和平台 Codex 载荷 | 在兼容 Intel 的运行器上完成原生安装验证 |
+| macOS Intel | 已配置独立 x64 Node 运行时和 DMG/ZIP 目标 | 在兼容 Intel 的运行器上完成原生安装验证 |
 | Windows x64 | 已配置官方 Node、NSIS 与最终安装烟雾测试 | 持续验证真实 Windows 10/11、PTY、沙箱及含空格/中文路径 |
-| Linux x64 | 已配置独立 x64 Node 运行时、DEB/RPM 和平台 Codex 载荷 | 在目标发行版上完成原生安装验证 |
+| Linux x64 | 已配置独立 x64 Node 运行时和 DEB/RPM 目标 | 在目标发行版上完成原生安装验证 |
 | Web | 可通过源码命令 `pnpm dsh web` 使用 | 继续与桌面端共享相同的 Harness 服务和配置 |
 
 ## 架构
@@ -257,7 +257,7 @@ API 密钥仍由 Harness 凭据服务管理，请勿提交凭据。选择任何�
 
 ## 致谢
 
-感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 上游维护官方 Codex Provider，并感谢 [OpenAI Codex](https://github.com/openai/codex) 提供其固定版本的 wrapper 与各平台原生运行时。本项目仅负责把这些官方组件按目标平台离线打包并接入桌面连接中心。
+感谢 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 上游维护官方 Codex 与 Claude Code Provider，并感谢 [OpenAI Codex](https://github.com/openai/codex) 和 [Anthropic Claude Code](https://github.com/anthropics/claude-code) 提供产品运行时。本项目把这些官方连接的用户触发式 npm 安装接入桌面连接中心。
 
 感谢以下社区插件的作者与维护者。启动预设均可卸载；体积较大的 Better Sidebar 保持为用户明确触发的安装项：
 

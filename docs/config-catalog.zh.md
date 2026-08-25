@@ -875,7 +875,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/plugin-inventory/src/index.ts:74`](../packages/host/plugin-inventory/src/index.ts)
+来源：[`packages/host/plugin-inventory/src/index.ts:84`](../packages/host/plugin-inventory/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
