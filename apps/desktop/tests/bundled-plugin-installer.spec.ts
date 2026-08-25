@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   BundledPluginInstaller,
   installBundledPluginSource,
+  resolveBundledPluginResourcesDirectory,
   type BundledPluginManifest,
 } from '../src/bundled-plugin-installer.ts'
 
@@ -40,6 +41,13 @@ async function fixture() {
 }
 
 describe('BundledPluginInstaller', () => {
+  it('uses checked-in archives in development and packaged resources in releases', () => {
+    expect(resolveBundledPluginResourcesDirectory(false, '/resources', '/checkout'))
+      .toBe(join('/checkout', 'apps', 'desktop', 'bundled-plugins'))
+    expect(resolveBundledPluginResourcesDirectory(true, '/resources', '/checkout'))
+      .toBe(join('/resources', 'bundled-plugins'))
+  })
+
   it('prefers registry identity and falls back to the bundled archive', async () => {
     const f = await fixture()
     const entry = f.manifest.plugins[0]!
@@ -108,6 +116,23 @@ describe('BundledPluginInstaller', () => {
       })
     })
     await expect(installer.startDeferred('web', 'manual@2.0.0')).resolves.toEqual({ handled: true })
+    expect(install).toHaveBeenCalledOnce()
+  })
+
+  it('repairs a legacy deferred marker in development', async () => {
+    const f = await fixture()
+    const dshHome = join(f.root, 'home')
+    await mkdir(join(dshHome, 'bundled-plugins'), { recursive: true })
+    await writeFile(join(dshHome, 'bundled-plugins', 'manual.seeded.json'), JSON.stringify({ schema: 1 }))
+    const install = vi.fn(async () => {})
+    const installer = new BundledPluginInstaller({
+      manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome, install,
+      repairLegacyMarkers: true,
+    })
+    const result = await installer.startDeferred('web', 'manual@2.0.0')
+    expect(result.handled).toBe(true)
+    if (!result.handled || result.snapshot === undefined) throw new Error('expected repair job')
+    await vi.waitFor(() => { expect(installer.getInstall(result.snapshot!.installId).phase).toBe('succeeded') })
     expect(install).toHaveBeenCalledOnce()
   })
 

@@ -724,6 +724,7 @@
     },
     "apps/desktop": {
       "entry": [
+        "src/data-home-preload.ts",
         "src/preload.ts",
         "tests/**/*.spec.ts",
         "scripts/**/*.mjs"

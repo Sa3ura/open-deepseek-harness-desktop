@@ -1,9 +1,11 @@
 /** Policy-aware coordinator for trusted plugins carried by desktop packages. */
 
 import { randomUUID } from 'node:crypto'
+import { join } from 'node:path'
 import {
   assertBundledPluginManifestEntry,
   hasBundledPluginQuarantineRecord,
+  hasLegacyBundledPluginSeedMarker,
   hasBundledPluginSeedMarker,
   seedBundledPlugin,
   type BundledPluginManifestEntry,
@@ -44,8 +46,27 @@ export interface BundledPluginInstallerOptions {
   readonly resourcesDirectory: string
   readonly dshHome: string
   readonly install: (archivePath: string, entry: BundledPluginManifestEntry) => Promise<void>
+  readonly prepare?: (entry: BundledPluginManifestEntry) => Promise<void>
   readonly onFailure?: (error: unknown) => Promise<void>
   readonly createId?: () => string
+  readonly repairLegacyMarkers?: boolean
+}
+
+/**
+ * Resolve the trusted bundled-plugin directory for packaged and source launches.
+ * @param packaged - Whether Electron is running from an installed application.
+ * @param resourcesPath - Electron resources directory used by packaged builds.
+ * @param sourceRoot - Repository root used by development builds.
+ * @returns Directory containing the checked manifest and plugin archives.
+ */
+export function resolveBundledPluginResourcesDirectory(
+  packaged: boolean,
+  resourcesPath: string,
+  sourceRoot: string,
+): string {
+  return packaged
+    ? join(resourcesPath, 'bundled-plugins')
+    : join(sourceRoot, 'apps', 'desktop', 'bundled-plugins')
 }
 
 interface InstallJob {
@@ -83,9 +104,6 @@ function errorDiagnostic(error: unknown): string {
 }
 
 function assertManifest(manifest: BundledPluginManifest): void {
-  if (manifest.schema !== 2 || !Array.isArray(manifest.plugins)) {
-    throw new TypeError('desktop: unsupported bundled plugin manifest')
-  }
   const requests = new Set<string>()
   for (const entry of manifest.plugins) {
     assertBundledPluginManifestEntry(entry)
@@ -93,6 +111,21 @@ function assertManifest(manifest: BundledPluginManifest): void {
     if (requests.has(request)) throw new TypeError(`desktop: duplicate bundled plugin request ${entry.packageName}`)
     requests.add(request)
   }
+}
+
+/** Parse untrusted JSON into the exact bundled-plugin allowlist schema. */
+export function parseBundledPluginManifest(value: unknown): BundledPluginManifest {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new TypeError('desktop: unsupported bundled plugin manifest')
+  }
+  const candidate = value as Record<string, unknown>
+  if (candidate.schema !== 2 || !Array.isArray(candidate.plugins)) {
+    throw new TypeError('desktop: unsupported bundled plugin manifest')
+  }
+  for (const entry of candidate.plugins) assertBundledPluginManifestEntry(entry)
+  const manifest: BundledPluginManifest = { schema: 2, plugins: candidate.plugins }
+  assertManifest(manifest)
+  return manifest
 }
 
 /**
@@ -141,7 +174,9 @@ export class BundledPluginInstaller {
   async startDeferred(profile: string, packageSpec: string): Promise<BundledPluginDeferredStartResult> {
     const entry = this.findManual(profile, packageSpec)
     if (entry === undefined) return { handled: false }
-    if (await hasBundledPluginSeedMarker(this.options.dshHome, entry)) return { handled: true }
+    if (await hasBundledPluginSeedMarker(this.options.dshHome, entry)
+      && (!this.options.repairLegacyMarkers
+        || !await hasLegacyBundledPluginSeedMarker(this.options.dshHome, entry))) return { handled: true }
     if (await hasBundledPluginQuarantineRecord(this.options.dshHome, entry)) return { handled: true }
     return this.startJob(entry, false)
   }
@@ -202,7 +237,9 @@ export class BundledPluginInstaller {
       resourcesDirectory: this.options.resourcesDirectory,
       dshHome: this.options.dshHome,
       install: this.options.install,
+      ...(this.options.prepare === undefined ? {} : { prepare: this.options.prepare }),
       force,
+      repairLegacyMarker: this.options.repairLegacyMarkers ?? false,
       ...(onProgress === undefined ? {} : { onProgress }),
     })
   }

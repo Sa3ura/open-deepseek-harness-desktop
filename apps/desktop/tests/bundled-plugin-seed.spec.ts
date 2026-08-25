@@ -72,6 +72,8 @@ describe('bundled plugin seed', () => {
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
       .toEqual(['node-pty'])
+    expect(manifest.plugins.map(entry => entry.packageName)).not.toContain('@deepseek-ai/dsh-subagent-codex')
+    expect(manifest.plugins.map(entry => entry.packageName)).not.toContain('@deepseek-ai/dsh-subagent-claude-code')
     for (const entry of manifest.plugins) {
       const bytes = await readFile(new URL(`../bundled-plugins/${entry.archive}`, import.meta.url))
       expect(`sha512-${createHash('sha512').update(bytes).digest('base64')}`).toBe(entry.integrity)
@@ -80,14 +82,18 @@ describe('bundled plugin seed', () => {
 
   it('rejects malformed or duplicate lifecycle build approvals', async () => {
     const options = await fixture()
-    expect(() => assertBundledPluginManifestEntry({
-      ...options.entry,
-      approvedBuilds: ['node-pty', 'node-pty'],
-    })).toThrow('invalid bundled plugin manifest entry')
-    expect(() => assertBundledPluginManifestEntry({
-      ...options.entry,
-      approvedBuilds: ['node-pty@1.1.0'],
-    })).toThrow('invalid bundled plugin manifest entry')
+    expect(() => {
+      assertBundledPluginManifestEntry({
+        ...options.entry,
+        approvedBuilds: ['node-pty', 'node-pty'],
+      })
+    }).toThrow('invalid bundled plugin manifest entry')
+    expect(() => {
+      assertBundledPluginManifestEntry({
+        ...options.entry,
+        approvedBuilds: ['node-pty@1.1.0'],
+      })
+    }).toThrow('invalid bundled plugin manifest entry')
   })
 
   it('installs once and preserves the marker as an uninstall tombstone', async () => {
@@ -107,8 +113,55 @@ describe('bundled plugin seed', () => {
     await mkdir(profile, { recursive: true })
     await writeFile(join(profile, 'package.json'), JSON.stringify({ dependencies: { dshmarket: '9.9.9' } }))
     const install = vi.fn(async () => {})
-    await expect(seedBundledPlugin({ ...options, install })).resolves.toBe('already-installed')
+    const prepare = vi.fn(async () => {})
+    await expect(seedBundledPlugin({ ...options, install, prepare })).resolves.toBe('already-installed')
     expect(install).not.toHaveBeenCalled()
+    expect(prepare).toHaveBeenCalledOnce()
+  })
+
+  it('adopts an aliased dependency from the same GitHub repository without duplicating it', async () => {
+    const options = await fixture()
+    const profile = join(options.dshHome, 'profiles', 'web')
+    await mkdir(profile, { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      dependencies: {
+        'custom-market-name': 'git+https://github.com/example/dshmarket.git#older-commit',
+      },
+    }))
+    const entry = {
+      ...options.entry,
+      registrySpec: 'github:example/dshmarket#newer-commit',
+    }
+    const install = vi.fn(async () => {})
+    const prepare = vi.fn(async () => {})
+    await expect(seedBundledPlugin({ ...options, entry, install, prepare })).resolves.toBe('already-installed')
+    expect(install).not.toHaveBeenCalled()
+    expect(prepare).toHaveBeenCalledWith(entry)
+  })
+
+  it('merges reviewed build approvals when an existing marker still has its dependency', async () => {
+    const options = await fixture()
+    const profile = join(options.dshHome, 'profiles', 'web')
+    const state = join(options.dshHome, 'bundled-plugins')
+    await mkdir(profile, { recursive: true })
+    await mkdir(state, { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({ dependencies: { dshmarket: '1.0.0' } }))
+    await writeFile(join(state, 'dshmarket.seeded.json'), JSON.stringify({ schema: 2 }))
+    const prepare = vi.fn(async () => {})
+    await expect(seedBundledPlugin({ ...options, install: vi.fn(), prepare })).resolves.toBe('already-seeded')
+    expect(prepare).toHaveBeenCalledWith(options.entry)
+  })
+
+  it('repairs a legacy development marker whose dependency was written to the wrong home', async () => {
+    const options = await fixture()
+    const state = join(options.dshHome, 'bundled-plugins')
+    await mkdir(state, { recursive: true })
+    await writeFile(join(state, 'dshmarket.seeded.json'), JSON.stringify({ schema: 1 }))
+    const install = vi.fn(async () => {})
+    await expect(seedBundledPlugin({ ...options, repairLegacyMarker: true, install })).resolves.toBe('installed')
+    expect(install).toHaveBeenCalledOnce()
+    expect(JSON.parse(await readFile(join(state, 'dshmarket.seeded.json'), 'utf8')))
+      .toMatchObject({ schema: 2, packageName: 'dshmarket' })
   })
 
   it('allows an explicit manual install to replace an uninstall tombstone', async () => {

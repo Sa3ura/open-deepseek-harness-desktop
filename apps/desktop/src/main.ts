@@ -1,21 +1,32 @@
 /** Electron application host for the existing DeepSeek Harness Web GUI. */
 
 import { spawn } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
+import { appendFile, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, shell, Tray, type MenuItemConstructorOptions } from 'electron'
+import {
+  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, shell, Tray,
+  type MenuItemConstructorOptions, type MessageBoxOptions,
+} from 'electron'
 import { appendBundledPluginFailure } from './bundled-plugin-seed.ts'
 import {
   BundledPluginInstaller,
   installBundledPluginSource,
+  parseBundledPluginManifest,
+  resolveBundledPluginResourcesDirectory,
   type BundledPluginDeferredStartResult,
-  type BundledPluginManifest,
   type BundledPluginStartResult,
   type BundledPluginInstallSnapshot,
 } from './bundled-plugin-installer.ts'
-import { resolveHarnessInvocation, resolveHarnessLaunch, type DesktopLaunchOptions, type HarnessLaunch } from './launch.ts'
+import {
+  acceptsHarnessInvocationExit,
+  resolveDevelopmentLaunchOptions,
+  resolveHarnessInvocation,
+  resolveHarnessLaunch,
+  type DesktopLaunchOptions,
+  type HarnessLaunch,
+} from './launch.ts'
 import { allowsHarnessPermission } from './permissions.ts'
 import { ensurePackagedRuntime, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
@@ -30,6 +41,17 @@ import { SourceUpdater } from './source-updater.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
 import { usesCustomWindowFrame, withCustomWindowFrameInset } from './window-frame.ts'
 import { stageDiagnosticFixture } from './diagnostic-fixture.ts'
+import { parseStartupBuildApproval } from './startup-build-approval.ts'
+import {
+  desktopDataHomeSetup,
+  hasDesktopData,
+  importOfficialDesktopData,
+  readDesktopDataHomeSetup,
+  resolveRecordedDesktopDataHome,
+  resolveDesktopDataHomeLayout,
+  writeDesktopDataHomeSetup,
+  type DesktopDataHomeLayout,
+} from './desktop-data-home.ts'
 
 const APP_NAME = 'DeepSeek Harness'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
@@ -37,7 +59,20 @@ const WINDOW_ICON = fileURLToPath(new URL('./icon.png', import.meta.url))
 const DEVELOPMENT_DOCK_ICON = fileURLToPath(new URL('./dev-dock-icon.png', import.meta.url))
 const MACOS_TRAY_ICON = fileURLToPath(new URL('./tray-iconTemplate.png', import.meta.url))
 const PRELOAD = fileURLToPath(new URL('./preload.cjs', import.meta.url))
+const DATA_HOME_PAGE = fileURLToPath(new URL('./data-home.html', import.meta.url))
+const DATA_HOME_PRELOAD = fileURLToPath(new URL('./data-home-preload.cjs', import.meta.url))
 const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
+const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
+  app.getPath('appData'),
+  homedir(),
+  app.isPackaged,
+  process.env,
+)
+
+app.setName(APP_NAME)
+app.setPath('userData', DESKTOP_DATA_HOME.desktopRoot)
+app.setPath('sessionData', DESKTOP_DATA_HOME.sessionData)
+app.setAppLogsPath(DESKTOP_DATA_HOME.logs)
 
 let mainWindow: BrowserWindow | undefined
 let supervisor: HarnessSupervisor | undefined
@@ -51,6 +86,15 @@ let hiddenLaunch = false
 let harnessLogPath = ''
 let releaseChecker: DesktopReleaseChecker | undefined
 let bundledPluginInstaller: BundledPluginInstaller | undefined
+
+type DataHomeSelection = 'imported' | 'reused' | 'fresh'
+
+class DesktopDataHomeSelectionCancelledError extends Error {
+  constructor() {
+    super('desktop: data-home selection was cancelled')
+    this.name = 'DesktopDataHomeSelectionCancelledError'
+  }
+}
 
 interface DesktopCapabilities {
   platform: NodeJS.Platform
@@ -87,9 +131,150 @@ function desktopCopy(): {
     }
 }
 
+function dataHomeCopy(): {
+  completeTitle: string
+  completeMessage: string
+  failedTitle: string
+} {
+  return app.getLocale().toLowerCase().startsWith('zh')
+    ? {
+      completeTitle: '导入完成', completeMessage: '官方数据已复制到独立的桌面目录。',
+      failedTitle: '无法导入官方数据',
+    }
+    : {
+      completeTitle: 'Import complete', completeMessage: 'Official data was copied into the independent desktop directory.',
+      failedTitle: 'Could not import official data',
+    }
+}
+
+function isDataHomeSelection(value: unknown): value is DataHomeSelection {
+  return value === 'imported' || value === 'reused' || value === 'fresh'
+}
+
+async function showDataHomeChooser(initialSelection: DataHomeSelection = 'imported'): Promise<DataHomeSelection> {
+  const chooser = new BrowserWindow({
+    title: APP_NAME,
+    width: 1080,
+    height: 720,
+    useContentSize: true,
+    minWidth: 920,
+    minHeight: 620,
+    backgroundColor: '#ffffff',
+    icon: WINDOW_ICON,
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      preload: DATA_HOME_PRELOAD,
+    },
+  })
+  chooser.webContents.on('will-navigate', (event) => { event.preventDefault() })
+  chooser.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+
+  return new Promise<DataHomeSelection>((resolve, reject) => {
+    let settled = false
+    const cleanup = (): void => {
+      ipcMain.removeListener('dsh:data-home:selected', handleSelection)
+      ipcMain.removeListener('dsh:data-home:cancelled', handleCancellation)
+    }
+    const closeChooser = (): void => {
+      cleanup()
+      if (!chooser.isDestroyed()) chooser.destroy()
+    }
+    const finish = (selection?: DataHomeSelection): void => {
+      if (settled) return
+      settled = true
+      closeChooser()
+      if (selection === undefined) reject(new DesktopDataHomeSelectionCancelledError())
+      else resolve(selection)
+    }
+    const fail = (error: unknown): void => {
+      if (settled) return
+      settled = true
+      closeChooser()
+      reject(error instanceof Error ? error : new Error(String(error)))
+    }
+    const handleSelection = (event: Electron.IpcMainEvent, value: unknown): void => {
+      if (event.sender !== chooser.webContents || !isDataHomeSelection(value)) return
+      finish(value)
+    }
+    const handleCancellation = (event: Electron.IpcMainEvent): void => {
+      if (event.sender === chooser.webContents) finish()
+    }
+    ipcMain.on('dsh:data-home:selected', handleSelection)
+    ipcMain.on('dsh:data-home:cancelled', handleCancellation)
+    chooser.once('closed', () => { finish() })
+    chooser.once('ready-to-show', () => {
+      chooser.show()
+      chooser.focus()
+    })
+    void chooser.loadFile(DATA_HOME_PAGE, { query: { selected: initialSelection } }).catch(fail)
+  })
+}
+
+async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<string> {
+  const previous = await readDesktopDataHomeSetup(layout.setupFile)
+  if (layout.explicitDshHome) {
+    await writeDesktopDataHomeSetup(
+      layout.setupFile,
+      desktopDataHomeSetup('explicit', layout.dshHome),
+    )
+    return layout.dshHome
+  }
+  const recordedHome = resolveRecordedDesktopDataHome(layout, previous)
+  if (recordedHome !== undefined) return recordedHome
+  if (await hasDesktopData(layout.dshHome)) {
+    await writeDesktopDataHomeSetup(
+      layout.setupFile,
+      desktopDataHomeSetup('existing', layout.dshHome),
+    )
+    return layout.dshHome
+  }
+  if (!await hasDesktopData(layout.officialDshHome)) {
+    await writeDesktopDataHomeSetup(
+      layout.setupFile,
+      desktopDataHomeSetup('fresh', layout.dshHome),
+    )
+    return layout.dshHome
+  }
+
+  const copy = dataHomeCopy()
+  const selection = await showDataHomeChooser()
+  if (selection === 'imported') {
+    try {
+      await importOfficialDesktopData(layout.officialDshHome, layout.dshHome)
+      await writeDesktopDataHomeSetup(
+        layout.setupFile,
+        desktopDataHomeSetup('imported', layout.dshHome, layout.officialDshHome),
+      )
+      await dialog.showMessageBox({
+        type: 'info', title: copy.completeTitle, message: copy.completeMessage,
+        detail: layout.dshHome, buttons: ['OK'], noLink: true,
+      })
+      return layout.dshHome
+    } catch (error) {
+      dialog.showErrorBox(copy.failedTitle, error instanceof Error ? error.message : String(error))
+      throw error
+    }
+  }
+  if (selection === 'reused') {
+    await writeDesktopDataHomeSetup(
+      layout.setupFile,
+      desktopDataHomeSetup('reused', layout.officialDshHome, layout.officialDshHome),
+    )
+    return layout.officialDshHome
+  }
+  await writeDesktopDataHomeSetup(
+    layout.setupFile,
+    desktopDataHomeSetup('fresh', layout.dshHome),
+  )
+  return layout.dshHome
+}
+
 function applyLaunchAtLogin(enabled: boolean): void {
   if (!desktopCapabilities().launchAtLoginAvailable) return
-  app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: enabled })
+  app.setLoginItemSettings({ openAtLogin: enabled })
 }
 
 function publishPreferences(): void {
@@ -180,7 +365,10 @@ function applyDevelopmentDockIcon(): void {
   dock.setIcon(image)
 }
 
-async function runHarnessInvocation(launch: HarnessLaunch): Promise<string> {
+async function runHarnessInvocation(
+  launch: HarnessLaunch,
+  acceptedExitCodes: readonly number[] = [0],
+): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const child = spawn(launch.command, launch.args, {
       env: { ...process.env, ...launch.environment },
@@ -193,10 +381,67 @@ async function runHarnessInvocation(launch: HarnessLaunch): Promise<string> {
     child.once('error', reject)
     child.once('close', (code, signal) => {
       const diagnostic = Buffer.concat(output).toString('utf8')
-      if (code === 0) resolve(diagnostic)
+      if (acceptsHarnessInvocationExit(code, signal, acceptedExitCodes)) resolve(diagnostic)
       else reject(new Error(`desktop: Harness invocation failed (${String(code)}, ${String(signal)}): ${diagnostic.slice(-4000)}`))
     })
   })
+}
+
+function showDesktopMessageBox(options: MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
+  return mainWindow === undefined
+    ? dialog.showMessageBox(options)
+    : dialog.showMessageBox(mainWindow, options)
+}
+
+async function resolveStartupBuildApproval(
+  diagnostic: string,
+  environment: NodeJS.ProcessEnv,
+  launchOptions: DesktopLaunchOptions,
+): Promise<string> {
+  const approval = parseStartupBuildApproval(diagnostic)
+  if (approval === undefined) return diagnostic
+  const chinese = app.getLocale().toLowerCase().startsWith('zh')
+  const result = await showDesktopMessageBox({
+    type: 'warning',
+    title: chinese ? '插件构建脚本被拦截' : 'Plugin build script blocked',
+    message: chinese ? '一个插件需要运行构建脚本' : 'A plugin needs to run a build script',
+    detail: chinese
+      ? `pnpm 已阻止 ${approval.packageBuildKey} 的构建脚本。该插件已被安全隔离，因此即使不允许也可以继续进入应用。仅在你信任插件来源时允许。`
+      : `pnpm blocked the build script for ${approval.packageBuildKey}. The plugin is already safely isolated, so you can continue without allowing it. Only allow a source you trust.`,
+    buttons: chinese
+      ? ['允许构建并恢复插件', '不允许，保持隔离', '退出应用']
+      : ['Allow and restore plugin', 'Keep isolated', 'Quit'],
+    defaultId: 1,
+    cancelId: 2,
+    noLink: true,
+  })
+  if (result.response === 2) throw new DesktopDataHomeSelectionCancelledError()
+  if (result.response !== 0) return diagnostic
+
+  const recoveryDiagnostics: string[] = []
+  try {
+    recoveryDiagnostics.push(await runHarnessInvocation(resolveHarnessInvocation(environment, [
+      'plugin', '--profile', 'web', 'approve-build-key', approval.packageBuildKey,
+    ], launchOptions)))
+    for (const quarantineId of approval.quarantineIds) {
+      recoveryDiagnostics.push(await runHarnessInvocation(resolveHarnessInvocation(environment, [
+        'plugin', '--profile', 'web', 'doctor', '--retry', quarantineId,
+      ], launchOptions), [0, 10, 11]))
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    await showDesktopMessageBox({
+      type: 'warning',
+      title: chinese ? '插件恢复失败' : 'Plugin recovery failed',
+      message: chinese ? '应用仍可继续启动' : 'The application can still start',
+      detail: chinese
+        ? `构建许可未能安全完成或插件仍有其他问题。插件会继续保持隔离，可稍后在“诊断”中重试。\n\n${detail.slice(-2000)}`
+        : `The approval could not be completed safely or the plugin has another issue. It remains isolated and can be retried later in Diagnostics.\n\n${detail.slice(-2000)}`,
+      buttons: [chinese ? '继续' : 'Continue'],
+    })
+    return `${diagnostic}\n[desktop] Build approval recovery failed: ${detail}`
+  }
+  return `${diagnostic}\n[desktop] User approved ${JSON.stringify(approval.packageBuildKey)} and restored ${approval.quarantineIds.length} quarantined plugin(s).\n${recoveryDiagnostics.join('\n')}`
 }
 
 function assertMainRenderer(sender: Electron.WebContents): void {
@@ -292,9 +537,17 @@ function createWindow(): BrowserWindow {
 }
 
 async function startApplication(): Promise<void> {
-  app.setName(APP_NAME)
   if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
   await app.whenReady()
+  const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
+  const harnessEnvironment: NodeJS.ProcessEnv = {
+    ...process.env,
+    DSH_HOME: dshHome,
+    DSH_PROFILE_SAFE_MODE_ON_FAILURE: '1',
+  }
+  let launchOptions: DesktopLaunchOptions = app.isPackaged
+    ? {}
+    : resolveDevelopmentLaunchOptions(DEFAULT_SOURCE_ROOT)
   applyDevelopmentDockIcon()
   harnessLogPath = join(app.getPath('logs'), 'harness.log')
   preferencesStore = createDesktopPreferencesStore(
@@ -391,9 +644,9 @@ async function startApplication(): Promise<void> {
       fixtureSource,
       join(app.getPath('userData'), 'diagnostic-fixtures', 'incompatible-plugin'),
     )
-    const diagnostic = await runHarnessInvocation(resolveHarnessInvocation(process.env, [
+    const diagnostic = await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
       'plugin', '--profile', 'web', 'add', fixtureArchive,
-    ]))
+    ], launchOptions))
     return { installed: true as const, diagnostic: diagnostic.slice(-4000) }
   })
   ipcMain.on('dsh:window:minimize', (event) => {
@@ -439,7 +692,6 @@ async function startApplication(): Promise<void> {
   const packageRuntimeBin = packagedRuntime === undefined
     ? undefined
     : join(packagedRuntime, 'package-runtime', 'bin')
-  let launchOptions: DesktopLaunchOptions = {}
   if (app.isPackaged) {
     if (process.platform === 'win32') {
       const windowsRuntime = join(process.resourcesPath, 'runtime', 'win32-x64')
@@ -460,36 +712,61 @@ async function startApplication(): Promise<void> {
       throw new Error(`desktop: packaged runtime is unavailable for ${process.platform}-${process.arch}`)
     }
 
-    const bundledDirectory = join(process.resourcesPath, 'bundled-plugins')
-    const manifest = JSON.parse(await readFile(join(bundledDirectory, 'manifest.json'), 'utf8')) as BundledPluginManifest
-    const dshHome = process.env.DSH_HOME?.trim() || join(homedir(), '.dsh')
-    bundledPluginInstaller = new BundledPluginInstaller({
-      manifest,
-      resourcesDirectory: bundledDirectory,
-      dshHome,
-      install: async (archivePath, plugin) => {
-        for (const packageName of plugin.approvedBuilds ?? []) {
-          await runHarnessInvocation(resolveHarnessInvocation(process.env, [
-            'plugin', '--profile', plugin.profile, 'approve-build', packageName,
-          ], launchOptions))
-        }
-        await installBundledPluginSource(plugin, archivePath, async (packageSpec, preferOffline) => {
-          await runHarnessInvocation(resolveHarnessInvocation(process.env, [
-            'plugin', '--profile', plugin.profile, 'add', '--save-exact',
-            ...(preferOffline ? ['--prefer-offline'] : []), packageSpec,
-          ], launchOptions))
-        }, (error) => {
-          console.warn(`desktop: registry install failed for ${plugin.packageName}; using bundled archive`, error)
-        })
-      },
-      onFailure: async (error) => {
-        await appendBundledPluginFailure(harnessLogPath, error)
-        console.error(error)
-      },
-    })
-    await bundledPluginInstaller.seedStartup()
   }
-  const launch = resolveHarnessLaunch(process.env, launchOptions)
+  let initialProfileRepairDiagnostic: string
+  try {
+    initialProfileRepairDiagnostic = await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
+      'plugin', '--profile', 'web', 'doctor', '--repair',
+    ], launchOptions), [0, 10, 11])
+  } catch (error) {
+    initialProfileRepairDiagnostic = error instanceof Error ? error.message : String(error)
+    console.warn('desktop: Profile startup repair did not settle; supervised startup will classify the failure', error)
+  }
+  const profileRepairDiagnostic = await resolveStartupBuildApproval(
+    initialProfileRepairDiagnostic,
+    harnessEnvironment,
+    launchOptions,
+  )
+  if (profileRepairDiagnostic.trim() !== '') {
+    await appendFile(harnessLogPath, `[desktop] Profile startup repair:\n${profileRepairDiagnostic.trim()}\n`)
+  }
+  const bundledDirectory = resolveBundledPluginResourcesDirectory(
+    app.isPackaged,
+    process.resourcesPath,
+    DEFAULT_SOURCE_ROOT,
+  )
+  const manifest = parseBundledPluginManifest(
+    JSON.parse(await readFile(join(bundledDirectory, 'manifest.json'), 'utf8')) as unknown,
+  )
+  bundledPluginInstaller = new BundledPluginInstaller({
+    manifest,
+    resourcesDirectory: bundledDirectory,
+    dshHome,
+    repairLegacyMarkers: !app.isPackaged,
+    prepare: async (plugin) => {
+      for (const packageName of plugin.approvedBuilds ?? []) {
+        await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
+          'plugin', '--profile', plugin.profile, 'approve-build', packageName,
+        ], launchOptions))
+      }
+    },
+    install: async (archivePath, plugin) => {
+      await installBundledPluginSource(plugin, archivePath, async (packageSpec, preferOffline) => {
+        await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
+          'plugin', '--profile', plugin.profile, 'add', '--save-exact',
+          ...(preferOffline ? ['--prefer-offline'] : []), packageSpec,
+        ], launchOptions))
+      }, (error) => {
+        console.warn(`desktop: registry install failed for ${plugin.packageName}; using bundled archive`, error)
+      })
+    },
+    onFailure: async (error) => {
+      await appendBundledPluginFailure(harnessLogPath, error)
+      console.error(error)
+    },
+  })
+  await bundledPluginInstaller.seedStartup()
+  const launch = resolveHarnessLaunch(harnessEnvironment, launchOptions)
   const notificationCopy = desktopNotificationDictionary(app.getLocale())
   const allowNotification = createNotificationThrottle(5 * 60_000)
   let recovering = false
@@ -502,7 +779,7 @@ async function startApplication(): Promise<void> {
   supervisor = new HarnessSupervisor({
     launch,
     logPath: harnessLogPath,
-    environment: { ...process.env },
+    environment: harnessEnvironment,
     onReady: (url) => {
       harnessOrigin = new URL(url).origin
       if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
@@ -552,7 +829,7 @@ if (!app.requestSingleInstanceLock()) {
     void lifecycle?.requestQuit()
   })
   void startApplication().catch((error: unknown) => {
-    console.error(error)
+    if (!(error instanceof DesktopDataHomeSelectionCancelledError)) console.error(error)
     if (lifecycle === undefined) {
       quitReleased = true
       app.quit()

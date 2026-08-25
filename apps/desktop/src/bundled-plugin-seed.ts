@@ -1,7 +1,7 @@
 /** One-time, removable installation of plugins shipped with the desktop app. */
 
 import { createHash } from 'node:crypto'
-import { appendFile, copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { appendFile, copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 
 export interface BundledPluginManifestEntry {
@@ -23,8 +23,12 @@ export interface SeedBundledPluginOptions {
   readonly resourcesDirectory: string
   readonly dshHome: string
   readonly install: (archivePath: string, entry: BundledPluginManifestEntry) => Promise<void>
+  /** Merge reviewed lifecycle approvals before adopting or installing a dependency. */
+  readonly prepare?: (entry: BundledPluginManifestEntry) => Promise<void>
   /** Explicit UI installs may replace a tombstone left by an earlier uninstall. */
   readonly force?: boolean
+  /** Development migration for schema-1 markers produced before DSH_HOME reached the installer. */
+  readonly repairLegacyMarker?: boolean
   /** Milestone updates for a desktop-owned progress surface. */
   readonly onProgress?: (progress: BundledPluginSeedProgress) => void
 }
@@ -53,36 +57,79 @@ export async function appendBundledPluginFailure(logPath: string, error: unknown
 }
 
 /** Reject malformed packaged metadata before it can become an install allowlist. */
-export function assertBundledPluginManifestEntry(entry: BundledPluginManifestEntry): void {
-  if (!/^[a-z0-9][a-z0-9._-]*$/iu.test(entry.seedId)
-    || !/^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu.test(entry.packageName)
-    || !/^[a-z0-9][a-z0-9._-]*$/iu.test(entry.profile)
-    || !/^[a-z0-9][a-z0-9.+-]*$/iu.test(entry.version)
-    || basename(entry.archive) !== entry.archive
-    || (entry.installPolicy !== 'startup' && entry.installPolicy !== 'manual')
-    || (entry.registrySpec !== undefined && (!/^\S+$/u.test(entry.registrySpec) || entry.registrySpec.length > 512))
-    || (entry.approvedBuilds !== undefined && (
-      !Array.isArray(entry.approvedBuilds)
-      || entry.approvedBuilds.length > 16
-      || new Set(entry.approvedBuilds).size !== entry.approvedBuilds.length
-      || entry.approvedBuilds.some(packageName => (
+export function assertBundledPluginManifestEntry(entry: unknown): asserts entry is BundledPluginManifestEntry {
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+    throw new TypeError('desktop: invalid bundled plugin manifest entry')
+  }
+  const candidate = entry as Record<string, unknown>
+  const approvedBuilds = candidate.approvedBuilds
+  const seedLabel = typeof candidate.seedId === 'string' ? candidate.seedId : '<unknown>'
+  if (typeof candidate.seedId !== 'string'
+    || !/^[a-z0-9][a-z0-9._-]*$/iu.test(candidate.seedId)
+    || typeof candidate.packageName !== 'string'
+    || !/^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu.test(candidate.packageName)
+    || typeof candidate.profile !== 'string'
+    || !/^[a-z0-9][a-z0-9._-]*$/iu.test(candidate.profile)
+    || typeof candidate.version !== 'string'
+    || !/^[a-z0-9][a-z0-9.+-]*$/iu.test(candidate.version)
+    || typeof candidate.archive !== 'string'
+    || basename(candidate.archive) !== candidate.archive
+    || (candidate.installPolicy !== 'startup' && candidate.installPolicy !== 'manual')
+    || (candidate.registrySpec !== undefined && (
+      typeof candidate.registrySpec !== 'string'
+      || !/^\S+$/u.test(candidate.registrySpec)
+      || candidate.registrySpec.length > 512
+    ))
+    || (approvedBuilds !== undefined && (
+      !Array.isArray(approvedBuilds)
+      || approvedBuilds.length > 16
+      || new Set(approvedBuilds).size !== approvedBuilds.length
+      || approvedBuilds.some(packageName => (
         typeof packageName !== 'string'
         || !/^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu.test(packageName)
       ))
     ))
-    || !entry.integrity.startsWith('sha512-')) {
-    throw new TypeError(`desktop: invalid bundled plugin manifest entry ${entry.seedId}`)
+    || typeof candidate.integrity !== 'string'
+    || !candidate.integrity.startsWith('sha512-')) {
+    throw new TypeError(`desktop: invalid bundled plugin manifest entry ${seedLabel}`)
   }
 }
 
-async function hasDependency(packagePath: string, packageName: string): Promise<boolean> {
+function githubRepositoryIdentity(spec: string | undefined): string | undefined {
+  if (spec === undefined) return undefined
+  const normalized = spec.trim().replace(/^git\+/u, '')
+  const shorthand = /^github:(?<repository>[^#]+)(?:#(?<fragment>.*))?$/iu.exec(normalized)
+  const url = /^(?:https?|git|ssh):\/\/(?:git@)?github\.com[/:](?<repository>[^#]+)(?:#(?<fragment>.*))?$/iu.exec(normalized)
+    ?? /^git@github\.com:(?<repository>[^#]+)(?:#(?<fragment>.*))?$/iu.exec(normalized)
+  const match = shorthand ?? url
+  const repository = match?.groups?.repository?.replace(/\.git$/iu, '').replace(/^\/+|\/+$/gu, '')
+  if (repository === undefined || repository.split('/').length !== 2) return undefined
+  const path = /(?:^|&)path:\/?(?<path>[^&]+)(?:&|$)/u.exec(match?.groups?.fragment ?? '')?.groups?.path
+  return `github:${repository.toLowerCase()}${path === undefined ? '' : `#path:${path.replace(/\/+$/gu, '').toLowerCase()}`}`
+}
+
+function dependencyMatchesBundledEntry(
+  dependencyName: string,
+  dependencySpec: unknown,
+  entry: BundledPluginManifestEntry,
+): boolean {
+  if (dependencyName === entry.packageName) return true
+  if (typeof dependencySpec !== 'string') return false
+  if (dependencySpec.startsWith(`npm:${entry.packageName}@`)) return true
+  const expectedRepository = githubRepositoryIdentity(entry.registrySpec)
+  return expectedRepository !== undefined && githubRepositoryIdentity(dependencySpec) === expectedRepository
+}
+
+async function hasDependency(packagePath: string, entry: BundledPluginManifestEntry): Promise<boolean> {
   try {
     const manifest = JSON.parse(await readFile(packagePath, 'utf8')) as {
       dependencies?: Record<string, unknown>
       devDependencies?: Record<string, unknown>
     }
-    return Object.hasOwn(manifest.dependencies ?? {}, packageName)
-      || Object.hasOwn(manifest.devDependencies ?? {}, packageName)
+    return Object.entries({ ...manifest.devDependencies, ...manifest.dependencies })
+      .some(([dependencyName, dependencySpec]) => (
+        dependencyMatchesBundledEntry(dependencyName, dependencySpec, entry)
+      ))
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
     if (code === 'ENOENT') return false
@@ -100,6 +147,16 @@ async function markerExists(path: string): Promise<boolean> {
   }
 }
 
+async function seedMarkerSchema(path: string): Promise<number | undefined> {
+  try {
+    const value = JSON.parse(await readFile(path, 'utf8')) as { schema?: unknown }
+    return typeof value.schema === 'number' ? value.schema : 0
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    return 0
+  }
+}
+
 /**
  * Check the durable uninstall-aware seed marker for one packaged entry.
  * @param dshHome - Harness home directory that owns bundled-plugin state.
@@ -112,6 +169,22 @@ export async function hasBundledPluginSeedMarker(
 ): Promise<boolean> {
   assertBundledPluginManifestEntry(entry)
   return markerExists(join(dshHome, 'bundled-plugins', `${entry.seedId}.seeded.json`))
+}
+
+/**
+ * Detect the development-only legacy marker format that may have been written
+ * even though the plugin command targeted a different Harness home.
+ * @param dshHome - Harness home directory that owns bundled-plugin state.
+ * @param entry - Exact allowlisted packaged plugin.
+ * @returns Whether an existing marker predates schema 2.
+ */
+export async function hasLegacyBundledPluginSeedMarker(
+  dshHome: string,
+  entry: BundledPluginManifestEntry,
+): Promise<boolean> {
+  assertBundledPluginManifestEntry(entry)
+  const schema = await seedMarkerSchema(join(dshHome, 'bundled-plugins', `${entry.seedId}.seeded.json`))
+  return schema !== undefined && schema < 2
 }
 
 /**
@@ -144,7 +217,7 @@ async function writeMarker(path: string, entry: BundledPluginManifestEntry): Pro
   await mkdir(dirname(path), { recursive: true })
   const temporary = `${path}.${process.pid}.tmp`
   await writeFile(temporary, `${JSON.stringify({
-    schema: 1,
+    schema: 2,
     seedId: entry.seedId,
     packageName: entry.packageName,
     version: entry.version,
@@ -155,13 +228,30 @@ async function writeMarker(path: string, entry: BundledPluginManifestEntry): Pro
 
 /** Seed once. The durable marker intentionally survives a later user uninstall. */
 export async function seedBundledPlugin(options: SeedBundledPluginOptions): Promise<SeedBundledPluginResult> {
-  const { entry, resourcesDirectory, dshHome, install, force = false, onProgress } = options
+  const {
+    entry, resourcesDirectory, dshHome, install, prepare,
+    force = false, repairLegacyMarker = false, onProgress,
+  } = options
   assertBundledPluginManifestEntry(entry)
   const stateDirectory = join(dshHome, 'bundled-plugins')
   const markerPath = join(stateDirectory, `${entry.seedId}.seeded.json`)
-  if (!force && await markerExists(markerPath)) return 'already-seeded'
+  const dependencyPresent = await hasDependency(
+    join(dshHome, 'profiles', entry.profile, 'package.json'),
+    entry,
+  )
+  if (!force) {
+    const markerSchema = await seedMarkerSchema(markerPath)
+    if (markerSchema !== undefined) {
+      if (!repairLegacyMarker || markerSchema >= 2 || dependencyPresent) {
+        if (dependencyPresent) await prepare?.(entry)
+        return 'already-seeded'
+      }
+      await unlink(markerPath)
+    }
+  }
 
-  if (await hasDependency(join(dshHome, 'profiles', entry.profile, 'package.json'), entry.packageName)) {
+  if (dependencyPresent) {
+    await prepare?.(entry)
     onProgress?.({ stage: 'configuring', progress: 90 })
     await writeMarker(markerPath, entry)
     onProgress?.({ stage: 'configuring', progress: 100 })
@@ -178,6 +268,7 @@ export async function seedBundledPlugin(options: SeedBundledPluginOptions): Prom
   await mkdir(stateDirectory, { recursive: true })
   const stableArchive = join(stateDirectory, entry.archive)
   await copyFile(source, stableArchive)
+  await prepare?.(entry)
   onProgress?.({ stage: 'extracting', progress: 46 })
   await install(stableArchive, entry)
   onProgress?.({ stage: 'configuring', progress: 90 })
