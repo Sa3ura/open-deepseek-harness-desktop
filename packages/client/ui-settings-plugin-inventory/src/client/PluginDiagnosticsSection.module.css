@@ -4,6 +4,10 @@
   gap: 14px;
   width: 100%;
   max-width: 760px;
+  container-name: plugin-diagnostics;
+  container-type: inline-size;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -12,6 +16,11 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
+}
+
+.header > div:first-child {
+  flex: 1 1 180px;
+  min-width: 160px;
 }
 
 .header h2,
@@ -424,16 +433,23 @@
   margin: -2px 0 12px;
 }
 
-@media (max-width: 720px) {
-  .header,
-  .summary {
-    grid-template-columns: 1fr;
-  }
-
+@container plugin-diagnostics (max-width: 680px) {
   .header {
     flex-direction: column;
   }
 
+  .header > div:first-child {
+    flex: none;
+    min-width: 0;
+  }
+
+  .actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+@container plugin-diagnostics (max-width: 520px) {
   .summary dl {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 10px 0;

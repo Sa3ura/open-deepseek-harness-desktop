@@ -71,7 +71,7 @@ Set `DSH_DESKTOP_SOURCE_ROOT` only when testing a different trusted checkout. Th
 
 ## Packaged Release discovery
 
-Packaged applications check Releases from `https://github.com/flaqai/open-deepseek-harness-desktop` after startup and on explicit request. Stable clients ignore prereleases; an rc or beta client follows the same prerelease channel and also accepts a higher stable version. An available version appears as the sole action above Settings, with one blue dot on its icon, and in General Settings; other plugin-provided footer shortcuts stay hidden in the desktop host. The action opens the validated GitHub Release page in the system browser; the application never downloads, installs, or replaces an installer.
+Packaged applications check Releases from `https://github.com/flaqai/open-deepseek-harness-desktop` after startup and on explicit request. Stable clients ignore prereleases; an rc or beta client follows the same prerelease channel and also accepts a higher stable version. An available version appears as the sole action above Settings and in General Settings; other plugin-provided footer shortcuts stay hidden in the desktop host. The action opens the validated GitHub Release page in the system browser; the application never downloads, installs, or replaces an installer.
 
 ## Security
 

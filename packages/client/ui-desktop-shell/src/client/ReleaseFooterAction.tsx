@@ -24,7 +24,6 @@ export function ReleaseFooterAction({ wide, controller, t }: ReleaseFooterAction
         <button type="button" className={css.footerButton} aria-label={label} onClick={() => { void controller.openRelease() }}>
           <span className={css.releaseIcon} aria-hidden>
             <IconDownloadOutline16 size={wide ? 14 : 18} />
-            <span className={css.updateDot} data-update-dot />
           </span>
           {wide && <span>{label}</span>}
         </button>
