@@ -6,7 +6,7 @@ import { homedir, tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray,
+  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, session, shell, Tray,
   type MenuItemConstructorOptions, type MessageBoxOptions,
 } from 'electron'
 import { appendBundledPluginFailure } from './bundled-plugin-seed.ts'
@@ -85,6 +85,7 @@ import {
   stageImportedPluginDirectory,
   type StagedImportedPlugin,
 } from './imported-plugin-local-source.ts'
+import { resolveSystemProxyEnvironment } from './system-proxy.ts'
 
 const APP_NAME = 'DeepSeek Harness'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
@@ -780,10 +781,20 @@ async function startApplication(): Promise<void> {
     dshHome,
     (error) => { console.warn('desktop: could not read theme preference; following the system appearance', error) },
   ))
-  const harnessEnvironment: NodeJS.ProcessEnv = {
+  let harnessEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: dshHome,
     DSH_PROFILE_SAFE_MODE_ON_FAILURE: '1',
+  }
+  try {
+    const resolvedProxy = await resolveSystemProxyEnvironment(
+      harnessEnvironment,
+      url => session.defaultSession.resolveProxy(url),
+    )
+    harnessEnvironment = resolvedProxy.environment
+    if (resolvedProxy.applied) console.info('desktop: system proxy enabled for Harness child processes')
+  } catch (error) {
+    console.warn('desktop: could not resolve the system proxy; preserving the explicit process environment', error)
   }
   let launchOptions: DesktopLaunchOptions = app.isPackaged
     ? {}
