@@ -213,8 +213,8 @@ export class AgentPresets extends Service {
     // connections without changing an already-running turn. `idle` is the
     // safe removal boundary after tool calls and background-job creation have
     // finished for the current driver interval.
-    ctx.on('agent/status', ({ agent, status }) => {
-      if (status === 'running' || status === 'idle') this.reconcileExternalTools(agent)
+    ctx.on('agent/status', ({ agent }) => {
+      this.reconcileExternalTools(agent)
     })
 
     ctx.on('agent/disposed', ({ agent }) => {
@@ -282,7 +282,7 @@ export class AgentPresets extends Service {
       const enabled = accepted && projector !== undefined
         && (tool === 'codex' ? state.codex : state.claudeCode)
       const mounted = mounts?.get(tool)
-      if (enabled && mounted === undefined && projector !== undefined) {
+      if (enabled && mounted === undefined) {
         mounts ??= new Map()
         mounts.set(tool, projector(agent, tool))
         this.externalToolMounts.set(agent, mounts)
@@ -533,8 +533,8 @@ export class AgentPresets extends Service {
    * Read effective Host connections projected into complete presets.
    * @returns current Codex and Claude Code connection state.
    */
-  async externalToolsState(): Promise<ExternalToolsPresetState> {
-    return this.externalToolsSnapshot()
+  externalToolsState(): Promise<ExternalToolsPresetState> {
+    return Promise.resolve(this.externalToolsSnapshot())
   }
 
   /**

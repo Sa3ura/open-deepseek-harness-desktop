@@ -188,7 +188,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when the source is unknown, the id is unusable or already taken, or the deployment configures no writable root.'],
       },
       {
-        signature: 'async externalToolsState(): Promise<ExternalToolsPresetState>',
+        signature: 'externalToolsState(): Promise<ExternalToolsPresetState>',
         description: 'Read effective Host connections projected into complete presets.',
         parameters: [],
         returns: 'current Codex and Claude Code connection state.',
