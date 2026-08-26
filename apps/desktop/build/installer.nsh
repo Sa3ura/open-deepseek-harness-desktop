@@ -137,6 +137,20 @@ Var ProcessGuardOutput
   !macroend
 
   !macro customInstall
+    # Re-read the opt-in in the instance that executes the install section.
+    # Assisted installers can cross an outer/inner boundary after .onInit, so a
+    # Var populated only by customInit is not a reliable silent-install input.
+    ${GetParameters} $0
+    ClearErrors
+    ${GetOptions} $0 "/ADDCLI=" $1
+    ${IfNot} ${Errors}
+      ${If} $1 == "1"
+        StrCpy $CliPathRequested "1"
+      ${ElseIf} $1 == "0"
+        StrCpy $CliPathRequested "0"
+      ${EndIf}
+    ${EndIf}
+    DetailPrint "Desktop CLI PATH requested: $CliPathRequested"
     ${If} $CliPathRequested == "1"
       ReadRegStr $2 HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}"
       ${If} $2 != ""
@@ -150,9 +164,10 @@ Var ProcessGuardOutput
         WriteRegDWORD HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_REGISTRY_VALUE}" 1
         WriteRegStr HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}" "$INSTDIR\resources\cli-bin"
       ${Else}
+        DetailPrint "Desktop CLI PATH registration failed (exit $0): $1"
         DeleteRegValue HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_REGISTRY_VALUE}"
         DeleteRegValue HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}"
-        MessageBox MB_OK|MB_ICONEXCLAMATION "$(CliPathFailure)$\r$\n$1"
+        MessageBox MB_OK|MB_ICONEXCLAMATION "$(CliPathFailure)$\r$\n$1" /SD IDOK
       ${EndIf}
     ${Else}
       ReadRegDWORD $0 HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_REGISTRY_VALUE}"
