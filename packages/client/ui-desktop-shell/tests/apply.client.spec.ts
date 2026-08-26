@@ -29,6 +29,9 @@ function installBridge(): void {
     releases: {
       getStatus: vi.fn(() => Promise.resolve({ phase: 'current', currentVersion: '0.1.0' })),
       check: vi.fn(), onStatus: vi.fn(() => () => {}), openDownload: vi.fn(),
+      getDownloadStatus: vi.fn(() => Promise.resolve({ phase: 'idle' })),
+      startDownload: vi.fn(), cancelDownload: vi.fn(), openInstaller: vi.fn(),
+      onDownloadStatus: vi.fn(() => () => {}),
     },
   }
 }

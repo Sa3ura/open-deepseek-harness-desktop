@@ -4,6 +4,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { OpenLogResult } from './log-reveal.ts'
 import type { DesktopPreferences, DesktopPreferencesPatch } from './preferences.ts'
 import type { DesktopReleaseStatus } from './release-checker.ts'
+import type { DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import type { SourceUpdateResult, SourceUpdateStatus } from './source-updater.ts'
 import type { DesktopCliStatus } from './desktop-cli-registration.ts'
 import type { DesktopChatBackground } from './chat-background-store.ts'
@@ -55,12 +56,17 @@ export interface DesktopShellBridge {
   removeCommandLine(): Promise<DesktopCliStatus>
 }
 
-/** Release discovery bridge; it never downloads or installs application files. */
+/** Release discovery and verified system-assisted installer download bridge. */
 export interface DesktopReleasesBridge {
   getStatus(): Promise<DesktopReleaseStatus>
   check(): Promise<DesktopReleaseStatus>
   onStatus(callback: (status: DesktopReleaseStatus) => void): () => void
   openDownload(releaseUrl: string): Promise<{ error: string }>
+  getDownloadStatus(): Promise<DesktopReleaseDownloadStatus>
+  startDownload(): Promise<DesktopReleaseDownloadStatus>
+  cancelDownload(): Promise<DesktopReleaseDownloadStatus>
+  openInstaller(): Promise<{ error: string }>
+  onDownloadStatus(callback: (status: DesktopReleaseDownloadStatus) => void): () => void
 }
 
 /** Exact allowlisted bundled-plugin operations; no arbitrary package path is exposed. */
@@ -114,6 +120,23 @@ const releasesBridge: DesktopReleasesBridge = {
     return () => { ipcRenderer.removeListener('dsh:desktop:release-status', listener) }
   },
   openDownload: releaseUrl => ipcRenderer.invoke('dsh:desktop:releases:open', releaseUrl) as Promise<{ error: string }>,
+  getDownloadStatus: () => ipcRenderer.invoke(
+    'dsh:desktop:releases:download:get',
+  ) as Promise<DesktopReleaseDownloadStatus>,
+  startDownload: () => ipcRenderer.invoke(
+    'dsh:desktop:releases:download:start',
+  ) as Promise<DesktopReleaseDownloadStatus>,
+  cancelDownload: () => ipcRenderer.invoke(
+    'dsh:desktop:releases:download:cancel',
+  ) as Promise<DesktopReleaseDownloadStatus>,
+  openInstaller: () => ipcRenderer.invoke(
+    'dsh:desktop:releases:download:open',
+  ) as Promise<{ error: string }>,
+  onDownloadStatus(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, next: DesktopReleaseDownloadStatus): void => { callback(next) }
+    ipcRenderer.on('dsh:desktop:release-download-status', listener)
+    return () => { ipcRenderer.removeListener('dsh:desktop:release-download-status', listener) }
+  },
 }
 
 const bundledPluginsBridge: DesktopBundledPluginsBridge = {

@@ -36,6 +36,23 @@ export type DesktopReleaseStatus =
   | { phase: 'available'; currentVersion: string; latestVersion: string; publishedAt: string; releaseUrl: string }
   | { phase: 'error'; currentVersion: string; message: string }
 
+/** Installer download phases mirrored from the desktop wire protocol. */
+export type DesktopReleaseDownloadStatus =
+  | { phase: 'unsupported' | 'idle' }
+  | { phase: 'resolving'; version: string }
+  | {
+    phase: 'downloading'
+    version: string
+    fileName: string
+    transferredBytes: number
+    totalBytes: number
+    percent: number
+  }
+  | { phase: 'verifying'; version: string; fileName: string }
+  | { phase: 'ready'; version: string; fileName: string }
+  | { phase: 'cancelled'; version: string }
+  | { phase: 'error'; version?: string; message: string }
+
 /** Preference and fixed-log operations exposed by the preload. */
 export interface DesktopShellBridge {
   getCapabilities(): Promise<DesktopCapabilities>
@@ -48,12 +65,17 @@ export interface DesktopShellBridge {
   removeCommandLine(): Promise<DesktopCliStatus>
 }
 
-/** Read-only Release discovery and validated external-link operations. */
+/** Release discovery plus verified installer download operations. */
 export interface DesktopReleasesBridge {
   getStatus(): Promise<DesktopReleaseStatus>
   check(): Promise<DesktopReleaseStatus>
   onStatus(callback: (status: DesktopReleaseStatus) => void): () => void
   openDownload(releaseUrl: string): Promise<{ error: string }>
+  getDownloadStatus(): Promise<DesktopReleaseDownloadStatus>
+  startDownload(): Promise<DesktopReleaseDownloadStatus>
+  cancelDownload(): Promise<DesktopReleaseDownloadStatus>
+  openInstaller(): Promise<{ error: string }>
+  onDownloadStatus(callback: (status: DesktopReleaseDownloadStatus) => void): () => void
 }
 
 /** Complete Electron-only browser bridge consumed by this plugin. */

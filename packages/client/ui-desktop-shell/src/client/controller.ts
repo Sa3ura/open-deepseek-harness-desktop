@@ -1,7 +1,8 @@
 /** Reactive owner of desktop bridge snapshots and operations. */
 
 import type {
-  CloseBehavior, DesktopBridge, DesktopCapabilities, DesktopCliStatus, DesktopPreferences, DesktopReleaseStatus,
+  CloseBehavior, DesktopBridge, DesktopCapabilities, DesktopCliStatus, DesktopPreferences,
+  DesktopReleaseDownloadStatus, DesktopReleaseStatus,
 } from './bridge.ts'
 
 /** Immutable renderer state shared by the desktop settings and footer action. */
@@ -9,6 +10,7 @@ export interface DesktopShellSnapshot {
   capabilities: DesktopCapabilities | null
   preferences: DesktopPreferences | null
   release: DesktopReleaseStatus
+  releaseDownload: DesktopReleaseDownloadStatus
   commandLine: DesktopCliStatus | null
   busy: boolean
   error: string | null
@@ -20,6 +22,7 @@ export class DesktopShellController {
     capabilities: null,
     preferences: null,
     release: { phase: 'unsupported' },
+    releaseDownload: { phase: 'unsupported' },
     commandLine: null,
     busy: false,
     error: null,
@@ -51,14 +54,16 @@ export class DesktopShellController {
     this.#disposers = [
       this.bridge.shell.onPreferences((preferences) => { this.#publish({ preferences }) }),
       this.bridge.releases.onStatus((release) => { this.#publish({ release }) }),
+      this.bridge.releases.onDownloadStatus((releaseDownload) => { this.#publish({ releaseDownload }) }),
     ]
     void Promise.all([
       this.bridge.shell.getCapabilities(),
       this.bridge.shell.getPreferences(),
       this.bridge.releases.getStatus(),
+      this.bridge.releases.getDownloadStatus(),
       this.bridge.shell.getCommandLine(),
-    ]).then(([capabilities, preferences, release, commandLine]) => {
-      this.#publish({ capabilities, preferences, release, commandLine })
+    ]).then(([capabilities, preferences, release, releaseDownload, commandLine]) => {
+      this.#publish({ capabilities, preferences, release, releaseDownload, commandLine })
     }).catch((error: unknown) => {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     })
@@ -137,5 +142,34 @@ export class DesktopShellController {
     if (release.phase !== 'available') return
     const result = await this.bridge.releases.openDownload(release.releaseUrl)
     if (result.error !== '') this.#publish({ error: result.error })
+  }
+
+  /** Download and verify the installer selected by the main process. */
+  async downloadRelease(): Promise<void> {
+    this.#publish({ error: null })
+    try {
+      this.#publish({ releaseDownload: await this.bridge.releases.startDownload() })
+    } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  /** Cancel the active installer download. */
+  async cancelReleaseDownload(): Promise<void> {
+    try {
+      this.#publish({ releaseDownload: await this.bridge.releases.cancelDownload() })
+    } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  /** Ask the operating system to open the checksum-verified installer. */
+  async openInstaller(): Promise<void> {
+    try {
+      const result = await this.bridge.releases.openInstaller()
+      if (result.error !== '') this.#publish({ error: result.error })
+    } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    }
   }
 }

@@ -8,6 +8,10 @@ function bench() {
   }
   let release: DesktopReleaseStatus = { phase: 'idle', currentVersion: '0.1.0-rc.7' }
   const openDownload = vi.fn(() => Promise.resolve({ error: '' }))
+  const startDownload = vi.fn(() => Promise.resolve({
+    phase: 'ready' as const, version: '0.1.0-rc.8', fileName: 'DeepSeek-Harness-macos-arm64.dmg',
+  }))
+  const openInstaller = vi.fn(() => Promise.resolve({ error: '' }))
   const bridge: DesktopBridge = {
     shell: {
       getCapabilities: vi.fn(() => Promise.resolve({
@@ -42,10 +46,15 @@ function bench() {
       }),
       onStatus: vi.fn(() => () => {}),
       openDownload,
+      getDownloadStatus: vi.fn(() => Promise.resolve({ phase: 'idle' as const })),
+      startDownload,
+      cancelDownload: vi.fn(() => Promise.resolve({ phase: 'cancelled' as const, version: '0.1.0-rc.8' })),
+      openInstaller,
+      onDownloadStatus: vi.fn(() => () => {}),
     },
   }
   const controller = new DesktopShellController(bridge)
-  return { bridge, controller, openDownload }
+  return { bridge, controller, openDownload, startDownload, openInstaller }
 }
 
 describe('DesktopShellController', () => {
@@ -59,6 +68,10 @@ describe('DesktopShellController', () => {
     expect(b.controller.getSnapshot().release.phase).toBe('available')
     await b.controller.openRelease()
     expect(b.openDownload).toHaveBeenCalledOnce()
+    await b.controller.downloadRelease()
+    expect(b.controller.getSnapshot().releaseDownload.phase).toBe('ready')
+    await b.controller.openInstaller()
+    expect(b.openInstaller).toHaveBeenCalledOnce()
     await b.controller.installCommandLine()
     expect(b.controller.getSnapshot().commandLine?.phase).toBe('installed')
     await b.controller.removeCommandLine()

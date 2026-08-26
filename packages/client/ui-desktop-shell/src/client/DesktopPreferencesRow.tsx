@@ -33,6 +33,12 @@ function Toggle({ enabled, disabled, label, onChange }: {
   )
 }
 
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowProps) {
   const subscribe = useCallback((listener: () => void) => controller.subscribe(listener), [controller])
   const getSnapshot = useCallback(() => controller.getSnapshot(), [controller])
@@ -43,6 +49,7 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
   const preferences = state.preferences
   if (preferences === null || state.capabilities === null) return null
   const release = state.release
+  const releaseDownload = state.releaseDownload
   const commandLine = state.commandLine
   const releaseText = release.phase === 'unsupported'
     ? developmentUpdateAvailable
@@ -55,6 +62,35 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
         : release.phase === 'current'
           ? t('release.current')
           : t('release.error')
+  const installerDownloadSupported = state.capabilities.packaged
+    && (state.capabilities.platform === 'darwin' || state.capabilities.platform === 'win32')
+  const selectedDownload = release.phase === 'available'
+    && 'version' in releaseDownload
+    && releaseDownload.version === release.latestVersion
+    ? releaseDownload
+    : releaseDownload.phase === 'idle' || releaseDownload.phase === 'unsupported'
+      ? releaseDownload
+      : { phase: 'idle' as const }
+  const downloadActive = selectedDownload.phase === 'resolving'
+    || selectedDownload.phase === 'downloading'
+    || selectedDownload.phase === 'verifying'
+  const downloadText = selectedDownload.phase === 'resolving'
+    ? t('release.download.resolving')
+    : selectedDownload.phase === 'downloading'
+      ? t('release.download.progress', {
+        percent: selectedDownload.percent,
+        transferred: formatBytes(selectedDownload.transferredBytes),
+        total: formatBytes(selectedDownload.totalBytes),
+      })
+      : selectedDownload.phase === 'verifying'
+        ? t('release.download.verifying')
+        : selectedDownload.phase === 'ready'
+          ? t('release.download.ready', { file: selectedDownload.fileName })
+          : selectedDownload.phase === 'cancelled'
+            ? t('release.download.cancelled')
+            : selectedDownload.phase === 'error'
+              ? t('release.download.error', { message: selectedDownload.message })
+              : null
 
   return (
     <section className={css.group}>
@@ -154,6 +190,22 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
         <div className={css.text}>
           <div className={css.title}>{t('release.title')}</div>
           <div className={release.phase === 'error' ? css.error : css.description}>{releaseText}</div>
+          {release.phase === 'available'
+            && state.capabilities.platform === 'darwin'
+            && state.capabilities.packaged && (
+            <div className={css.description}>{t('release.macosInstallHint')}</div>
+          )}
+          {release.phase === 'available' && downloadText !== null && (
+            <div className={selectedDownload.phase === 'error' ? css.error : css.description}>{downloadText}</div>
+          )}
+          {selectedDownload.phase === 'downloading' && (
+            <progress
+              className={css.progress}
+              aria-label={t('release.download.progressLabel')}
+              value={selectedDownload.transferredBytes}
+              max={selectedDownload.totalBytes}
+            />
+          )}
         </div>
         {release.phase === 'unsupported' ? (
           <div className={css.actions}>
@@ -166,11 +218,33 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
           </div>
         ) : (
           <div className={css.actions}>
-            <Button variant="outline" disabled={release.phase === 'checking'} onClick={() => { void controller.checkRelease() }}>
+            <Button
+              variant="outline"
+              disabled={release.phase === 'checking' || downloadActive}
+              onClick={() => { void controller.checkRelease() }}
+            >
               {t('release.check')}
             </Button>
             {release.phase === 'available' && (
-              <Button variant="primary" onClick={() => { void controller.openRelease() }}>{t('release.open')}</Button>
+              installerDownloadSupported ? (
+                selectedDownload.phase === 'ready' ? (
+                  <Button variant="primary" onClick={() => { void controller.openInstaller() }}>
+                    {t('release.download.open')}
+                  </Button>
+                ) : downloadActive ? (
+                  <Button variant="outline" onClick={() => { void controller.cancelReleaseDownload() }}>
+                    {t('release.download.cancel')}
+                  </Button>
+                ) : (
+                  <Button variant="primary" onClick={() => { void controller.downloadRelease() }}>
+                    {t(selectedDownload.phase === 'error' || selectedDownload.phase === 'cancelled'
+                      ? 'release.download.retry'
+                      : 'release.download.start')}
+                  </Button>
+                )
+              ) : (
+                <Button variant="primary" onClick={() => { void controller.openRelease() }}>{t('release.open')}</Button>
+              )
             )}
           </div>
         )}

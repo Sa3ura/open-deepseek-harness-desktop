@@ -38,6 +38,7 @@ import {
   type DesktopPreferences, type DesktopPreferencesStore,
 } from './preferences.ts'
 import { DesktopReleaseChecker, isAllowedReleaseUrl, type DesktopReleaseStatus } from './release-checker.ts'
+import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import { SourceUpdater } from './source-updater.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
 import { usesCustomWindowFrame, withCustomWindowFrameInset } from './window-frame.ts'
@@ -108,6 +109,7 @@ let quitReleased = false
 let hiddenLaunch = false
 let harnessLogPath = ''
 let releaseChecker: DesktopReleaseChecker | undefined
+let releaseDownloader: DesktopReleaseDownloader | undefined
 let bundledPluginInstaller: BundledPluginInstaller | undefined
 let importedPluginRestoreManager: ImportedPluginRestoreManager | undefined
 let desktopCliManager: DesktopCliManager | undefined
@@ -610,6 +612,7 @@ function createWindow(): BrowserWindow {
 async function startApplication(): Promise<void> {
   if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
   await app.whenReady()
+  applyDevelopmentDockIcon()
   const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
   applyDesktopThemeSource(await readDesktopThemeSource(
     dshHome,
@@ -623,7 +626,6 @@ async function startApplication(): Promise<void> {
   let launchOptions: DesktopLaunchOptions = app.isPackaged
     ? {}
     : resolveDevelopmentLaunchOptions(DEFAULT_SOURCE_ROOT)
-  applyDevelopmentDockIcon()
   harnessLogPath = join(app.getPath('logs'), 'harness.log')
   preferencesStore = createDesktopPreferencesStore(
     join(app.getPath('userData'), 'desktop-preferences.json'),
@@ -644,9 +646,23 @@ async function startApplication(): Promise<void> {
     nodeCommand: process.env.DSH_DESKTOP_NODE_BIN ?? 'node',
   })
   releaseChecker = app.isPackaged ? new DesktopReleaseChecker(app.getVersion()) : undefined
+  releaseDownloader = releaseChecker === undefined ? undefined : new DesktopReleaseDownloader({
+    platform: process.platform,
+    arch: process.arch,
+    downloadDirectory: join(app.getPath('userData'), 'updates'),
+    getRelease: () => releaseChecker?.status ?? { phase: 'unsupported' },
+    openPath: path => shell.openPath(path),
+  })
   releaseChecker?.subscribe((status) => {
+    releaseDownloader?.resetForRelease(status)
     const window = mainWindow
     if (window !== undefined && !window.isDestroyed()) window.webContents.send('dsh:desktop:release-status', status)
+  })
+  releaseDownloader?.subscribe((status) => {
+    const window = mainWindow
+    if (window !== undefined && !window.isDestroyed()) {
+      window.webContents.send('dsh:desktop:release-download-status', status)
+    }
   })
   ipcMain.handle('dsh:desktop:capabilities', () => desktopCapabilities())
   ipcMain.handle('dsh:desktop:preferences:get', () => preferences)
@@ -692,11 +708,28 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:releases:check', () => (
     releaseChecker?.check() ?? Promise.resolve({ phase: 'unsupported' } satisfies DesktopReleaseStatus)
   ))
-  ipcMain.handle('dsh:desktop:releases:open', async (_event, releaseUrl: unknown) => {
+  ipcMain.handle('dsh:desktop:releases:open', async (event, releaseUrl: unknown) => {
+    assertMainRenderer(event.sender)
     if (typeof releaseUrl !== 'string' || !isAllowedReleaseUrl(releaseUrl)) {
       throw new TypeError('desktop: invalid Release URL')
     }
     return { error: await shell.openExternal(releaseUrl).then(() => '') }
+  })
+  ipcMain.handle('dsh:desktop:releases:download:get', (event): DesktopReleaseDownloadStatus => {
+    assertMainRenderer(event.sender)
+    return releaseDownloader?.status ?? { phase: 'unsupported' }
+  })
+  ipcMain.handle('dsh:desktop:releases:download:start', (event) => {
+    assertMainRenderer(event.sender)
+    return releaseDownloader?.start() ?? Promise.resolve({ phase: 'unsupported' } satisfies DesktopReleaseDownloadStatus)
+  })
+  ipcMain.handle('dsh:desktop:releases:download:cancel', (event): DesktopReleaseDownloadStatus => {
+    assertMainRenderer(event.sender)
+    return releaseDownloader?.cancel() ?? { phase: 'unsupported' }
+  })
+  ipcMain.handle('dsh:desktop:releases:download:open', (event) => {
+    assertMainRenderer(event.sender)
+    return releaseDownloader?.open() ?? Promise.resolve({ error: 'Release downloads are unavailable.' })
   })
   ipcMain.handle('dsh:source-update:check', () => updater.check())
   ipcMain.handle('dsh:source-update:upgrade', (_event, expectedCommit: unknown) => {
