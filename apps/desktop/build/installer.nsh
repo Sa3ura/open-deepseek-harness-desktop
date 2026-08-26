@@ -82,9 +82,8 @@ Var ProcessGuardOutput
     ${If} $0 == 1
       StrCpy $CliPathRequested "1"
     ${EndIf}
-    ${GetParameters} $0
     ClearErrors
-    ${GetOptions} $0 "/ADDCLI=" $1
+    ${GetOptions} $CMDLINE "/ADDCLI=" $1
     ${IfNot} ${Errors}
       ${If} $1 == "1"
         StrCpy $CliPathRequested "1"
@@ -140,9 +139,8 @@ Var ProcessGuardOutput
     # Re-read the opt-in in the instance that executes the install section.
     # Assisted installers can cross an outer/inner boundary after .onInit, so a
     # Var populated only by customInit is not a reliable silent-install input.
-    ${GetParameters} $0
     ClearErrors
-    ${GetOptions} $0 "/ADDCLI=" $1
+    ${GetOptions} $CMDLINE "/ADDCLI=" $1
     ${IfNot} ${Errors}
       ${If} $1 == "1"
         StrCpy $CliPathRequested "1"
