@@ -129,18 +129,6 @@ try {
     $tail = if ($null -eq $diagnostic) { 'No harness.log was created.' } else { (Get-Content $diagnostic.FullName -Tail 80) -join "`n" }
     throw "Installed application did not reach Harness readiness within 180 seconds.`n$tail"
   }
-  $betterSidebarMarker = Join-Path $dshHome 'bundled-plugins/dsh-better-sidebar.seeded.json'
-  $deferredDeadline = (Get-Date).AddSeconds(180)
-  while ((Get-Date) -lt $deferredDeadline -and -not $app.HasExited -and -not (Test-Path $betterSidebarMarker)) {
-    Start-Sleep -Seconds 1
-  }
-  if (-not (Test-Path $betterSidebarMarker)) {
-    $diagnostic = Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    $tail = if ($null -eq $diagnostic) { 'No harness.log was created.' } else { (Get-Content $diagnostic.FullName -Tail 80) -join "`n" }
-    throw "Better Sidebar did not finish its post-entry deferred install within 180 seconds.`n$tail"
-  }
-
-
   $upgradeStart = [System.Diagnostics.ProcessStartInfo]::new()
   $upgradeStart.FileName = $upgradeInstaller
   $upgradeStart.UseShellExecute = $false
@@ -248,16 +236,6 @@ foreach ($plugin in @($bundledPlugins | Where-Object { $_.InstallPolicy -eq 'man
   $archivePath = Join-Path $installRoot "resources/bundled-plugins/$($plugin.Archive)"
   if (-not (Test-Path $archivePath)) { throw "Manual bundled plugin archive is missing: $archivePath" }
   $markerPath = Join-Path $dshHome "bundled-plugins/$($plugin.SeedId).seeded.json"
-  if ($plugin.PackageName -eq 'dsh-better-sidebar') {
-    if ($null -eq $profileManifest.dependencies.PSObject.Properties[$plugin.PackageName]) {
-      throw "Deferred Better Sidebar dependency is absent from $profileManifestPath"
-    }
-    if ($profileManifest.dsh.profile.bundles -notcontains $plugin.PackageName) {
-      throw "Deferred Better Sidebar is absent from the Web profile bundle list"
-    }
-    if (-not (Test-Path $markerPath)) { throw "Deferred Better Sidebar marker is missing: $markerPath" }
-    continue
-  }
   if ($null -ne $profileManifest.dependencies.PSObject.Properties[$plugin.PackageName]) {
     throw "Manual bundled plugin $($plugin.PackageName) was installed without user action"
   }

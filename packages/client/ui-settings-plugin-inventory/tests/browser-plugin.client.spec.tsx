@@ -11,7 +11,6 @@ import { PluginInventorySettingsTab } from '../src/client/PluginInventorySetting
 import { PluginDiagnosticsSection } from '../src/client/PluginDiagnosticsSection.tsx'
 import { ExternalToolsSection } from '../src/client/ExternalToolsSection.tsx'
 import { PluginDiscovery } from '../src/client/PluginDiscovery.tsx'
-import { BetterSidebarInstallCard } from '../src/client/BetterSidebarInstallCard.tsx'
 import { ImportedPluginRestoreDialog } from '../src/client/ImportedPluginRestore.tsx'
 import type { PluginInventorySettingsTabInjected } from '../src/client/PluginInventorySettingsTab.tsx'
 
@@ -107,7 +106,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(b.slots.entries('conversation.hero.pluginDiscovery')[0]?.component).toBe(PluginDiscovery)
     const overlays = b.slots.entries('shell.overlay')
     expect(overlays.find(entry => entry.options.id === 'imported-plugin-restore')?.component).toBe(ImportedPluginRestoreDialog)
-    expect(overlays.find(entry => entry.options.id === 'better-sidebar-install')?.component).toBe(BetterSidebarInstallCard)
+    expect(overlays).toHaveLength(1)
     expect(b.list).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => PluginInventorySettingsTabInjected)()
@@ -150,7 +149,7 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
       expect(b.slots.entries('conversation.hero.pluginDiscovery')[0]?.component).toBe(PluginDiscovery)
       const overlays = b.slots.entries('shell.overlay')
       expect(overlays.find(entry => entry.options.id === 'imported-plugin-restore')?.component).toBe(ImportedPluginRestoreDialog)
-      expect(overlays.find(entry => entry.options.id === 'better-sidebar-install')?.component).toBe(BetterSidebarInstallCard)
+      expect(overlays).toHaveLength(1)
     })
 
     await fiber.dispose()

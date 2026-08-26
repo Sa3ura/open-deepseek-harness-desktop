@@ -66,7 +66,7 @@ describe('bundled plugin seed', () => {
       ['@xmanrui/dsh-im', 'startup'],
       ['dsh-skill-picker', 'startup'],
       ['dsh-font', 'startup'],
-      ['dsh-better-sidebar', 'manual'],
+      ['dsh-better-sidebar', 'startup'],
       ['dsh-pocket', 'startup'],
     ])
     for (const entry of manifest.plugins.filter(candidate => !candidate.registrySpec?.startsWith('github:'))) {

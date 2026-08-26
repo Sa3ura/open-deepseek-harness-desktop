@@ -62,8 +62,8 @@ function readDesktopShellBridge(): DesktopShellBridge | undefined {
 }
 
 /**
- * Start the first-run packaged Better Sidebar job without falling back to Host Remote.
- * @param request - Structured profile and package spec selected by the user.
+ * Start an allowlisted deferred packaged-plugin job without falling back to Host Remote.
+ * @param request - Structured profile and package spec selected by a trusted client flow.
  * @returns The initial desktop-owned job, or undefined when the bridge does not own it.
  */
 export async function startDeferredPluginInstall(

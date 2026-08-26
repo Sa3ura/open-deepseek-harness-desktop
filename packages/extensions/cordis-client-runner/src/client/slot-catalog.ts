@@ -1618,7 +1618,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-selection-actions SelectionActions id \'selection-actions\'',
       'client-ui-settings-plugin-inventory ImportedPluginRestoreDialog id \'imported-plugin-restore\'',
-      'client-ui-settings-plugin-inventory BetterSidebarInstallCard id \'better-sidebar-install\'',
     ],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.overlay\', () => ctx.slots.register(\n      { name: \'shell.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',

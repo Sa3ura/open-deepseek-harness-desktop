@@ -10,21 +10,22 @@ import { PluginDiagnosticsSection, type PluginDiagnosticsSectionInjected } from 
 import { PluginDiscovery } from './PluginDiscovery.tsx'
 import type { PluginDiscoveryInjected } from './PluginDiscovery.tsx'
 import { ExternalToolsSection, type ExternalToolsSectionInjected } from './ExternalToolsSection.tsx'
-import { BetterSidebarInstallCard, type BetterSidebarInstallCardInjected } from './BetterSidebarInstallCard.tsx'
 import {
   ImportedPluginRestoreDialog,
   importedPluginRestoreInjected,
 } from './ImportedPluginRestore.tsx'
 import { en, zh, type PluginInventoryLocaleKey } from './locales.ts'
 import {
-  getDeferredPluginInstall,
   getPluginInstall,
   installDesktopDiagnosticFixture,
-  openDesktopHarnessLog,
-  restartDesktopApplication,
-  startDeferredPluginInstall,
   startPluginInstall,
 } from './bundled-install-bridge.ts'
+
+export {
+  BetterSidebarInstallCard,
+  type BetterSidebarInstallCardInjected,
+  type BetterSidebarInstallCardProps,
+} from './BetterSidebarInstallCard.tsx'
 
 export type { PluginInventorySettingsTabInjected, PluginInventorySettingsTabProps } from './PluginInventorySettingsTab.tsx'
 export type { PluginDiagnosticsSectionInjected, PluginDiagnosticsSectionProps } from './PluginDiagnosticsSection.tsx'
@@ -146,13 +147,6 @@ export function apply(ctx: ClientContext): void {
       return result.value
     },
   })
-  const betterSidebarInjected = (): BetterSidebarInstallCardInjected => ({
-    startInstall: startDeferredPluginInstall,
-    getInstall: getDeferredPluginInstall,
-    openLog: openDesktopHarnessLog,
-    restart: restartDesktopApplication,
-  })
-
   ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
     name: 'settings.plugins.tab',
     id: 'all',
@@ -189,11 +183,4 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: importedPluginRestoreInjected,
   }, ImportedPluginRestoreDialog))
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'better-sidebar-install',
-    order: 20,
-    locale: NS,
-    inject: betterSidebarInjected,
-  }, BetterSidebarInstallCard))
 }

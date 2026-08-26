@@ -46,7 +46,7 @@
       "packageName": "dsh-better-sidebar",
       "version": "0.16.1",
       "profile": "web",
-      "installPolicy": "manual",
+      "installPolicy": "startup",
       "registrySpec": "dsh-better-sidebar@0.16.1",
       "approvedBuilds": [
         "node-pty"

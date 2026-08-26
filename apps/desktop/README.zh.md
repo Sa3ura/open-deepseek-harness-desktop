@@ -24,7 +24,7 @@ pnpm run dev:desktop
 
 首次普通启动时，如果发现官方 `~/.dsh`，应用会在 Harness 启动前提供三个选择：把受支持的用户数据导入独立 home、直接复用官方 home，或全新开始。选择页默认跟随操作系统语言，并提供即时中英文切换。导入模式通过拒绝符号链接的白名单处理设置、凭据、会话、工作区元数据、Agent 预设、Skill 与连接状态，且不修改来源；Profile、`node_modules`、锁文件、预装插件 marker、隔离与健康状态、匿名用户 id 均不会复制。应用会另行把 Web Profile 依赖与 bundle 的有序交集记录到 `imported-plugin-restore.v1.json`，并且只提取布尔型 `allowBuilds` 条目。进入客户端后，一次性弹窗与“插件”页面允许用户选择可迁移的 registry、npm alias 和不含凭据的 Git 插件，并通过现有 CLI 串行重新安装；本地来源与带凭据来源会显示原因但不能执行。桌面预置插件先完成核对，同名恢复项显示为客户端已提供。精确构建许可合并到独立 Profile，`false` 优先，任何全局安全降级均被忽略。由于不复制官方锁文件，声明版本范围可能解析到更新的兼容版本。导入只会从复制得到的设置中删除 `ui-onboarding` 完成记录，使独立桌面环境显示自己的设置向导；其余受支持设置保持不变。复用模式会有意共享官方 Profile、插件、构建许可与向导状态，任一应用的修改都会作用于同一批文件。每条插件生命周期命令都会收到选定的 `DSH_HOME`。
 
-打包版本携带 `bundled-plugins/manifest.json` 中六个经过固定版本和完整性校验的归档。本地打包开始前，pnpm 会通过 registry 条目的 `latest` 稳定 dist-tag 解析版本，从 npm 官方 registry 下载 tarball，核对 registry 提供的 SHA-512，并原子替换整套快照；固定 Git 条目继续保留经过审核的提交和归档。GitHub 打包只解析一次快照，并让所有平台复用同一组文件。Harness 启动前按清单预设五个启动插件，且始终把安装包内的本地归档交给 pnpm，不会从 registry 解析或下载该插件包；普通传递依赖仍由 Profile 的 pnpm store 与解析规则管理。主界面可用后，右下角非阻塞卡片再从同一快照校验、解压并配置 Better Sidebar。隐藏卡片不会停止任务，完成后提示重启应用，失败时提供重试与既有 Harness 日志入口。所有平台安装包都不携带 Codex 和 Claude Code：用户在“外部工具”中点击安装后，客户端才从 npm 下载精确版本的官方 `@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2` 或 `@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2` 及其平台依赖，因此这一步需要联网。开发版使用仓库固定的 pnpm，安装版使用内置 pnpm，两者都不依赖系统 pnpm。持久种子标记在用户卸载后继续保留，因此启动与延后安装卡片都不会擅自装回插件，而用户明确点击发现页安装时仍可重新安装。打包不会复制开发电脑 Web profile 中已经安装或更新过的插件。
+打包版本携带 `bundled-plugins/manifest.json` 中六个经过固定版本和完整性校验的归档。本地打包开始前，pnpm 会通过 registry 条目的 `latest` 稳定 dist-tag 解析版本，从 npm 官方 registry 下载 tarball，核对 registry 提供的 SHA-512，并原子替换整套快照；固定 Git 条目继续保留经过审核的提交和归档。GitHub 打包只解析一次快照，并让所有平台复用同一组文件。Harness 启动前按清单预设包括 Better Sidebar 在内的六个插件，且始终把安装包内的本地归档交给 pnpm，不会从 registry 解析或下载该插件包；普通传递依赖仍由 Profile 的 pnpm store 与解析规则管理。所有平台安装包都不携带 Codex 和 Claude Code：用户在“外部工具”中点击安装后，客户端才从 npm 下载精确版本的官方 `@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2` 或 `@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2` 及其平台依赖，因此这一步需要联网。开发版使用仓库固定的 pnpm，安装版使用内置 pnpm，两者都不依赖系统 pnpm。持久种子标记在用户卸载后继续保留，因此启动不会擅自装回插件，而用户明确点击发现页或导入插件恢复操作时仍可重新安装。桌面端继续保留精确白名单的延后安装任务和进度能力，供明确的恢复流程复用，但 Better Sidebar 不再自动触发进入后的延后任务。打包不会复制开发电脑 Web profile 中已经安装或更新过的插件。
 
 开发与打包脚本会从 Desktop 和 Web 各自的应用目录执行。每个 Unix 打包命令都会把明确的平台与架构同时传给运行时和 Codex 准备步骤，使 macOS Apple 芯片、macOS Intel、Linux x64 与 Windows x64 的 staging 相互独立。
 
@@ -100,7 +100,7 @@ Profile 插件属于可信的可执行代码。内置包管理运行时让插件
 | Windows x64 | `windows-2025` | NSIS EXE |
 | Linux x64 | `ubuntu-24.04` | DEB 与 RPM |
 
-Windows 任务会把最终 NSIS 产物静默安装到包含空格和中文字符的路径，检查安装后的运行时，使用隔离的应用数据启动已安装程序，并在上传产物前要求 Harness 输出就绪行，同时确认五个启动预设的依赖、bundle 条目、Profile 锁文件和持久化 seed 标记均已生成。任务还要求 Better Sidebar 与 Windows x64 Codex 归档确实存在；Codex 在用户操作前必须保持未安装，而 Better Sidebar 只能在可用主界面加载后开始处理。其他平台仍需完成原生安装、首次启动、退出、子进程清理、目录选择、文件打开、PTY 与沙箱行为的发布验证。只有在发布签名与回滚可用后才添加已签名的更新元数据。
+Windows 任务会把最终 NSIS 产物静默安装到包含空格和中文字符的路径，检查安装后的运行时，使用隔离的应用数据启动已安装程序，并在上传产物前要求 Harness 输出就绪行，同时确认六个启动预设的依赖、bundle 条目、Profile 锁文件和持久化 seed 标记均已生成。Better Sidebar 必须在 Harness 就绪前完成安装，而 Codex 与 Claude Code 在用户操作前必须保持未安装。其他平台仍需完成原生安装、首次启动、退出、子进程清理、目录选择、文件打开、PTY 与沙箱行为的发布验证。只有在发布签名与回滚可用后才添加已签名的更新元数据。
 
 不得通过把整个工作区源码复制进 Electron 来打包仓库。发布产物必须只包含已发布的运行时闭包、生成的第三方声明，且不得包含开发凭证。
 
