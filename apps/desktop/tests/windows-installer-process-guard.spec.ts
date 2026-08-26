@@ -37,6 +37,7 @@ describe('Windows installer process guard', () => {
     expect(guard).toContain('PID {0}  {1}  {2}')
     expect(guard).toContain('$ExitProcessesRemain = 30')
     expect(guard).toContain('$remaining = @(Get-DesktopOwnedProcesses)')
+    expect(guard).toContain('for ($attempt = 1; $attempt -le 3; $attempt += 1)')
     expect(guard).toContain('Stop-Process -Id $process.ProcessId -Force')
   })
 })

@@ -134,6 +134,11 @@ try {
     $tail = if (-not (Test-Path -LiteralPath $harnessLog)) { 'No harness.log was created.' } else { (Get-Content -LiteralPath $harnessLog -Tail 80) -join "`n" }
     throw "Installed application did not reach Harness readiness within 480 seconds.`n$tail"
   }
+  $guardScript = Join-Path $PSScriptRoot '../build/installer-process-guard.ps1'
+  $guardOutput = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Action inspect -InstallDirectory $installRoot -AppExecutable 'DeepSeek Harness.exe' -ExcludeProcessId $PID 2>&1
+  $guardExitCode = $LASTEXITCODE
+  Write-Host "Pre-upgrade process guard (exit $guardExitCode):`n$($guardOutput -join "`n")"
+  if ($guardExitCode -ne 10) { throw "Process guard did not detect the running packaged application (exit $guardExitCode)" }
   $upgradeStart = [System.Diagnostics.ProcessStartInfo]::new()
   $upgradeStart.FileName = $upgradeInstaller
   $upgradeStart.UseShellExecute = $false
@@ -146,7 +151,11 @@ try {
     $upgrade.Kill($true)
     throw 'Windows upgrade installer did not exit within 15 minutes'
   }
-  if ($upgrade.ExitCode -ne 0) { throw "Windows upgrade installer exited with $($upgrade.ExitCode)" }
+  if ($upgrade.ExitCode -ne 0) {
+    $remainingOutput = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Action inspect -InstallDirectory $installRoot -AppExecutable 'DeepSeek Harness.exe' -ExcludeProcessId $PID 2>&1
+    Write-Host "Post-upgrade process guard (exit $LASTEXITCODE):`n$($remainingOutput -join "`n")"
+    throw "Windows upgrade installer exited with $($upgrade.ExitCode)"
+  }
   if (-not $app.WaitForExit(30000)) { throw 'Upgrade did not close the installed desktop application' }
   if (-not $orphanNode.WaitForExit(30000)) { throw 'Upgrade did not close the installation-owned orphan Node process' }
   $decoy.Refresh()

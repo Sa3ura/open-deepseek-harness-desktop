@@ -79,18 +79,22 @@ try {
   }
 
   Start-Sleep -Milliseconds 1500
-  $remaining = @(Get-DesktopOwnedProcesses)
-  foreach ($process in $remaining) {
-    try {
-      Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
-      Write-Output ("Stopped PID {0} ({1})." -f $process.ProcessId, $process.Name)
+  $remaining = @()
+  for ($attempt = 1; $attempt -le 3; $attempt += 1) {
+    $remaining = @(Get-DesktopOwnedProcesses)
+    if ($remaining.Count -eq 0) { break }
+    foreach ($process in $remaining) {
+      try {
+        Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+        Write-Output ("Stopped PID {0} ({1}) on attempt {2}." -f $process.ProcessId, $process.Name, $attempt)
+      }
+      catch {
+        Write-Output ("Could not stop PID {0} ({1}) on attempt {2}: {3}" -f $process.ProcessId, $process.Name, $attempt, $_.Exception.Message)
+      }
     }
-    catch {
-      Write-Output ("Could not stop PID {0} ({1}): {2}" -f $process.ProcessId, $process.Name, $_.Exception.Message)
-    }
+    Start-Sleep -Milliseconds 1000
   }
 
-  Start-Sleep -Milliseconds 750
   $remaining = @(Get-DesktopOwnedProcesses)
   if ($remaining.Count -gt 0) {
     Write-ProcessReport $remaining ("Unable to close {0} installation-owned process(es):" -f $remaining.Count)
