@@ -149,8 +149,8 @@ try {
   $upgradeStart.ArgumentList.Add('/ADDCLI=1')
   $upgradeStart.ArgumentList.Add("/D=$installRoot")
   $upgrade = [System.Diagnostics.Process]::Start($upgradeStart)
-  $upgradeDeadline = (Get-Date).AddMinutes(6)
-  $nextUpgradeProgress = (Get-Date).AddSeconds(30)
+  $upgradeDeadline = (Get-Date).AddMinutes(15)
+  $nextUpgradeProgress = (Get-Date).AddSeconds(60)
   while (-not $upgrade.HasExited -and (Get-Date) -lt $upgradeDeadline) {
     Start-Sleep -Milliseconds 500
     $upgrade.Refresh()
@@ -166,7 +166,7 @@ try {
           Select-Object ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine
       )
       Write-Host "Upgrade installer still running:`n$($upgradeProcesses | Format-List | Out-String)"
-      $nextUpgradeProgress = (Get-Date).AddSeconds(30)
+      $nextUpgradeProgress = (Get-Date).AddSeconds(60)
     }
   }
   if (-not $upgrade.HasExited) {
@@ -175,7 +175,7 @@ try {
     if (Test-Path -LiteralPath $processGuardDiagnostic) {
       Write-Host "Installer process guard diagnostic:`n$(Get-Content -LiteralPath $processGuardDiagnostic -Raw)"
     }
-    throw 'Windows upgrade installer did not exit within 6 minutes'
+    throw 'Windows upgrade installer did not exit within 15 minutes'
   }
   if ($upgrade.ExitCode -ne 0) {
     if (Test-Path -LiteralPath $processGuardDiagnostic) {
