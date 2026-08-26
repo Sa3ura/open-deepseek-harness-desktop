@@ -508,7 +508,7 @@ async copy(from: string, id: string, name?: string): Promise<void>
  * Read effective Host connections projected into complete presets.
  * @returns current Codex and Claude Code connection state.
  */
-async externalToolsState(): Promise<ExternalToolsPresetState>
+externalToolsState(): Promise<ExternalToolsPresetState>
 
 /**
  * Connect or disconnect one official product for complete Agent Presets.

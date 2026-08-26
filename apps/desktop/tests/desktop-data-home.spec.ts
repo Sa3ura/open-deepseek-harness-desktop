@@ -71,6 +71,8 @@ describe('desktop data home', () => {
     const result = await importOfficialDesktopData(official, target)
     expect(result.copied).toEqual(['.credentials.yaml', 'sessions', 'settings.yaml'])
     expect(result.skippedSymlinks).toEqual(['AGENTS.md'])
+    expect(result.restorablePlugins).toBe(0)
+    expect(result.pluginRestoreIssues).toEqual([])
     const importedSettings = await readFile(join(target, 'settings.yaml'), 'utf8')
     expect(importedSettings).toContain('# keep this comment')
     expect(importedSettings).toContain('locale: zh')
@@ -80,6 +82,9 @@ describe('desktop data home', () => {
     await expect(readFile(join(target, 'profiles', 'web', 'package.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(readFile(join(target, 'bundled-plugins', 'plugin.seeded.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(readFile(join(target, '.anonymous-user-id'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(JSON.parse(await readFile(join(target, 'imported-plugin-restore.v1.json'), 'utf8'))).toMatchObject({
+      profile: 'web', entries: [], allowBuilds: {},
+    })
     expect(await hasDesktopData(target)).toBe(true)
   })
 

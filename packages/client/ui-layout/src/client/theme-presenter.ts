@@ -11,6 +11,8 @@ import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 
 /** Body attribute selecting the dark base palette in the token stylesheets. */
 export const DARK_ATTRIBUTE = 'data-ds-dark-theme'
+/** Root attribute projecting whether desktop chrome follows the system or a fixed palette. */
+export const COLOR_SCHEME_SOURCE_ATTRIBUTE = 'data-dsh-color-scheme-source'
 /** Body attribute marking that the center conversation has a decorative image. */
 export const CHAT_BACKGROUND_ATTRIBUTE = 'data-dsh-chat-background'
 /** Body attribute selecting a subject-safe background placement. */
@@ -43,6 +45,10 @@ export class ThemePresenter {
   apply(snapshot: ThemeSnapshot): void {
     const scheme = snapshot.active.colorScheme
     document.documentElement.style.colorScheme = scheme
+    document.documentElement.setAttribute(
+      COLOR_SCHEME_SOURCE_ATTRIBUTE,
+      snapshot.preference === 'system' ? 'system' : scheme,
+    )
     const body = document.body
     if (scheme === 'dark') body.setAttribute(DARK_ATTRIBUTE, '')
     else body.removeAttribute(DARK_ATTRIBUTE)
@@ -71,6 +77,7 @@ export class ThemePresenter {
   /** Retract root color-scheme, the palette attribute, token variables, and the owned metadata node. */
   dispose(): void {
     document.documentElement.style.removeProperty('color-scheme')
+    document.documentElement.removeAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)
     const body = document.body
     body.removeAttribute(DARK_ATTRIBUTE)
     body.removeAttribute(CHAT_BACKGROUND_ATTRIBUTE)

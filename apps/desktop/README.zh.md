@@ -22,7 +22,7 @@ pnpm run dev:desktop
 
 安装版使用平台应用数据根下的 `open-deepseek-harness-desktop/dsh-home`，源码开发版使用其中的 `development/dsh-home`。两者的 Electron 偏好、浏览器会话数据、日志、解压运行时和 Harness 状态彼此独立，也不再与官方 CLI 共用。自动化和高级启动显式设置的 `DSH_HOME` 仍具有最高优先级。
 
-首次普通启动时，如果发现官方 `~/.dsh`，应用会在 Harness 启动前提供三个选择：把受支持的用户数据导入独立 home、直接复用官方 home，或全新开始。选择页默认跟随操作系统语言，并提供即时中英文切换。导入模式通过拒绝符号链接的白名单处理设置、凭据、会话、工作区元数据、Agent 预设、Skill 与连接状态，且不修改来源；Profile、插件清单、`node_modules`、锁文件、预装插件 marker、构建许可、隔离与健康状态、匿名用户 id 均不会复制。导入和全新 home 会独立安装桌面预置插件，其他所需插件由用户在该环境重新安装。导入只会从复制得到的设置中删除 `ui-onboarding` 完成记录，使独立桌面环境显示自己的 API、IM 与外部工具配置向导；其余受支持设置保持不变。带版本的设置记录会为旧版本已导入的 home 执行一次相同重置，并保留此后真正完成的向导状态。复用模式会有意共享官方 Profile、插件、构建许可与向导状态，任一应用的修改都会作用于同一批文件。每条插件生命周期命令都会收到选定的 `DSH_HOME`。开发版还会修复环境透传完善前产生的旧格式伪 marker，同时保持 schema 2 卸载墓碑不会自动重装的约束。
+首次普通启动时，如果发现官方 `~/.dsh`，应用会在 Harness 启动前提供三个选择：把受支持的用户数据导入独立 home、直接复用官方 home，或全新开始。选择页默认跟随操作系统语言，并提供即时中英文切换。导入模式通过拒绝符号链接的白名单处理设置、凭据、会话、工作区元数据、Agent 预设、Skill 与连接状态，且不修改来源；Profile、`node_modules`、锁文件、预装插件 marker、隔离与健康状态、匿名用户 id 均不会复制。应用会另行把 Web Profile 依赖与 bundle 的有序交集记录到 `imported-plugin-restore.v1.json`，并且只提取布尔型 `allowBuilds` 条目。进入客户端后，一次性弹窗与“插件”页面允许用户选择可迁移的 registry、npm alias 和不含凭据的 Git 插件，并通过现有 CLI 串行重新安装；本地来源与带凭据来源会显示原因但不能执行。桌面预置插件先完成核对，同名恢复项显示为客户端已提供。精确构建许可合并到独立 Profile，`false` 优先，任何全局安全降级均被忽略。由于不复制官方锁文件，声明版本范围可能解析到更新的兼容版本。导入只会从复制得到的设置中删除 `ui-onboarding` 完成记录，使独立桌面环境显示自己的设置向导；其余受支持设置保持不变。复用模式会有意共享官方 Profile、插件、构建许可与向导状态，任一应用的修改都会作用于同一批文件。每条插件生命周期命令都会收到选定的 `DSH_HOME`。
 
 打包版本携带 `bundled-plugins/manifest.json` 中六个经过固定版本和完整性校验的归档。本地打包开始前，pnpm 会通过 registry 条目的 `latest` 稳定 dist-tag 解析版本，从 npm 官方 registry 下载 tarball，核对 registry 提供的 SHA-512，并原子替换整套快照；固定 Git 条目继续保留经过审核的提交和归档。GitHub 打包只解析一次快照，并让所有平台复用同一组文件。Harness 启动前按清单预设五个启动插件，且始终把安装包内的本地归档交给 pnpm，不会从 registry 解析或下载该插件包；普通传递依赖仍由 Profile 的 pnpm store 与解析规则管理。主界面可用后，右下角非阻塞卡片再从同一快照校验、解压并配置 Better Sidebar。隐藏卡片不会停止任务，完成后提示重启应用，失败时提供重试与既有 Harness 日志入口。所有平台安装包都不携带 Codex 和 Claude Code：用户在“外部工具”中点击安装后，客户端才从 npm 下载精确版本的官方 `@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2` 或 `@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2` 及其平台依赖，因此这一步需要联网。开发版使用仓库固定的 pnpm，安装版使用内置 pnpm，两者都不依赖系统 pnpm。持久种子标记在用户卸载后继续保留，因此启动与延后安装卡片都不会擅自装回插件，而用户明确点击发现页安装时仍可重新安装。打包不会复制开发电脑 Web profile 中已经安装或更新过的插件。
 
@@ -63,7 +63,7 @@ DEB 与 RPM 文件写入 `.artifacts/desktop-linux/`。与 macOS 相同，它们
 
 ## 进程生命周期
 
-Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web --host 127.0.0.1 --port 0`。所有打包平台都使用内置的目标平台原生 Node，不使用 Electron 或用户安装的 Node 可执行文件。宿主只把 `dsh web: http://127.0.0.1:<port>` 识别为就绪信号，将 stdout 和 stderr 追加到 Electron 的平台日志目录；应用退出时先发送 `SIGTERM`，超过固定期限后再发送 `SIGKILL`。默认关闭窗口只会隐藏到系统托盘；用户可以改为关闭即请求完整退出，所有显式退出都会等待 Harness 清理。启动期间，单向确定进度条只按桌面环境、内置运行时、Profile 兼容性、预设插件与 Harness 的真实里程碑前进，同时显示当前操作和插件名称；Harness 就绪时达到 100%，随后才把窗口交给 Web GUI。Harness 在就绪前连续退出三次后会停止自动重启，并显示重试与日志操作。连接页等待十五秒后也会显示同一个固定日志入口，但不会把缓慢启动判为失败。
+Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web --host 127.0.0.1 --port 0`。所有打包平台都使用内置的目标平台原生 Node，不使用 Electron 或用户安装的 Node 可执行文件。宿主只把 `dsh web: http://127.0.0.1:<port>` 识别为就绪信号，将 stdout 和 stderr 追加到 Electron 的平台日志目录；应用退出时先发送 `SIGTERM`，超过固定期限后再发送 `SIGKILL`。默认关闭窗口只会隐藏到系统托盘；用户可以改为关闭即请求完整退出，所有显式退出都会等待 Harness 清理。启动期间，单向确定进度条只按桌面环境、内置运行时、Profile 兼容性、预设插件与 Harness 的真实里程碑前进，同时显示当前操作和插件名称；Harness 就绪时达到 100%，随后才把窗口交给 Web GUI。Harness 数据目录尚未确定时，目录选择页跟随系统外观；完成选择后，持久化的 `ui-theme.preference` 会通过同一个 `system`／`light`／`dark` 来源同步加载页、原生边框、自定义顶栏、首次引导和 Web 主界面，并在用户切换主题时继续更新。Harness 在就绪前连续退出三次后会停止自动重启，并显示重试与日志操作。连接页等待十五秒后也会显示同一个固定日志入口，但不会把缓慢启动判为失败。
 
 托盘可以恢复窗口、定位 Harness 日志、切换通知、启用已打包 macOS 的登录启动或退出。崩溃、最终启动失败和恢复通知均可关闭并按事件节流。桌面偏好以原子方式存入以仓库名命名的 Electron `userData`；非法字段会各自恢复安全默认值。
 
@@ -83,7 +83,7 @@ Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web -
 
 渲染进程使用 `nodeIntegration: false`、`contextIsolation: true` 和 `sandbox: true`。导航仅允许 Harness 进程对应的精确回环来源。新开的 HTTPS 窗口交给系统浏览器，其余新窗口全部拒绝。除受监管 Harness 来源的主框架发起的安全剪贴板写入外，渲染进程的权限请求全部拒绝；剪贴板读取和其他所有权限仍保持拒绝。因此，共用客户端可直接使用标准 Web Clipboard API，而不必暴露通用的高权限 Electron bridge。
 
-API 密钥仍由 Harness credentials 服务持有。可选的首次导入只会把凭据文档作为不透明用户数据复制到独立 home；不会解析、显示、记录或删除来源。直接复用则是用户明确选择让桌面版就地使用官方 credentials 服务。沙箱 preload 在源码运行中暴露类型化源码更新调用，并提供桌面能力、偏好更新、固定日志定位、Release 发现，以及仅覆盖安装包内 Better Sidebar 归档的精确白名单。任意包名和路径仍必须经过受保护的 Harness 插件服务，不能发送给 Electron。Release URL 仅限本仓库，渲染进程不能提供文件路径。在 Windows 和 Linux 上，preload 还会渲染桌面宿主自有标题栏，并将固定的最小化、最大化或还原、关闭意图直接发送给主进程。它不暴露通用命令、文件系统、URL 打开或下载方法。
+API 密钥仍由 Harness credentials 服务持有。可选的首次导入只会把凭据文档作为不透明用户数据复制到独立 home；不会解析、显示、记录或删除来源。直接复用则是用户明确选择让桌面版就地使用官方 credentials 服务。沙箱 preload 在源码运行中暴露类型化源码更新调用，并提供桌面能力、偏好更新、固定日志定位、Release 发现、安装包归档精确白名单，以及桌面端拥有的导入插件恢复清单中的不透明 id。Electron 从经过验证的文件解析恢复说明符；渲染层不能通过该桥接提交包说明符、命令或路径。其他任意包名仍必须经过受保护的 Harness 插件服务。Release URL 仅限本仓库，渲染进程不能提供文件路径。在 Windows 和 Linux 上，preload 还会渲染桌面宿主自有标题栏，并将固定的最小化、最大化或还原、关闭意图直接发送给主进程。它不暴露通用命令、文件系统、URL 打开或下载方法。
 
 Profile 插件属于可信的可执行代码。内置包管理运行时让插件的 pnpm 生命周期脚本使用确定的工具版本，但不会对从 registry、Git 仓库、tarball 或本地 checkout 安装的代码提供沙箱或背书。
 

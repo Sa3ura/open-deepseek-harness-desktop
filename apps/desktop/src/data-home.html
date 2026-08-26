@@ -7,7 +7,7 @@
     <title>选择数据目录</title>
     <style>
       :root {
-        color-scheme: light;
+        color-scheme: light dark;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         font-size: 14px;
         color: #171719;
@@ -72,7 +72,6 @@
         text-align: left;
         width: 100%;
       }
-      .choice:first-child { padding-top: 8px; }
       .choice:last-child { border-bottom: 0; }
       .choice:hover { background: #f8faff; }
       .choice:focus-visible { border-radius: 10px; outline: 2px solid #4176e6; outline-offset: -2px; }
@@ -140,6 +139,27 @@
       .reuse-column { background: #fffaf1; }
       .comparison-note { background: #f5f6f8; border-radius: 8px; color: #62666f; font-size: 13px; line-height: 1.55; margin: 18px 0 0; padding: 11px 13px; }
       .comparison-footer { display: flex; justify-content: flex-end; margin-top: 20px; }
+      @media (prefers-color-scheme: dark) {
+        :root { background: #191a1e; color: #f4f4f5; }
+        body { background: #191a1e; }
+        .titlebar, .choice, .fact, .footer, th, td { border-color: #34363d; }
+        .choices { border-color: #34363d; }
+        .language-picker label, .choice-description, .fact dd, .comparison-note { color: #a8abb3; }
+        .language-picker select, .help-button, .action.secondary { background: #24262b; border-color: #494c55; color: #f4f4f5; }
+        .language-picker::after { border-color: #a8abb3; }
+        .choice:hover, .help-button:hover { background: #252b36; color: #fff; }
+        .choice[aria-checked="true"] { background: #202b43; }
+        .radio { border-color: #747986; }
+        .recommended { background: #26385d; color: #8eb4ff; }
+        .risk, .reuse-column { background: #33291d; }
+        .risk { border-color: #725526; color: #f1b65d; }
+        .overlay { background: rgb(0 0 0 / 58%); }
+        .comparison { background: #222329; box-shadow: 0 20px 60px rgb(0 0 0 / 48%); }
+        .close { color: #b7bac1; }
+        .close img, .help-button img { filter: invert(1); }
+        .comparison-note { background: #2a2c32; }
+        .action.primary { background: #f4f4f5; border-color: #f4f4f5; color: #191a1e; }
+      }
       @media (max-width: 860px) {
         .content { grid-template-columns: 1fr; overflow: auto; }
         .choices { border-bottom: 1px solid #e6e7ea; border-right: 0; padding: 26px; }
@@ -164,7 +184,7 @@
         <div id="choices" class="choices" role="radiogroup" aria-label="数据目录模式">
           <button class="choice" type="button" role="radio" aria-checked="true" data-mode="imported">
             <span class="radio" aria-hidden="true"></span>
-            <span><span class="choice-title"><span data-copy="importTitle">导入官方配置（独立环境）</span><span class="recommended" data-copy="recommended">推荐</span></span><span class="choice-description" data-copy="importSummary">复制用户数据但不复制插件；之后两套环境互不共享。</span></span>
+            <span><span class="choice-title"><span data-copy="importTitle">导入官方配置（独立环境）</span><span class="recommended" data-copy="recommended">推荐</span></span><span class="choice-description" data-copy="importSummary">复制用户数据与插件清单；插件进入后选择重新安装。</span></span>
           </button>
           <button class="choice" type="button" role="radio" aria-checked="false" data-mode="reused">
             <span class="radio" aria-hidden="true"></span>

@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
 import {
-  CHAT_BACKGROUND_LAYOUT_ATTRIBUTE, DARK_ATTRIBUTE, ThemePresenter,
+  CHAT_BACKGROUND_LAYOUT_ATTRIBUTE, COLOR_SCHEME_SOURCE_ATTRIBUTE, DARK_ATTRIBUTE, ThemePresenter,
 } from '@deepseek-ai/dsh-client-ui-layout/src/client/theme-presenter.ts'
 
 const LIGHT_THEME_COLOR = 'rgb(255, 255, 255)'
@@ -17,10 +17,11 @@ function snapshot(
   colorScheme: 'light' | 'dark',
   tokens: Record<string, string> = {},
   background: ThemeSnapshot['background'] = { id: 'none' },
+  preference: ThemeSnapshot['preference'] = colorScheme,
 ): ThemeSnapshot {
   // The presenter must key off colorScheme, not the id — keep them distinct.
   const active = { id: `${colorScheme}-test`, colorScheme, tokens }
-  return { preference: colorScheme, active, themes: [active], background, revision: 1 }
+  return { preference, active, themes: [active], background, revision: 1 }
 }
 
 function clearThemePresentation(): void {
@@ -34,6 +35,7 @@ function themeColorMeta(): HTMLMetaElement | null {
 beforeEach(() => {
   clearThemePresentation()
   document.documentElement.style.removeProperty('color-scheme')
+  document.documentElement.removeAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)
   document.body.removeAttribute(DARK_ATTRIBUTE)
   document.body.removeAttribute('style')
   const style = document.createElement('style')
@@ -52,8 +54,17 @@ describe('ThemePresenter', () => {
     const presenter = new ThemePresenter()
     presenter.apply(snapshot('light'))
     expect(document.documentElement.style.colorScheme).toBe('light')
+    expect(document.documentElement.getAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)).toBe('light')
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
     expect(themeColorMeta()?.content).toBe(LIGHT_THEME_COLOR)
+  })
+
+  it('keeps system following distinct from a fixed dark palette for desktop chrome', () => {
+    const presenter = new ThemePresenter()
+    presenter.apply(snapshot('dark', {}, { id: 'none' }, 'system'))
+    expect(document.documentElement.getAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)).toBe('system')
+    presenter.apply(snapshot('dark'))
+    expect(document.documentElement.getAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)).toBe('dark')
   })
 
   it('dark scheme sets root color-scheme, the attribute, and metadata; switching to light updates one node', () => {
@@ -103,6 +114,7 @@ describe('ThemePresenter', () => {
     const meta = themeColorMeta()
     presenter.dispose()
     expect(document.documentElement.style.colorScheme).toBe('')
+    expect(document.documentElement.hasAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)).toBe(false)
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
     expect(document.body.style.getPropertyValue('--dsw-alias-bg')).toBe('')
     expect(document.body.style.getPropertyValue('--foreign')).toBe('kept')

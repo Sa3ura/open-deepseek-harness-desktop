@@ -11,6 +11,10 @@ import { PluginDiscovery } from './PluginDiscovery.tsx'
 import type { PluginDiscoveryInjected } from './PluginDiscovery.tsx'
 import { ExternalToolsSection, type ExternalToolsSectionInjected } from './ExternalToolsSection.tsx'
 import { BetterSidebarInstallCard, type BetterSidebarInstallCardInjected } from './BetterSidebarInstallCard.tsx'
+import {
+  ImportedPluginRestoreDialog,
+  importedPluginRestoreInjected,
+} from './ImportedPluginRestore.tsx'
 import { en, zh, type PluginInventoryLocaleKey } from './locales.ts'
 import {
   getDeferredPluginInstall,
@@ -69,6 +73,7 @@ export function apply(ctx: ClientContext): void {
     list,
     getInstall,
     startUninstall,
+    ...importedPluginRestoreInjected(),
   })
   const diagnosticsInjected = (): PluginDiagnosticsSectionInjected => ({
     list,
@@ -177,6 +182,13 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: discoveryInjected,
   }, PluginDiscovery))
+  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+    name: 'shell.overlay',
+    id: 'imported-plugin-restore',
+    order: 10,
+    locale: NS,
+    inject: importedPluginRestoreInjected,
+  }, ImportedPluginRestoreDialog))
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
     id: 'better-sidebar-install',

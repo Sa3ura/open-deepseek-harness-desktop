@@ -13,9 +13,13 @@ import {
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import css from './PluginInventorySettingsTab.module.css'
+import {
+  ImportedPluginRestoreCard,
+  type ImportedPluginRestoreInjected,
+} from './ImportedPluginRestore.tsx'
 
 /** Registration-side Remote face used by the section. */
-export interface PluginInventorySettingsTabInjected {
+export interface PluginInventorySettingsTabInjected extends Partial<ImportedPluginRestoreInjected> {
   /** Read a current Host inventory snapshot. */
   list: () => Promise<PluginInventorySnapshot>
   /** Start an exact profile-plugin removal. */
@@ -75,6 +79,11 @@ export function PluginInventorySettingsTab({
   list,
   startUninstall,
   getInstall,
+  getRestore,
+  startRestore,
+  dismissRestore,
+  ignoreRestore,
+  restart,
   t,
 }: PluginInventorySettingsTabProps): ReactNode {
   const catalogId = useId()
@@ -144,6 +153,17 @@ export function PluginInventorySettingsTab({
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
+      {getRestore !== undefined && startRestore !== undefined && dismissRestore !== undefined
+        && ignoreRestore !== undefined && restart !== undefined ? (
+          <ImportedPluginRestoreCard
+            getRestore={getRestore}
+            startRestore={startRestore}
+            dismissRestore={dismissRestore}
+            ignoreRestore={ignoreRestore}
+            restart={restart}
+            t={t}
+          />
+        ) : null}
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'error' ? (
         <div className={css.failure}>

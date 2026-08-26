@@ -1616,6 +1616,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-selection-actions SelectionActions id \'selection-actions\'',
+      'client-ui-settings-plugin-inventory ImportedPluginRestoreDialog id \'imported-plugin-restore\'',
       'client-ui-settings-plugin-inventory BetterSidebarInstallCard id \'better-sidebar-install\'',
     ],
     replaceRisk: 'none',

@@ -17,6 +17,10 @@ describe('desktop data-home chooser', () => {
     expect(html).toContain('value="zh"')
     expect(html).toContain('value="en"')
     expect(html).toContain('导入官方配置（独立环境）')
+    expect(html).toContain('padding: 24px 14px')
+    expect(html).not.toContain('.choice:first-child { padding-top: 8px; }')
+    expect(html).toContain('color-scheme: light dark')
+    expect(html).toContain('@media (prefers-color-scheme: dark)')
   })
 
   it('keeps the chooser sandboxed and sends only bounded selections', async () => {
@@ -28,6 +32,7 @@ describe('desktop data-home chooser', () => {
     expect(preload).toContain("ipcRenderer.send('dsh:data-home:selected', selected)")
     expect(preload).toContain("ipcRenderer.send('dsh:data-home:cancelled')")
     expect(preload).toContain("languageSelect.addEventListener('change'")
-    expect(preload).toContain('Profiles, plugin manifests, and node_modules are not copied')
+    expect(preload).toContain('Copy a plugin restore list without Profiles, node_modules, or lockfiles')
+    expect(preload).toContain('Every explicit false remains denied')
   })
 })
