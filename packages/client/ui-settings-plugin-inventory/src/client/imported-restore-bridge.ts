@@ -20,6 +20,8 @@ export interface ImportedPluginRestoreEntry {
   readonly unsupportedReason?: 'local-source' | 'credentialed-source' | 'invalid-spec'
   readonly state: ImportedPluginRestoreState
   readonly diagnostic?: string
+  readonly availability: 'checking' | 'available' | 'unavailable' | 'unknown' | 'provided'
+  readonly availabilityDiagnostic?: string
 }
 
 /** Current restoration state used by the first-entry dialog and settings card. */
@@ -29,13 +31,17 @@ export interface ImportedPluginRestoreSnapshot {
   readonly sourceIssues: readonly string[]
   readonly entries: readonly ImportedPluginRestoreEntry[]
   readonly active: boolean
+  readonly sourceCheckActive: boolean
   readonly restartRequired: boolean
 }
 
 /** Narrow desktop capability for restoring entries by opaque identifier only. */
 export interface ImportedPluginRestoreBridge {
   get(): Promise<ImportedPluginRestoreSnapshot | undefined>
+  checkSources(): Promise<ImportedPluginRestoreSnapshot | undefined>
   start(restoreIds: readonly string[]): Promise<ImportedPluginRestoreSnapshot>
+  chooseLocalDirectory(restoreId: string): Promise<ImportedPluginRestoreSnapshot | undefined>
+  chooseLocalArchive(restoreId: string): Promise<ImportedPluginRestoreSnapshot | undefined>
   dismiss(): Promise<ImportedPluginRestoreSnapshot | undefined>
   ignore(): Promise<ImportedPluginRestoreSnapshot | undefined>
 }
@@ -51,7 +57,9 @@ export function readImportedPluginRestoreBridge(): ImportedPluginRestoreBridge |
   const imported = (desktop as { importedPlugins?: unknown }).importedPlugins
   if (imported === null || typeof imported !== 'object') return undefined
   const candidate = imported as Partial<ImportedPluginRestoreBridge>
-  if (typeof candidate.get !== 'function' || typeof candidate.start !== 'function'
+  if (typeof candidate.get !== 'function' || typeof candidate.checkSources !== 'function'
+    || typeof candidate.start !== 'function' || typeof candidate.chooseLocalDirectory !== 'function'
+    || typeof candidate.chooseLocalArchive !== 'function'
     || typeof candidate.dismiss !== 'function' || typeof candidate.ignore !== 'function') return undefined
   return candidate as ImportedPluginRestoreBridge
 }

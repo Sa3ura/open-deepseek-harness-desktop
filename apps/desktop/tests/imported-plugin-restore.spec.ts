@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   extractImportedPluginRestorePlan,
+  classifyImportedPluginSourceFailure,
   dependencyMatchesImportedRestore,
   ImportedPluginRestoreManager,
   mergeImportedAllowBuilds,
@@ -24,6 +25,19 @@ afterEach(async () => {
 })
 
 describe('imported plugin restore', () => {
+  it('distinguishes missing sources from temporary registry failures', () => {
+    expect(classifyImportedPluginSourceFailure('ERR_PNPM_FETCH_404 package not found')).toMatchObject({
+      availability: 'unavailable',
+    })
+    expect(classifyImportedPluginSourceFailure("fatal: couldn't find remote ref missing")).toMatchObject({
+      availability: 'unavailable',
+    })
+    for (const diagnostic of ['ENOTFOUND registry.npmjs.org', 'ERR_PNPM_FETCH_401', '429 rate limit']) {
+      expect(classifyImportedPluginSourceFailure(diagnostic)).toMatchObject({ availability: 'unknown' })
+    }
+    expect(classifyImportedPluginSourceFailure('stopped', true)).toMatchObject({ availability: 'unknown' })
+  })
+
   it('extracts only ordered dependency and bundle intersections and classifies unsafe sources', async () => {
     const root = await fixture()
     const profile = join(root, 'profiles', 'web')
@@ -163,6 +177,72 @@ describe('imported plugin restore', () => {
     expect(install.mock.calls.map(call => call[0])).toEqual(['good@^1', 'bad@^1'])
     expect(manager.snapshot()?.entries.map(entry => entry.state)).toEqual(['provided', 'succeeded', 'failed'])
     expect((await readImportedPluginRestorePlan(root))?.entries[2]?.diagnostic).toContain('registry unavailable')
+  })
+
+  it('checks at most three sources concurrently and blocks only confirmed unavailable sources', async () => {
+    const root = await fixture()
+    await mkdir(join(root, 'profiles', 'web'), { recursive: true })
+    await writeFile(join(root, 'profiles', 'web', 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+    const base = await extractImportedPluginRestorePlan(root)
+    await writeImportedPluginRestorePlan(root, {
+      ...base,
+      entries: Array.from({ length: 5 }, (_, index) => ({
+        restoreId: `id-${index}`, packageName: `plugin-${index}`, packageSpec: `plugin-${index}@^1`,
+        declaredSpec: '^1', category: 'plugin' as const, defaultSelected: true,
+        recoverable: true, state: 'pending' as const,
+      })),
+    })
+    let running = 0
+    let maximum = 0
+    const manager = new ImportedPluginRestoreManager({
+      dshHome: root,
+      providedDependencies: {},
+      install: vi.fn(async () => ''),
+      inspectSource: async (spec) => {
+        running += 1
+        maximum = Math.max(maximum, running)
+        await new Promise(resolve => setTimeout(resolve, 5))
+        running -= 1
+        return spec.startsWith('plugin-0@')
+          ? { availability: 'unavailable' as const }
+          : spec.startsWith('plugin-1@')
+            ? { availability: 'unknown' as const }
+            : { availability: 'available' as const }
+      },
+    })
+    await manager.prepare()
+    expect(manager.startSourceCheck()?.sourceCheckActive).toBe(true)
+    await vi.waitFor(() => { expect(manager.snapshot()?.sourceCheckActive).toBe(false) })
+    expect(maximum).toBe(3)
+    expect(manager.snapshot()?.entries.map(entry => entry.availability)).toEqual([
+      'unavailable', 'unknown', 'available', 'available', 'available',
+    ])
+    await expect(manager.start(['id-0'])).rejects.toThrow('source is unavailable')
+    await expect(manager.start(['id-1'])).resolves.toMatchObject({ active: true })
+    await vi.waitFor(() => { expect(manager.snapshot()?.active).toBe(false) })
+  })
+
+  it('routes a host-validated local archive through the standard installer and persists failure', async () => {
+    const root = await fixture()
+    await mkdir(join(root, 'profiles', 'web'), { recursive: true })
+    await writeFile(join(root, 'profiles', 'web', 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+    const base = await extractImportedPluginRestorePlan(root)
+    await writeImportedPluginRestorePlan(root, {
+      ...base,
+      entries: [{
+        restoreId: 'local-id', packageName: 'local-plugin', packageSpec: 'local-plugin@file:../old',
+        declaredSpec: 'file:../old', category: 'plugin', defaultSelected: false,
+        recoverable: false, unsupportedReason: 'local-source', state: 'pending',
+      }],
+    })
+    const install = vi.fn(async () => { throw new Error('local install failed safely') })
+    const manager = new ImportedPluginRestoreManager({ dshHome: root, providedDependencies: {}, install })
+    await manager.prepare()
+    await expect(manager.installLocal('local-id', '/staged/plugin.tgz')).resolves.toMatchObject({ active: false })
+    expect(install).toHaveBeenCalledWith('/staged/plugin.tgz')
+    expect((await readImportedPluginRestorePlan(root))?.entries[0]).toMatchObject({
+      state: 'failed', diagnostic: 'local install failed safely',
+    })
   })
 
   it('rejects a locally edited plan that tries to replace an opaque id with a path install', async () => {

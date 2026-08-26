@@ -80,7 +80,10 @@ export function PluginInventorySettingsTab({
   startUninstall,
   getInstall,
   getRestore,
+  checkSources,
   startRestore,
+  chooseLocalDirectory,
+  chooseLocalArchive,
   dismissRestore,
   ignoreRestore,
   restart,
@@ -153,11 +156,15 @@ export function PluginInventorySettingsTab({
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
-      {getRestore !== undefined && startRestore !== undefined && dismissRestore !== undefined
+      {getRestore !== undefined && checkSources !== undefined && startRestore !== undefined
+        && chooseLocalDirectory !== undefined && chooseLocalArchive !== undefined && dismissRestore !== undefined
         && ignoreRestore !== undefined && restart !== undefined ? (
           <ImportedPluginRestoreCard
             getRestore={getRestore}
+            checkSources={checkSources}
             startRestore={startRestore}
+            chooseLocalDirectory={chooseLocalDirectory}
+            chooseLocalArchive={chooseLocalArchive}
             dismissRestore={dismissRestore}
             ignoreRestore={ignoreRestore}
             restart={restart}

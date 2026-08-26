@@ -79,7 +79,10 @@ export interface DesktopBundledPluginsBridge {
 /** Opaque-id restore operations; package specs never cross from renderer to main. */
 export interface DesktopImportedPluginsBridge {
   get(): Promise<ImportedPluginRestoreSnapshot | undefined>
+  checkSources(): Promise<ImportedPluginRestoreSnapshot | undefined>
   start(restoreIds: readonly string[]): Promise<ImportedPluginRestoreSnapshot>
+  chooseLocalDirectory(restoreId: string): Promise<ImportedPluginRestoreSnapshot | undefined>
+  chooseLocalArchive(restoreId: string): Promise<ImportedPluginRestoreSnapshot | undefined>
   dismiss(): Promise<ImportedPluginRestoreSnapshot | undefined>
   ignore(): Promise<ImportedPluginRestoreSnapshot | undefined>
 }
@@ -147,9 +150,18 @@ const bundledPluginsBridge: DesktopBundledPluginsBridge = {
 
 const importedPluginsBridge: DesktopImportedPluginsBridge = {
   get: () => ipcRenderer.invoke('dsh:desktop:imported-plugins:get') as Promise<ImportedPluginRestoreSnapshot | undefined>,
+  checkSources: () => ipcRenderer.invoke(
+    'dsh:desktop:imported-plugins:check-sources',
+  ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
   start: restoreIds => ipcRenderer.invoke(
     'dsh:desktop:imported-plugins:start', [...restoreIds],
   ) as Promise<ImportedPluginRestoreSnapshot>,
+  chooseLocalDirectory: restoreId => ipcRenderer.invoke(
+    'dsh:desktop:imported-plugins:choose-directory', restoreId,
+  ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
+  chooseLocalArchive: restoreId => ipcRenderer.invoke(
+    'dsh:desktop:imported-plugins:choose-archive', restoreId,
+  ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
   dismiss: () => ipcRenderer.invoke(
     'dsh:desktop:imported-plugins:dismiss',
   ) as Promise<ImportedPluginRestoreSnapshot | undefined>,

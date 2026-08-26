@@ -1,8 +1,8 @@
 /** Electron application host for the existing DeepSeek Harness Web GUI. */
 
 import { spawn } from 'node:child_process'
-import { appendFile, readFile } from 'node:fs/promises'
-import { homedir, userInfo } from 'node:os'
+import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -75,9 +75,16 @@ import {
   type DesktopThemeSource,
 } from './desktop-theme.ts'
 import {
+  classifyImportedPluginSourceFailure,
   ImportedPluginRestoreManager,
   type ImportedPluginRestoreSnapshot,
 } from './imported-plugin-restore.ts'
+import {
+  importedPluginVersionDiffers,
+  stageImportedPluginArchive,
+  stageImportedPluginDirectory,
+  type StagedImportedPlugin,
+} from './imported-plugin-local-source.ts'
 
 const APP_NAME = 'DeepSeek Harness'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
@@ -517,6 +524,89 @@ async function runHarnessInvocation(
   })
 }
 
+class PackageManagerInvocationError extends Error {
+  readonly timedOut: boolean
+
+  constructor(message: string, timedOut: boolean) {
+    super(message)
+    this.timedOut = timedOut
+  }
+}
+
+async function runPackageManagerInvocation(
+  args: readonly string[],
+  cwd: string,
+  environment: NodeJS.ProcessEnv,
+  options: DesktopLaunchOptions,
+  timeoutMs = 10_000,
+): Promise<string> {
+  const packageManager = options.packageManagerBin
+  if (packageManager === undefined) throw new Error('desktop: bundled pnpm is unavailable')
+  const javaScriptEntry = /\.(?:cjs|mjs|js)$/iu.test(packageManager)
+  const command = javaScriptEntry
+    ? environment.DSH_DESKTOP_NODE_BIN ?? options.nodeCommand ?? 'node'
+    : packageManager
+  const commandArgs = javaScriptEntry ? [packageManager, ...args] : [...args]
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(command, commandArgs, {
+      cwd,
+      env: { ...process.env, ...environment },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    })
+    const output: Buffer[] = []
+    let outputBytes = 0
+    let timedOut = false
+    const append = (chunk: Buffer): void => {
+      outputBytes += chunk.length
+      if (outputBytes <= 2 * 1024 * 1024) output.push(chunk)
+    }
+    child.stdout.on('data', append)
+    child.stderr.on('data', append)
+    const timeout = setTimeout(() => {
+      timedOut = true
+      child.kill()
+    }, timeoutMs)
+    child.once('error', (error) => {
+      clearTimeout(timeout)
+      reject(error)
+    })
+    child.once('close', (code, signal) => {
+      clearTimeout(timeout)
+      const diagnostic = Buffer.concat(output).toString('utf8')
+      if (!timedOut && acceptsHarnessInvocationExit(code, signal, [0])) resolve(diagnostic)
+      else reject(new PackageManagerInvocationError(
+        `desktop: pnpm invocation failed (${String(code)}, ${String(signal)}): ${diagnostic.slice(-4000)}`,
+        timedOut,
+      ))
+    })
+  })
+}
+
+async function inspectImportedPluginSource(
+  packageSpec: string,
+  environment: NodeJS.ProcessEnv,
+  options: DesktopLaunchOptions,
+) {
+  const directory = await mkdtemp(join(tmpdir(), 'dsh-plugin-source-check-'))
+  try {
+    await writeFile(join(directory, 'package.json'), '{"private":true}\n', { mode: 0o600 })
+    try {
+      await runPackageManagerInvocation([
+        'add', '--lockfile-only', '--ignore-scripts', '--save-exact', packageSpec,
+      ], directory, environment, options)
+      return { availability: 'available' as const }
+    } catch (error) {
+      return classifyImportedPluginSourceFailure(
+        error instanceof Error ? error.message : String(error),
+        error instanceof PackageManagerInvocationError && error.timedOut,
+      )
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+  }
+}
+
 function showDesktopMessageBox(options: MessageBoxOptions): Promise<Electron.MessageBoxReturnValue> {
   return mainWindow === undefined
     ? dialog.showMessageBox(options)
@@ -852,6 +942,10 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return importedPluginRestoreManager?.snapshot()
   })
+  ipcMain.handle('dsh:desktop:imported-plugins:check-sources', (event): ImportedPluginRestoreSnapshot | undefined => {
+    assertMainRenderer(event.sender)
+    return importedPluginRestoreManager?.startSourceCheck()
+  })
   ipcMain.handle('dsh:desktop:imported-plugins:start', (
     event,
     restoreIds: unknown,
@@ -876,6 +970,65 @@ async function startApplication(): Promise<void> {
   ): Promise<ImportedPluginRestoreSnapshot | undefined> => {
     assertMainRenderer(event.sender)
     return importedPluginRestoreManager?.ignorePending()
+  })
+  const installSelectedImportedPlugin = async (
+    restoreId: unknown,
+    kind: 'directory' | 'archive',
+  ): Promise<ImportedPluginRestoreSnapshot | undefined> => {
+    if (typeof restoreId !== 'string' || importedPluginRestoreManager === undefined) {
+      throw new TypeError('desktop: invalid imported plugin local restore request')
+    }
+    const entry = importedPluginRestoreManager.localEntry(restoreId)
+    const chinese = app.getLocale().toLowerCase().startsWith('zh')
+    const chooser = mainWindow
+    const result = await (chooser === undefined
+      ? dialog.showOpenDialog({
+        title: chinese ? '选择插件本地来源' : 'Choose a local plugin source',
+        properties: kind === 'directory' ? ['openDirectory'] : ['openFile'],
+        ...(kind === 'archive' ? { filters: [{ name: 'npm package', extensions: ['tgz'] }] } : {}),
+      })
+      : dialog.showOpenDialog(chooser, {
+        title: chinese ? '选择插件本地来源' : 'Choose a local plugin source',
+        properties: kind === 'directory' ? ['openDirectory'] : ['openFile'],
+        ...(kind === 'archive' ? { filters: [{ name: 'npm package', extensions: ['tgz'] }] } : {}),
+      }))
+    const selectedPath = result.filePaths[0]
+    if (result.canceled || selectedPath === undefined) return importedPluginRestoreManager.snapshot()
+    let staged: StagedImportedPlugin | undefined
+    try {
+      staged = kind === 'archive'
+        ? await stageImportedPluginArchive(selectedPath, entry.packageName)
+        : await stageImportedPluginDirectory(selectedPath, entry.packageName, async (source, destination) => {
+          await runPackageManagerInvocation([
+            'pack', '--ignore-scripts', '--pack-destination', destination,
+          ], source, harnessEnvironment, launchOptions, 60_000)
+        })
+      if (importedPluginVersionDiffers(entry.declaredSpec, staged.manifest.version)) {
+        const confirmation = await showDesktopMessageBox({
+          type: 'warning',
+          title: chinese ? '插件版本与原配置不同' : 'Plugin version differs from the imported configuration',
+          message: chinese ? `仍要安装 ${entry.packageName} 吗？` : `Install ${entry.packageName} anyway?`,
+          detail: chinese
+            ? `原声明：${entry.declaredSpec}\n本地版本：${staged.manifest.version ?? '未知'}\n本地包将安装到桌面版独立环境。`
+            : `Imported declaration: ${entry.declaredSpec}\nLocal version: ${staged.manifest.version ?? 'unknown'}\nThe local package will install into the independent Desktop environment.`,
+          buttons: chinese ? ['取消', '继续安装'] : ['Cancel', 'Install anyway'],
+          defaultId: 0,
+          cancelId: 0,
+        })
+        if (confirmation.response !== 1) return importedPluginRestoreManager.snapshot()
+      }
+      return await importedPluginRestoreManager.installLocal(restoreId, staged.archivePath)
+    } finally {
+      await staged?.cleanup()
+    }
+  }
+  ipcMain.handle('dsh:desktop:imported-plugins:choose-directory', async (event, restoreId: unknown) => {
+    assertMainRenderer(event.sender)
+    return installSelectedImportedPlugin(restoreId, 'directory')
+  })
+  ipcMain.handle('dsh:desktop:imported-plugins:choose-archive', async (event, restoreId: unknown) => {
+    assertMainRenderer(event.sender)
+    return installSelectedImportedPlugin(restoreId, 'archive')
   })
   ipcMain.handle('dsh:desktop:diagnostic-fixture:install', async (event) => {
     assertMainRenderer(event.sender)
@@ -1067,6 +1220,7 @@ async function startApplication(): Promise<void> {
   importedPluginRestoreManager = new ImportedPluginRestoreManager({
     dshHome,
     providedDependencies: installedProfileDependencies,
+    inspectSource: packageSpec => inspectImportedPluginSource(packageSpec, harnessEnvironment, launchOptions),
     install: packageSpec => runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
       'plugin', '--profile', 'web', 'add', packageSpec,
     ], launchOptions)),

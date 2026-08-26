@@ -27,6 +27,18 @@ export type ImportedPluginRestoreState =
   | 'failed'
   | 'ignored'
 
+export type ImportedPluginSourceAvailability =
+  | 'checking'
+  | 'available'
+  | 'unavailable'
+  | 'unknown'
+  | 'provided'
+
+export interface ImportedPluginSourceCheckResult {
+  readonly availability: Exclude<ImportedPluginSourceAvailability, 'checking' | 'provided'>
+  readonly diagnostic?: string
+}
+
 type ImportedPluginUnsupportedReason =
   | 'local-source'
   | 'credentialed-source'
@@ -59,8 +71,15 @@ export interface ImportedPluginRestorePlan {
 }
 
 export interface ImportedPluginRestoreSnapshot extends ImportedPluginRestorePlan {
+  readonly entries: readonly ImportedPluginRestoreRuntimeEntry[]
   readonly active: boolean
+  readonly sourceCheckActive: boolean
   readonly restartRequired: boolean
+}
+
+export interface ImportedPluginRestoreRuntimeEntry extends ImportedPluginRestoreEntry {
+  readonly availability: ImportedPluginSourceAvailability
+  readonly availabilityDiagnostic?: string
 }
 
 interface SourceProfileManifest {
@@ -70,7 +89,33 @@ interface SourceProfileManifest {
 
 function boundedDiagnostic(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error)
-  return message.replace(/(?:token|password|secret|api[_-]?key)\s*[:=]\s*\S+/giu, '$1=[redacted]').slice(0, 2000)
+  return message
+    .replace(/((?:token|password|secret|api[_-]?key))\s*[:=]\s*\S+/giu, '$1=[redacted]')
+    .replace(/(https?:\/\/)[^/@\s:]+:[^/@\s]+@/giu, '$1[redacted]@')
+    .slice(0, 2000)
+}
+
+/** Classify package-manager failures conservatively so network trouble never means "missing". */
+export function classifyImportedPluginSourceFailure(
+  diagnostic: string,
+  timedOut = false,
+): ImportedPluginSourceCheckResult {
+  const bounded = boundedDiagnostic(diagnostic)
+  const temporaryFailure = new RegExp([
+    'ETIMEDOUT', 'ECONNRESET', 'ENOTFOUND', 'EAI_AGAIN', 'ERR_PNPM_META_FETCH_FAIL',
+    'ERR_PNPM_FETCH_401', 'ERR_PNPM_FETCH_403', '429', 'rate.?limit', 'authentication', 'authorization',
+  ].join('|'), 'iu')
+  if (timedOut || temporaryFailure.test(diagnostic)) {
+    return { availability: 'unknown', diagnostic: bounded }
+  }
+  const absentSource = new RegExp([
+    'ERR_PNPM_FETCH_404', 'ERR_PNPM_NO_MATCHING_VERSION', 'No matching version', 'repository not found',
+    'remote ref does not exist', "couldn['’]t find remote ref", 'not found in the registry',
+  ].join('|'), 'iu')
+  if (absentSource.test(diagnostic)) {
+    return { availability: 'unavailable', diagnostic: bounded }
+  }
+  return { availability: 'unknown', diagnostic: bounded }
 }
 
 function classifySpec(spec: string): { recoverable: boolean; reason?: ImportedPluginUnsupportedReason } {
@@ -254,13 +299,14 @@ export async function readImportedPluginRestorePlan(dshHome: string): Promise<Im
   const path = join(dshHome, IMPORTED_PLUGIN_RESTORE_FILENAME)
   try {
     const value = JSON.parse(await readFile(path, 'utf8')) as Partial<ImportedPluginRestorePlan>
+    const rawAllowBuilds: unknown = value.allowBuilds
     if (value.schema !== IMPORTED_PLUGIN_RESTORE_SCHEMA || value.profile !== 'web'
       || typeof value.createdAt !== 'string' || typeof value.firstPromptDismissed !== 'boolean'
       || typeof value.ignored !== 'boolean' || typeof value.allowBuildsApplied !== 'boolean'
       || !Array.isArray(value.sourceIssues) || value.sourceIssues.some(issue => typeof issue !== 'string')
-      || !Array.isArray(value.entries) || value.allowBuilds === null || typeof value.allowBuilds !== 'object') return undefined
+      || !Array.isArray(value.entries) || rawAllowBuilds === null || typeof rawAllowBuilds !== 'object') return undefined
     const allowBuilds: Record<string, boolean> = {}
-    for (const [key, enabled] of Object.entries(value.allowBuilds)) {
+    for (const [key, enabled] of Object.entries(rawAllowBuilds as Record<string, unknown>)) {
       if ((enabled !== true && enabled !== false) || key.length > 4096) return undefined
       allowBuilds[key] = enabled
     }
@@ -311,7 +357,7 @@ export async function mergeImportedAllowBuilds(
   for (const [key, sourceValue] of Object.entries(imported)) {
     const targetValue = allowBuilds.get(key)
     if (targetValue !== undefined && targetValue !== true && targetValue !== false) continue
-    const merged = targetValue === false || sourceValue === false ? false : true
+    const merged = targetValue !== false && sourceValue
     if (targetValue !== merged) {
       allowBuilds.set(key, merged)
       changed = true
@@ -328,6 +374,7 @@ export interface ImportedPluginRestoreManagerOptions {
   readonly dshHome: string
   readonly providedDependencies: Readonly<Record<string, string>>
   readonly install: (packageSpec: string) => Promise<string>
+  readonly inspectSource?: (packageSpec: string) => Promise<ImportedPluginSourceCheckResult>
   readonly mergeAllowBuilds?: (profileDir: string, rules: Readonly<Record<string, boolean>>) => Promise<boolean>
 }
 
@@ -335,6 +382,8 @@ export interface ImportedPluginRestoreManagerOptions {
 export class ImportedPluginRestoreManager {
   private plan: ImportedPluginRestorePlan | undefined
   private active = false
+  private sourceCheckActive = false
+  private readonly sourceAvailability = new Map<string, ImportedPluginSourceCheckResult>()
   private readonly options: ImportedPluginRestoreManagerOptions
 
   constructor(options: ImportedPluginRestoreManagerOptions) {
@@ -373,8 +422,57 @@ export class ImportedPluginRestoreManager {
   snapshot(): ImportedPluginRestoreSnapshot | undefined {
     return this.plan === undefined ? undefined : {
       ...this.plan,
+      entries: this.plan.entries.map((entry): ImportedPluginRestoreRuntimeEntry => {
+        if (entry.state === 'provided') return { ...entry, availability: 'provided' }
+        const checked = this.sourceAvailability.get(entry.restoreId)
+        if (checked !== undefined) return {
+          ...entry,
+          availability: checked.availability,
+          ...(checked.diagnostic === undefined ? {} : { availabilityDiagnostic: checked.diagnostic }),
+        }
+        return {
+          ...entry,
+          availability: entry.recoverable ? 'checking' : 'unavailable',
+        }
+      }),
       active: this.active,
+      sourceCheckActive: this.sourceCheckActive,
       restartRequired: this.plan.entries.some(entry => entry.state === 'succeeded'),
+    }
+  }
+
+  /** Start a bounded-concurrency, read-only source check without delaying startup. */
+  startSourceCheck(): ImportedPluginRestoreSnapshot | undefined {
+    if (this.plan === undefined || this.sourceCheckActive || this.options.inspectSource === undefined) return this.snapshot()
+    const entries = this.plan.entries.filter(entry => entry.state !== 'provided' && entry.recoverable)
+    if (entries.length === 0) return this.snapshot()
+    this.sourceCheckActive = true
+    for (const entry of entries) this.sourceAvailability.delete(entry.restoreId)
+    void this.runSourceCheck(entries)
+    return this.snapshot()
+  }
+
+  private async runSourceCheck(entries: readonly ImportedPluginRestoreEntry[]): Promise<void> {
+    let cursor = 0
+    const worker = async (): Promise<void> => {
+      while (cursor < entries.length) {
+        const entry = entries[cursor++]
+        if (entry === undefined) return
+        try {
+          const result = await this.options.inspectSource?.(entry.packageSpec)
+          this.sourceAvailability.set(entry.restoreId, result ?? { availability: 'unknown' })
+        } catch (error) {
+          this.sourceAvailability.set(entry.restoreId, {
+            availability: 'unknown',
+            diagnostic: boundedDiagnostic(error),
+          })
+        }
+      }
+    }
+    try {
+      await Promise.all(Array.from({ length: Math.min(3, entries.length) }, worker))
+    } finally {
+      this.sourceCheckActive = false
     }
   }
 
@@ -409,6 +507,11 @@ export class ImportedPluginRestoreManager {
       if (entry === undefined || !entry.recoverable || (entry.state !== 'pending' && entry.state !== 'failed')) {
         throw new TypeError('desktop: imported plugin restore id is not selectable')
       }
+      const availability = this.sourceAvailability.get(id)?.availability
+      if (availability === 'unavailable') throw new TypeError('desktop: imported plugin source is unavailable')
+      if (this.options.inspectSource !== undefined && availability === undefined) {
+        throw new TypeError('desktop: imported plugin source has not been checked')
+      }
     }
     this.active = true
     this.plan = { ...this.plan, firstPromptDismissed: true, ignored: false }
@@ -420,6 +523,46 @@ export class ImportedPluginRestoreManager {
     }
     void this.run(ids)
     return this.snapshot() as ImportedPluginRestoreSnapshot
+  }
+
+  /** Install one host-validated local archive through the standard plugin flow. */
+  async installLocal(restoreId: string, archivePath: string): Promise<ImportedPluginRestoreSnapshot> {
+    if (this.plan === undefined) throw new Error('desktop: imported plugin restore plan is unavailable')
+    if (this.active) throw new Error('desktop: imported plugin restore is already running')
+    const entry = this.requireLocalEntry(restoreId)
+    this.active = true
+    this.plan = { ...this.plan, firstPromptDismissed: true, ignored: false }
+    try {
+      await this.update(entry.restoreId, { state: 'installing', diagnostic: null })
+      const diagnostic = await this.options.install(archivePath)
+      await this.update(entry.restoreId, {
+        state: 'succeeded',
+        ...(diagnostic.trim() === '' ? {} : { diagnostic: diagnostic.slice(-2000) }),
+      })
+    } catch (error) {
+      await this.update(entry.restoreId, { state: 'failed', diagnostic: boundedDiagnostic(error) })
+    } finally {
+      this.active = false
+    }
+    return this.snapshot() as ImportedPluginRestoreSnapshot
+  }
+
+  /** Resolve the package identity for a local picker without exposing filesystem access to the renderer. */
+  localEntry(restoreId: string): Pick<ImportedPluginRestoreEntry, 'packageName' | 'declaredSpec'> {
+    const entry = this.requireLocalEntry(restoreId)
+    return { packageName: entry.packageName, declaredSpec: entry.declaredSpec }
+  }
+
+  private requireLocalEntry(restoreId: string): ImportedPluginRestoreEntry {
+    if (this.plan === undefined || typeof restoreId !== 'string') {
+      throw new TypeError('desktop: invalid imported plugin restore id')
+    }
+    const entry = this.plan.entries.find(candidate => candidate.restoreId === restoreId)
+    if (entry === undefined || entry.category !== 'plugin'
+      || (entry.state !== 'pending' && entry.state !== 'failed')) {
+      throw new TypeError('desktop: imported plugin restore id does not accept a local source')
+    }
+    return entry
   }
 
   private async run(ids: ReadonlySet<string>): Promise<void> {

@@ -183,21 +183,26 @@ describe('ImportedPluginRestore', () => {
     ignored: false,
     sourceIssues: [],
     active: false,
+    sourceCheckActive: false,
     restartRequired: false,
     entries: [
-      { restoreId: 'plugin', packageName: 'community-plugin', declaredSpec: '^1.0.0', category: 'plugin', defaultSelected: true, recoverable: true, state: 'pending' },
-      { restoreId: 'codex', packageName: '@deepseek-ai/dsh-subagent-codex', declaredSpec: '^0.1.0', category: 'external-tool', tool: 'codex', defaultSelected: false, recoverable: true, state: 'pending' },
-      { restoreId: 'local', packageName: 'local-plugin', declaredSpec: 'file:../local', category: 'plugin', defaultSelected: false, recoverable: false, unsupportedReason: 'local-source', state: 'pending' },
+      { restoreId: 'plugin', packageName: 'community-plugin', declaredSpec: '^1.0.0', category: 'plugin', defaultSelected: true, recoverable: true, state: 'pending', availability: 'available' },
+      { restoreId: 'codex', packageName: '@deepseek-ai/dsh-subagent-codex', declaredSpec: '^0.1.0', category: 'external-tool', tool: 'codex', defaultSelected: false, recoverable: true, state: 'pending', availability: 'unknown' },
+      { restoreId: 'local', packageName: 'local-plugin', declaredSpec: 'file:../local', category: 'plugin', defaultSelected: false, recoverable: false, unsupportedReason: 'local-source', state: 'pending', availability: 'unavailable' },
     ],
   }
 
   it('defaults ordinary plugins on, keeps disconnected tools off, and submits opaque ids only', async () => {
     const startRestore = vi.fn(async () => ({ ...snapshot, active: true, firstPromptDismissed: true }))
+    const chooseLocalDirectory = vi.fn(async () => snapshot)
     render(<ImportedPluginRestore
       mode="dialog"
       t={t}
       getRestore={async () => snapshot}
+      checkSources={async () => snapshot}
       startRestore={startRestore}
+      chooseLocalDirectory={chooseLocalDirectory}
+      chooseLocalArchive={vi.fn()}
       dismissRestore={vi.fn()}
       ignoreRestore={vi.fn()}
       restart={vi.fn()}
@@ -208,6 +213,11 @@ describe('ImportedPluginRestore', () => {
     expect((plugin as HTMLInputElement).checked).toBe(true)
     expect((codex as HTMLInputElement).checked).toBe(false)
     expect(local.hasAttribute('disabled')).toBe(true)
+    const localDirectory = local.closest('li')?.querySelector<HTMLButtonElement>('button')
+    expect(localDirectory).toBeTruthy()
+    fireEvent.click(localDirectory as HTMLButtonElement)
+    await waitFor(() => { expect(chooseLocalDirectory).toHaveBeenCalledWith('local') })
+    expect(screen.getAllByRole('button', { name: en['restore.localArchive'] })).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: en['restore.install'] }))
     await waitFor(() => { expect(startRestore).toHaveBeenCalledWith(['plugin']) })
   })
@@ -218,7 +228,10 @@ describe('ImportedPluginRestore', () => {
       mode="dialog"
       t={t}
       getRestore={async () => snapshot}
+      checkSources={async () => snapshot}
       startRestore={vi.fn()}
+      chooseLocalDirectory={vi.fn()}
+      chooseLocalArchive={vi.fn()}
       dismissRestore={dismissRestore}
       ignoreRestore={vi.fn()}
       restart={vi.fn()}

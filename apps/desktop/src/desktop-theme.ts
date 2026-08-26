@@ -46,7 +46,7 @@ export async function readDesktopThemeSource(
   try {
     const contents = await readFile(join(dshHome, 'settings.yaml'), 'utf8')
     const document = parseDocument(contents, { prettyErrors: false })
-    if (document.errors.length > 0) throw document.errors[0]
+    if (document.errors.length > 0) throw new Error(document.errors[0]?.message ?? 'invalid theme settings YAML')
     const value = document.toJS() as unknown
     if (typeof value !== 'object' || value === null || Array.isArray(value)) return 'system'
     const theme = (value as Record<string, unknown>)['ui-theme']
