@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-24-profile-git-build-approval-retry.md
-2026-08-24-profile-git-build-approval-retry.md: 844fecde1db561574bbcac777816094111a6e33e
-2026-08-24-profile-git-build-approval-retry.zh.md: b6e629e931e2abc56c29bf79a72184aefc90d85f
+2026-08-24-profile-git-build-approval-retry.md: d6a462ba6798b11d0cede775a50f38129ea67a1e
+2026-08-24-profile-git-build-approval-retry.zh.md: 3a1906ed9cceff6187974ad628cad149c1e34f92

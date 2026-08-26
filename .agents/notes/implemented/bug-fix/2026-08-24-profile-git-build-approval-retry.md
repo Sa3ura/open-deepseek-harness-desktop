@@ -12,7 +12,7 @@ pnpm requires an `allowBuilds` rule before a dependency may run a lifecycle scri
 
 An explicit profile `add` retains the exact dependency-path key from pnpm's structured Git-prepare hint before diagnostic truncation. dsh appends that bounded fact to the retained diagnostic, atomically adds only the exact key with value `true` to the profile's `pnpm-workspace.yaml`, and retries the same operation once.
 
-The desktop bundled-plugin manifest may separately name reviewed registry dependencies in `approvedBuilds`. Before installing that exact bundled entry, the host calls `dsh plugin --profile <name> approve-build <package-name>`. The CLI validates an unversioned npm package name and writes only that key. Better Sidebar declares only `node-pty`; ordinary market and CLI installs receive no implicit registry approval.
+The desktop bundled-plugin manifest may separately name reviewed registry dependencies in `approvedBuilds`. Before installing that exact bundled entry, both the host and the Windows packaged-runtime smoke call `dsh plugin --profile <name> approve-build <package-name>`. The CLI validates an unversioned npm package name and writes only that key. Better Sidebar declares only `node-pty`; ordinary market and CLI installs receive no implicit registry approval.
 
 Both YAML update paths preserve comments and unrelated settings. An existing `false` rule remains authoritative. Missing, malformed, duplicate, or unrelated approvals do not modify the profile, and dsh never enables every build script. A Git retry failure includes the original failure and the retry diagnostic.
 

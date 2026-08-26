@@ -349,6 +349,20 @@ async function smokeBundledPlugins() {
   const manifest = JSON.parse(await readFile(join(bundledDirectory, 'manifest.json'), 'utf8'))
   try {
     for (const plugin of manifest.plugins.filter(plugin => plugin.installPolicy === 'startup')) {
+      for (const packageName of plugin.approvedBuilds ?? []) {
+        await run(nodeExecutable, [
+          entry,
+          'plugin', '--profile', plugin.profile,
+          'approve-build', packageName,
+        ], {
+          env: {
+            ...process.env,
+            DSH_HOME: smokeHome,
+            DSH_PNPM_BIN: stagedPnpmEntry,
+            PATH: `${runtimeRoot};${process.env.PATH ?? ''}`,
+          },
+        })
+      }
       await run(nodeExecutable, [
         entry,
         'plugin', '--profile', plugin.profile,

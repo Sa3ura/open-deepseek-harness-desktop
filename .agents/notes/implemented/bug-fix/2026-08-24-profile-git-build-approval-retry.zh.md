@@ -12,7 +12,7 @@ pnpm 要求依赖运行生命周期脚本前必须存在 `allowBuilds` 规则。
 
 对于明确执行的 profile `add`，dsh 在截断诊断前从 pnpm 的结构化 Git prepare 提示中保留精确依赖路径键，将这条有界信息追加到保留诊断中，再以原子写方式只把该精确键以 `true` 写入 profile 的 `pnpm-workspace.yaml`，随后重试同一操作一次。
 
-桌面预置插件清单可以另行通过 `approvedBuilds` 指定已审核的 registry 依赖。在安装该精确预置条目前，宿主调用 `dsh plugin --profile <name> approve-build <package-name>`。CLI 会校验无版本 npm 包名，并且只写入该键。Better Sidebar 只声明 `node-pty`；普通插件市场和 CLI 安装不会获得隐式 registry 许可。
+桌面预置插件清单可以另行通过 `approvedBuilds` 指定已审核的 registry 依赖。在安装该精确预置条目前，宿主和 Windows 安装包运行时冒烟测试都会调用 `dsh plugin --profile <name> approve-build <package-name>`。CLI 会校验无版本 npm 包名，并且只写入该键。Better Sidebar 只声明 `node-pty`；普通插件市场和 CLI 安装不会获得隐式 registry 许可。
 
 两种 YAML 更新都会保留注释及无关设置。已有的 `false` 规则仍然优先。缺失、格式异常、重复或无关的许可不会修改 profile，dsh 也不会放行所有构建脚本。Git 重试仍失败时，诊断同时包含原始失败和重试失败。
 
