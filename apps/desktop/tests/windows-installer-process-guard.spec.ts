@@ -42,5 +42,8 @@ describe('Windows installer process guard', () => {
     expect(guard).toContain('$remaining = @(Get-DesktopOwnedProcesses)')
     expect(guard).toContain('for ($attempt = 1; $attempt -le 3; $attempt += 1)')
     expect(guard).toContain('Stop-Process -Id $process.ProcessId -Force')
+    expect(guard).toContain('DshInstallerWindow')
+    expect(guard).toContain('PostMessage($liveProcess.MainWindowHandle, 0x0010')
+    expect(guard).toContain('DeepSeek-Harness-process-guard.log')
   })
 })

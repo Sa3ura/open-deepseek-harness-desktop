@@ -172,6 +172,9 @@ try {
   if (-not $upgrade.HasExited) {
     $upgrade.Kill($true)
     $upgrade.WaitForExit()
+    if (Test-Path -LiteralPath $processGuardDiagnostic) {
+      Write-Host "Installer process guard diagnostic:`n$(Get-Content -LiteralPath $processGuardDiagnostic -Raw)"
+    }
     throw 'Windows upgrade installer did not exit within 6 minutes'
   }
   if ($upgrade.ExitCode -ne 0) {
