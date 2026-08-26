@@ -18,6 +18,51 @@ LangString CliConflict ${LANG_SIMPCHINESE} "检测到 PATH 中已有其他 dsh�
 LangString CliConflict ${LANG_ENGLISH} "Another dsh was found on PATH. This option stays off by default; selecting it makes the desktop-managed dsh take priority."
 LangString CliPathFailure ${LANG_SIMPCHINESE} "无法更新当前用户 PATH。应用已正常安装，但 dsh 命令尚未注册。"
 LangString CliPathFailure ${LANG_ENGLISH} "The current-user PATH could not be updated. The app was installed, but dsh was not registered."
+LangString AppProcessesRunning ${LANG_SIMPCHINESE} "检测到以下由 DeepSeek Harness 安装目录启动的进程。继续后，安装程序会先请求它们正常退出，随后关闭仍在运行的进程。"
+LangString AppProcessesRunning ${LANG_ENGLISH} "The following processes were started from the DeepSeek Harness installation. Continuing asks them to exit and then closes any that remain."
+LangString AppProcessesRemain ${LANG_SIMPCHINESE} "仍有进程无法关闭。它们可能使用了更高权限。请根据下方的 PID 和路径手动关闭，然后重试。"
+LangString AppProcessesRemain ${LANG_ENGLISH} "Some processes could not be closed, possibly because they run with higher privileges. Close the listed PIDs and paths, then retry."
+LangString AppProcessInspectionFailed ${LANG_SIMPCHINESE} "安装程序无法安全检查 DeepSeek Harness 进程。为避免损坏安装，本次操作已停止。"
+LangString AppProcessInspectionFailed ${LANG_ENGLISH} "The installer could not safely inspect DeepSeek Harness processes. Installation has stopped to avoid corrupting the application."
+
+Var ProcessGuardOutput
+
+!macro customCheckAppRunning
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\installer-process-guard.ps1 "${BUILD_RESOURCES_DIR}\installer-process-guard.ps1"
+  System::Call 'kernel32::GetCurrentProcessId() i.r9'
+
+  process_guard_inspect:
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\installer-process-guard.ps1" -Action inspect -InstallDirectory "$INSTDIR" -AppExecutable "${APP_EXECUTABLE_FILENAME}" -ExcludeProcessId $R9'
+  Pop $0
+  Pop $ProcessGuardOutput
+  DetailPrint "$ProcessGuardOutput"
+
+  ${If} $0 == 0
+    Goto process_guard_done
+  ${ElseIf} $0 == 10
+    ${IfNot} ${Silent}
+      MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(AppProcessesRunning)$\r$\n$ProcessGuardOutput" IDOK process_guard_stop
+      Quit
+    ${EndIf}
+    Goto process_guard_stop
+  ${Else}
+    MessageBox MB_RETRYCANCEL|MB_ICONSTOP "$(AppProcessInspectionFailed)$\r$\n$ProcessGuardOutput" /SD IDCANCEL IDRETRY process_guard_inspect
+    Quit
+  ${EndIf}
+
+  process_guard_stop:
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\installer-process-guard.ps1" -Action stop -InstallDirectory "$INSTDIR" -AppExecutable "${APP_EXECUTABLE_FILENAME}" -ExcludeProcessId $R9'
+  Pop $0
+  Pop $ProcessGuardOutput
+  DetailPrint "$ProcessGuardOutput"
+  ${If} $0 != 0
+    MessageBox MB_RETRYCANCEL|MB_ICONSTOP "$(AppProcessesRemain)$\r$\n$ProcessGuardOutput" /SD IDCANCEL IDRETRY process_guard_inspect
+    Quit
+  ${EndIf}
+
+  process_guard_done:
+!macroend
 
 !ifndef BUILD_UNINSTALLER
   Var CliPathCheckboxHandle

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from '../src/supervisor.ts'
 
 const roots: string[] = []
@@ -98,4 +98,31 @@ describe('Harness supervisor startup failures', () => {
     await expect(ready).resolves.toBe('http://127.0.0.1:43123')
     await supervisor.stop()
   }, 10_000)
+
+  it('stops the Windows Harness process tree gracefully before forcing it', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-tree-stop-'))
+    roots.push(root)
+    const script = join(root, 'wait.mjs')
+    await writeFile(script, 'setInterval(() => {}, 1000)\n')
+    const terminateProcessTree = vi.fn(async (processId: number, force: boolean) => {
+      if (force) process.kill(processId, 'SIGKILL')
+    })
+    const supervisor = new HarnessSupervisor({
+      launch: { command: process.execPath, args: [script] },
+      logPath: join(root, 'harness.log'),
+      environment: { ...process.env },
+      onReady: () => {},
+      onState: () => {},
+      onFailure: () => {},
+      terminateProcessTree,
+      stopTimeoutMs: 25,
+    })
+
+    supervisor.start()
+    await supervisor.stop()
+
+    expect(terminateProcessTree.mock.calls.map(([, force]) => force)).toEqual([false, true])
+    await supervisor.stop()
+    expect(terminateProcessTree).toHaveBeenCalledTimes(2)
+  })
 })

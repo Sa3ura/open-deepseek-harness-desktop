@@ -1,0 +1,32 @@
+import { readFile } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { describe, expect, it } from 'vitest'
+
+const buildRoot = fileURLToPath(new URL('../build/', import.meta.url))
+
+describe('Windows installer process guard', () => {
+  it('overrides the broad electron-builder process check', async () => {
+    const installer = await readFile(`${buildRoot}/installer.nsh`, 'utf8')
+    expect(installer).toContain('!macro customCheckAppRunning')
+    expect(installer).toContain('installer-process-guard.ps1')
+    expect(installer).toContain('GetCurrentProcessId')
+    expect(installer).toContain('-ExcludeProcessId $R9')
+  })
+
+  it('matches only the exact app or the resources directory boundary', async () => {
+    const guard = await readFile(`${buildRoot}/installer-process-guard.ps1`, 'utf8')
+    expect(guard).toContain('[string]::Equals($path, $appPath, $comparison)')
+    expect(guard).toContain('$path.StartsWith($resourcesPrefix, $comparison)')
+    expect(guard).toContain("[System.IO.Path]::Combine($installRoot, 'resources') + [System.IO.Path]::DirectorySeparatorChar")
+    expect(guard).toContain('$_.ProcessId -ne $ExcludeProcessId')
+    expect(guard).not.toContain('$path.StartsWith($installRoot')
+  })
+
+  it('reports exact process details and verifies cleanup before installation continues', async () => {
+    const guard = await readFile(`${buildRoot}/installer-process-guard.ps1`, 'utf8')
+    expect(guard).toContain('PID {0}  {1}  {2}')
+    expect(guard).toContain('$ExitProcessesRemain = 30')
+    expect(guard).toContain('$remaining = @(Get-DesktopOwnedProcesses)')
+    expect(guard).toContain('Stop-Process -Id $process.ProcessId -Force')
+  })
+})
