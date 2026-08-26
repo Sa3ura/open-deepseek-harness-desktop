@@ -1,9 +1,9 @@
 /** Electron application host for the existing DeepSeek Harness Web GUI. */
 
 import { spawn } from 'node:child_process'
-import { appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, session, shell, Tray,
@@ -126,6 +126,12 @@ let desktopCliManager: DesktopCliManager | undefined
 let chatBackgroundStore: DesktopChatBackgroundStore | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
+
+async function appendDesktopStartupLog(message: string): Promise<void> {
+  if (harnessLogPath === '') return
+  await mkdir(dirname(harnessLogPath), { recursive: true })
+  await appendFile(harnessLogPath, `[desktop] ${new Date().toISOString()} ${message}\n`)
+}
 
 type DataHomeSelection = 'imported' | 'reused' | 'fresh'
 
@@ -1164,9 +1170,11 @@ async function startApplication(): Promise<void> {
   publishStartupProgress({ stage: 'checking-profile', progress: 28 })
   let initialProfileRepairDiagnostic: string
   try {
+    await appendDesktopStartupLog('Checking Web Profile compatibility.')
     initialProfileRepairDiagnostic = await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
       'plugin', '--profile', 'web', 'doctor', '--repair',
     ], launchOptions), [0, 10, 11])
+    await appendDesktopStartupLog('Web Profile compatibility check completed.')
   } catch (error) {
     initialProfileRepairDiagnostic = error instanceof Error ? error.message : String(error)
     console.warn('desktop: Profile startup repair did not settle; supervised startup will classify the failure', error)
@@ -1194,6 +1202,7 @@ async function startApplication(): Promise<void> {
     dshHome,
     repairLegacyMarkers: !app.isPackaged,
     prepare: async (plugin) => {
+      await appendDesktopStartupLog(`Preparing bundled plugin ${plugin.packageName}@${plugin.version}.`)
       for (const packageName of plugin.approvedBuilds ?? []) {
         await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
           'plugin', '--profile', plugin.profile, 'approve-build', packageName,
@@ -1201,11 +1210,13 @@ async function startApplication(): Promise<void> {
       }
     },
     install: async (archivePath, plugin) => {
+      await appendDesktopStartupLog(`Installing bundled plugin ${plugin.packageName}@${plugin.version}.`)
       await installBundledPluginSource(plugin, archivePath, async (packageSpec) => {
         await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
           'plugin', '--profile', plugin.profile, 'add', '--save-exact', packageSpec,
         ], launchOptions))
       })
+      await appendDesktopStartupLog(`Bundled plugin ${plugin.packageName}@${plugin.version} installed.`)
     },
     onFailure: async (error) => {
       await appendBundledPluginFailure(harnessLogPath, error)
@@ -1221,6 +1232,7 @@ async function startApplication(): Promise<void> {
       progress.progress,
     ))
   })
+  await appendDesktopStartupLog('Bundled startup plugin seeding completed.')
   const installedProfileDependencies: Record<string, string> = {}
   try {
     const profileManifest = JSON.parse(
@@ -1247,6 +1259,7 @@ async function startApplication(): Promise<void> {
     await appendFile(harnessLogPath, `[desktop] Imported plugin restore unavailable: ${error instanceof Error ? error.message : String(error)}\n`)
   }
   publishStartupProgress({ stage: 'starting-harness', progress: 88 })
+  await appendDesktopStartupLog('Starting Harness supervisor.')
   const launch = resolveHarnessLaunch(harnessEnvironment, launchOptions)
   const notificationCopy = desktopNotificationDictionary(app.getLocale())
   const allowNotification = createNotificationThrottle(5 * 60_000)
