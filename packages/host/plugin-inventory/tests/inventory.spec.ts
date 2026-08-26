@@ -298,6 +298,8 @@ describe('PluginInventoryGateway', () => {
   })
 
   it('starts a structured CLI install, deduplicates it while running, and publishes completion', async () => {
+    vi.stubEnv('DSH_HOME', '/desktop data/development/dsh-home')
+    vi.stubEnv('DSH_PNPM_BIN', '/desktop runtime/pnpm.mjs')
     const { inventory, subprocess } = await harness()
     const deferred = Promise.withResolvers<{ exitCode: number | null; signal: null }>()
     const baseSpawn = subprocess.spawn.bind(subprocess)
@@ -317,10 +319,34 @@ describe('PluginInventoryGateway', () => {
       'plugin', '--profile', 'web', 'add', '@fixture/dsh-plugin@1.2.3',
     ])
     expect(subprocess.spawns[0]?.stdio.stdin).toBe('ignore')
+    expect(subprocess.spawns[0]?.env).toEqual({
+      DSH_HOME: '/desktop data/development/dsh-home',
+      DSH_PNPM_BIN: '/desktop runtime/pnpm.mjs',
+    })
 
     deferred.resolve({ exitCode: 0, signal: null })
     await expect.poll(() => inventory.getInstall(started.installId).phase).toBe('succeeded')
     expect(inventory.getInstall(started.installId).exitCode).toBe(0)
+  })
+
+  it('forwards the selected Profile home to doctor subprocesses after DSH environment scrubbing', async () => {
+    vi.stubEnv('DSH_HOME', String.raw`C:\Users\测试 用户\AppData\Roaming\open-deepseek-harness-desktop\dsh-home`)
+    vi.stubEnv('DSH_PNPM_BIN', String.raw`D:\DeepSeek Harness\resources\runtime\pnpm.mjs`)
+    const { inventory, subprocess } = await harness()
+    subprocess.stdout = JSON.stringify({
+      schema: 'dsh/profile-dependency-repair/v1',
+      profile: 'web',
+      status: 'healthy',
+      conflicts: [],
+      quarantined: [],
+    })
+
+    const started = inventory.startDependencyDoctor({ profile: 'web', repair: false })
+    await expect.poll(() => inventory.getDependencyDoctor(started.doctorId).phase).toBe('healthy')
+    expect(subprocess.spawns[0]?.env).toEqual({
+      DSH_HOME: String.raw`C:\Users\测试 用户\AppData\Roaming\open-deepseek-harness-desktop\dsh-home`,
+      DSH_PNPM_BIN: String.raw`D:\DeepSeek Harness\resources\runtime\pnpm.mjs`,
+    })
   })
 
   it('rejects non-registry command text and retains bounded failure diagnostics', async () => {

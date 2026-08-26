@@ -196,4 +196,21 @@ describe('profile plugin package manager', () => {
       rmSync(home, { recursive: true, force: true })
     }
   })
+
+  it('rejects a registry add when pnpm exits zero without materializing the requested plugin', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-empty-success-'))
+    const pnpmEntry = join(home, 'pnpm-empty-success.mjs')
+    writeFileSync(pnpmEntry, 'process.exit(0)\n')
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_PNPM_BIN', pnpmEntry)
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['add', '@fixture/dsh-plugin@1.2.3'])).toBe(1)
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining(
+        'plugin install verification failed: dependency "@fixture/dsh-plugin" was not written',
+      ))
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
 })

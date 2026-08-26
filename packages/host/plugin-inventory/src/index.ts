@@ -311,6 +311,24 @@ function dshLauncherArgv(): readonly string[] {
   throw new Error('pluginInventory: TypeScript launcher has no active --import hook')
 }
 
+/**
+ * Preserve the desktop-selected Profile and package manager across the
+ * subprocess service's intentional `DSH_*` environment scrub. Other ambient
+ * Harness variables stay excluded: plugin maintenance only needs these two
+ * host-owned paths, and forwarding the whole namespace would weaken the
+ * subprocess boundary.
+ */
+function profileCommandEnvironment(environment: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const forwarded: NodeJS.ProcessEnv = {}
+  if (environment.DSH_HOME !== undefined && environment.DSH_HOME.trim() !== '') {
+    forwarded.DSH_HOME = environment.DSH_HOME
+  }
+  if (environment.DSH_PNPM_BIN !== undefined && environment.DSH_PNPM_BIN.trim() !== '') {
+    forwarded.DSH_PNPM_BIN = environment.DSH_PNPM_BIN
+  }
+  return forwarded
+}
+
 /** Remote-only service exposing Loader inventory and controlled profile installation. */
 export class PluginInventoryGateway extends TypertRemoteService {
   static inject = ['loader', 'subprocess']
@@ -724,6 +742,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
             'plugin', '--profile', job.snapshot.profile, ...step.args,
           ],
           cwd: process.cwd(),
+          env: profileCommandEnvironment(),
           stdio: {
             stdin: 'ignore',
             stdout: { maxBytes: this.outputMaxBytes },
@@ -782,6 +801,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
           ...(job.repair ? ['--repair'] : []),
         ],
         cwd: process.cwd(),
+        env: profileCommandEnvironment(),
         stdio: {
           stdin: 'ignore',
           stdout: { maxBytes: this.outputMaxBytes },

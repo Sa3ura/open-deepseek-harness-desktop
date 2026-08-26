@@ -43,6 +43,7 @@ import { runProfilePackageManager } from './profile-package-manager.ts'
 export { resolvePnpmCommand } from './profile-package-manager.ts'
 
 const NAME = 'dsh'
+const REGISTRY_ADD_SPEC = /^(?<name>(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*))(?:@[a-z0-9][a-z0-9._+~-]*)?$/iu
 
 /**
  * Whether a resolved dependency exports a profile patch, i.e. is a bundle.
@@ -136,6 +137,40 @@ function addedPackageSpec(args: readonly string[]): string | undefined {
     if (!argument.startsWith('-')) candidate = argument
   }
   return candidate
+}
+
+/** Resolve the package identity for a registry add that can be verified locally. */
+function addedRegistryPackageName(args: readonly string[]): string | undefined {
+  const packageSpec = addedPackageSpec(args)
+  if (packageSpec === undefined) return undefined
+  return REGISTRY_ADD_SPEC.exec(packageSpec)?.groups?.name
+}
+
+/**
+ * Refuse a false-successful registry add. A package-manager exit code alone is
+ * insufficient: the selected Profile must declare the dependency, materialize
+ * its package, and activate its bundle declaration when one exists.
+ */
+function verifyRegistryPackageInstall(profileDir: string, packageName: string): string | undefined {
+  const profile = readProfileManifest(NAME, profileDir)
+  if (profile.dependencies?.[packageName] === undefined) {
+    return `dependency ${JSON.stringify(packageName)} was not written to the selected Profile`
+  }
+  const packageDir = join(profileDir, 'node_modules', ...packageName.split('/'))
+  let installed: ProfileManifest
+  try {
+    installed = readProfileManifest(NAME, packageDir)
+  } catch {
+    return `dependency ${JSON.stringify(packageName)} is declared but not materialized in the selected Profile`
+  }
+  if (installed.name !== packageName) {
+    return `dependency ${JSON.stringify(packageName)} resolved to unexpected package ${JSON.stringify(installed.name)}`
+  }
+  if (installed.dsh?.bundle?.patch !== undefined
+    && !profile.dsh?.profile?.bundles?.includes(packageName)) {
+    return `plugin ${JSON.stringify(packageName)} was installed but not added to dsh.profile.bundles`
+  }
+  return undefined
 }
 
 /**
@@ -290,6 +325,14 @@ export function runPlugin(profile: string, args: readonly string[]): number {
     }
     if (dependencyHealth.status === 'repaired' || dependencyHealth.status === 'quarantined') {
       process.stderr.write(`${NAME}: profile dependency health ${JSON.stringify(dependencyHealth)}\n`)
+    }
+    const packageName = addedRegistryPackageName(args)
+    const verificationFailure = packageName === undefined
+      ? undefined
+      : verifyRegistryPackageInstall(dir, packageName)
+    if (verificationFailure !== undefined) {
+      process.stderr.write(`${NAME}: plugin install verification failed: ${verificationFailure}\n`)
+      return 1
     }
   } else {
     const packageSpec = addedPackageSpec(args)
