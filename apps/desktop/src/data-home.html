@@ -16,53 +16,102 @@
       * { box-sizing: border-box; }
       body { margin: 0; min-height: 100vh; overflow: hidden; background: #fff; }
       button { font: inherit; }
-      .shell { display: grid; grid-template-rows: 68px 1fr 82px; min-height: 100vh; }
+      .shell { display: grid; grid-template-rows: 82px 1fr 82px; min-height: 100vh; }
       .titlebar {
         align-items: center;
         border-bottom: 1px solid #e6e7ea;
         display: flex;
-        justify-content: center;
+        justify-content: flex-start;
+        padding: 0 38px;
         position: relative;
       }
       .language-picker {
         align-items: center;
         display: flex;
-        gap: 8px;
         position: absolute;
         right: 28px;
       }
-      .language-picker label { color: #696d76; font-size: 13px; }
-      .language-picker select {
+      .language-trigger {
+        align-items: center;
         appearance: none;
-        background: #fff;
-        border: 1px solid #c8cbd1;
-        border-radius: 8px;
+        background: linear-gradient(180deg, #fff, #f8f9fb);
+        border: 1px solid #d9dce2;
+        border-radius: 11px;
+        box-shadow: 0 2px 8px rgb(20 25 36 / 5%);
         color: #171719;
         cursor: pointer;
-        min-width: 112px;
-        padding: 7px 30px 7px 12px;
+        display: flex;
+        font-size: 13px;
+        font-weight: 590;
+        gap: 10px;
+        justify-content: space-between;
+        min-width: 158px;
+        padding: 9px 12px;
+        transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
       }
-      .language-picker::after {
+      .language-inline-label { color: #858a94; font-size: 12px; font-weight: 560; }
+      .language-divider { background: #e1e3e8; height: 16px; width: 1px; }
+      #language-current { flex: 1; text-align: left; }
+      .language-trigger:hover { background: #fff; border-color: #bfc4cd; box-shadow: 0 4px 12px rgb(20 25 36 / 8%); }
+      .language-trigger[aria-expanded="true"] { border-color: #a9bde9; box-shadow: 0 0 0 3px rgb(65 118 230 / 10%); }
+      .language-chevron {
         border-bottom: 1px solid #62666f;
         border-right: 1px solid #62666f;
-        content: '';
         height: 6px;
-        pointer-events: none;
-        position: absolute;
-        right: 12px;
-        transform: rotate(45deg) translateY(-2px);
+        transform: rotate(45deg) translate(-1px, -1px);
+        transition: transform 160ms ease;
         width: 6px;
       }
-      .language-picker select:focus-visible { outline: 2px solid #4176e6; outline-offset: 2px; }
-      .brand { align-items: center; display: flex; gap: 9px; font-size: 16px; font-weight: 650; }
-      .brand img { border-radius: 7px; height: 26px; width: 26px; }
+      .language-trigger[aria-expanded="true"] .language-chevron { transform: rotate(225deg) translate(-1px, -1px); }
+      .language-trigger:focus-visible { outline: 2px solid #4176e6; outline-offset: 2px; }
+      .language-menu {
+        background: rgb(255 255 255 / 96%);
+        border: 1px solid #e1e3e8;
+        border-radius: 13px;
+        box-shadow: 0 16px 38px rgb(18 23 33 / 16%);
+        display: grid;
+        gap: 4px;
+        padding: 6px;
+        position: absolute;
+        right: 0;
+        top: calc(100% + 9px);
+        width: 176px;
+        z-index: 12;
+      }
+      .language-menu[hidden] { display: none; }
+      .language-option {
+        align-items: center;
+        appearance: none;
+        background: transparent;
+        border: 0;
+        border-radius: 9px;
+        color: #25272c;
+        cursor: pointer;
+        display: flex;
+        font-weight: 580;
+        justify-content: space-between;
+        padding: 10px 11px;
+        text-align: left;
+        width: 100%;
+      }
+      .language-option:hover { background: #f4f6fa; }
+      .language-option[aria-selected="true"] { background: #eef4ff; color: #2f68d6; }
+      .language-option:focus-visible { outline: 2px solid #4176e6; outline-offset: -2px; }
+      .language-code { color: #9297a1; font-size: 11px; font-weight: 650; letter-spacing: .08em; }
+      .language-option[aria-selected="true"] .language-code { color: #6d91dd; }
+      .brand { align-items: center; display: flex; gap: 13px; }
+      .brand img { border-radius: 11px; box-shadow: 0 6px 16px rgb(20 53 118 / 18%); height: 40px; width: 40px; }
+      .brand-copy { display: grid; gap: 2px; }
+      .brand-copy strong { font-size: 18px; font-weight: 720; letter-spacing: -.028em; line-height: 1.12; }
+      .brand-copy small { color: #747983; font-size: 12px; font-weight: 550; letter-spacing: .01em; line-height: 1.2; }
       .content { display: grid; grid-template-columns: minmax(340px, 42%) 1fr; min-height: 0; }
       .choices { border-right: 1px solid #e6e7ea; padding: 48px 38px; }
       .choice {
         appearance: none;
         background: transparent;
-        border: 0;
+        border: 1px solid transparent;
         border-bottom: 1px solid #e6e7ea;
+        border-radius: 12px;
         color: inherit;
         cursor: pointer;
         display: grid;
@@ -70,12 +119,41 @@
         grid-template-columns: 28px 1fr;
         padding: 24px 14px;
         text-align: left;
+        transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
         width: 100%;
       }
-      .choice:last-child { border-bottom: 0; }
-      .choice:hover { background: #f8faff; }
-      .choice:focus-visible { border-radius: 10px; outline: 2px solid #4176e6; outline-offset: -2px; }
-      .choice[aria-checked="true"] { background: #eef4ff; border-radius: 10px; border-bottom-color: transparent; }
+      .choice[data-mode="imported"] {
+        --mode-accent: #4176e6;
+        --mode-border: #b8ccfb;
+        --mode-hover: #f7f9ff;
+        --mode-shadow: rgb(65 118 230 / 7%);
+        --mode-surface-start: #eaf2ff;
+        --mode-surface-end: #f8fbff;
+      }
+      .choice[data-mode="reused"] {
+        --mode-accent: #c88614;
+        --mode-border: #edce91;
+        --mode-hover: #fffbf3;
+        --mode-shadow: rgb(200 134 20 / 7%);
+        --mode-surface-start: #fff5dd;
+        --mode-surface-end: #fffaf1;
+      }
+      .choice[data-mode="fresh"] {
+        --mode-accent: #2d9565;
+        --mode-border: #a9d9c2;
+        --mode-hover: #f5fbf8;
+        --mode-shadow: rgb(45 149 101 / 7%);
+        --mode-surface-start: #eaf8f1;
+        --mode-surface-end: #f7fcf9;
+      }
+      .choice:last-child { border-bottom-color: transparent; }
+      .choice:hover { background: var(--mode-hover); }
+      .choice:focus-visible { outline: 2px solid var(--mode-accent); outline-offset: 2px; }
+      .choice[aria-checked="true"] {
+        background: linear-gradient(135deg, var(--mode-surface-start), var(--mode-surface-end));
+        border-color: var(--mode-border);
+        box-shadow: 0 7px 20px var(--mode-shadow);
+      }
       .radio {
         border: 1.5px solid #a7abb3;
         border-radius: 50%;
@@ -84,17 +162,44 @@
         position: relative;
         width: 22px;
       }
-      .choice[aria-checked="true"] .radio { border: 6px solid #4176e6; }
+      .choice[aria-checked="true"] .radio { border: 6px solid var(--mode-accent); }
       .choice-title { align-items: center; display: flex; gap: 10px; font-size: 16px; font-weight: 620; line-height: 1.4; }
       .recommended { background: #e9f0ff; border-radius: 999px; color: #316bd8; font-size: 12px; font-weight: 600; padding: 3px 8px; }
       .choice-description { color: #696d76; font-size: 13px; line-height: 1.6; margin-top: 6px; }
-      .detail { min-width: 0; padding: 46px 52px 36px; }
+      .detail {
+        --detail-accent: #376fdc;
+        --detail-dot: rgb(65 118 230 / 20%);
+        --detail-surface: rgb(236 244 255 / 84%);
+        background: linear-gradient(135deg, var(--detail-surface), transparent 58%);
+        min-width: 0;
+        overflow: hidden;
+        padding: 46px 52px 36px;
+        position: relative;
+        transition: background 180ms ease;
+      }
+      .detail[data-mode="imported"] { --detail-accent: #376fdc; --detail-dot: rgb(65 118 230 / 20%); --detail-surface: rgb(236 244 255 / 84%); }
+      .detail[data-mode="reused"] { --detail-accent: #ad700a; --detail-dot: rgb(200 134 20 / 20%); --detail-surface: rgb(255 247 228 / 86%); }
+      .detail[data-mode="fresh"] { --detail-accent: #237d54; --detail-dot: rgb(45 149 101 / 20%); --detail-surface: rgb(235 249 242 / 86%); }
+      .detail::before {
+        background-image: radial-gradient(circle, var(--detail-dot) 1px, transparent 1.5px);
+        background-size: 11px 11px;
+        content: '';
+        height: 190px;
+        pointer-events: none;
+        position: absolute;
+        right: -16px;
+        top: -18px;
+        width: 260px;
+        -webkit-mask-image: linear-gradient(135deg, #000 8%, transparent 76%);
+        mask-image: linear-gradient(135deg, #000 8%, transparent 76%);
+      }
+      .detail > * { position: relative; z-index: 1; }
       .detail-heading { align-items: center; display: flex; gap: 12px; margin-bottom: 22px; }
-      .detail-heading h1 { font-size: 18px; letter-spacing: -.01em; line-height: 1.35; margin: 0; }
+      .detail-heading h1 { color: var(--detail-accent); font-size: 19px; letter-spacing: -.018em; line-height: 1.35; margin: 0; transition: color 180ms ease; }
       .help-button {
         align-items: center;
         appearance: none;
-        background: #fff;
+        background: rgb(255 255 255 / 72%);
         border: 0;
         border-radius: 50%;
         color: #62666f;
@@ -106,8 +211,8 @@
       }
       .help-button img { height: 17px; width: 17px; }
       .help-button:hover { background: #f3f5f8; color: #171719; }
-      .help-button:focus-visible { outline: 2px solid #4176e6; outline-offset: 2px; }
-      .risk { background: #fff7e9; border: 1px solid #f5c979; border-radius: 8px; color: #ad6100; font-size: 13px; line-height: 1.5; margin: 0 0 24px; padding: 13px 16px; }
+      .help-button:focus-visible { outline: 2px solid var(--detail-accent); outline-offset: 2px; }
+      .risk { background: #fff8e9; border: 1px solid #edce91; border-radius: 10px; color: #9a6207; font-size: 13px; line-height: 1.5; margin: 0 0 20px; max-width: 640px; padding: 11px 14px; }
       .risk[hidden] { display: none; }
       .facts { margin: 0; }
       .fact { border-bottom: 1px solid #e6e7ea; padding: 18px 0; }
@@ -130,35 +235,64 @@
       .comparison-header h2 { font-size: 18px; margin: 0; }
       .close { appearance: none; background: transparent; border: 0; color: #555a63; cursor: pointer; line-height: 1; padding: 7px; }
       .close img { height: 16px; width: 16px; }
-      table { border-collapse: separate; border-spacing: 0; font-size: 13px; line-height: 1.5; overflow: hidden; table-layout: fixed; width: 100%; }
-      th, td { border-bottom: 1px solid #e6e7ea; border-right: 1px solid #e6e7ea; padding: 12px; text-align: left; vertical-align: top; }
-      th:first-child, td:first-child { border-left: 1px solid #e6e7ea; width: 112px; }
-      thead th { border-top: 1px solid #e6e7ea; font-weight: 650; text-align: center; }
-      thead th:first-child { border-top-left-radius: 8px; }
-      thead th:last-child { border-top-right-radius: 8px; }
-      .reuse-column { background: #fffaf1; }
-      .comparison-note { background: #f5f6f8; border-radius: 8px; color: #62666f; font-size: 13px; line-height: 1.55; margin: 18px 0 0; padding: 11px 13px; }
+      .comparison-table-wrap { background: #fff; border: 1px solid #e5e7eb; border-radius: 14px; box-shadow: 0 8px 24px rgb(18 24 40 / 5%); overflow: hidden; }
+      table { border-collapse: collapse; font-size: 13px; line-height: 1.5; table-layout: fixed; width: 100%; }
+      th, td { border-bottom: 1px solid #eceef1; padding: 13px 14px; text-align: left; vertical-align: top; }
+      tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+      th:first-child, td:first-child { width: 112px; }
+      tbody th { background: #f7f8fa; color: #4f5560; font-weight: 620; }
+      thead th { background: #fafbfc; font-weight: 650; text-align: center; }
+      thead th[data-mode]::before { border-radius: 50%; content: ''; display: inline-block; height: 7px; margin-right: 7px; vertical-align: 1px; width: 7px; }
+      thead th[data-mode="imported"] { background: #f1f6ff; color: #315fae; }
+      thead th[data-mode="imported"]::before { background: #4f7fe5; }
+      thead th[data-mode="reused"] { background: #fff9ec; color: #93600b; }
+      thead th[data-mode="reused"]::before { background: #d99a2b; }
+      thead th[data-mode="fresh"] { background: #f0faf5; color: #267552; }
+      thead th[data-mode="fresh"]::before { background: #3ca477; }
+      .comparison-note { background: linear-gradient(135deg, #f6f7f9, #fafbfc); border: 1px solid #eceef1; border-radius: 12px; color: #62666f; font-size: 13px; line-height: 1.55; margin: 18px 0 0; padding: 12px 14px; }
       .comparison-footer { display: flex; justify-content: flex-end; margin-top: 20px; }
       @media (prefers-color-scheme: dark) {
         :root { background: #191a1e; color: #f4f4f5; }
         body { background: #191a1e; }
-        .titlebar, .choice, .fact, .footer, th, td { border-color: #34363d; }
+        .titlebar, .choice, .fact, .footer { border-color: #34363d; }
         .choices { border-color: #34363d; }
-        .language-picker label, .choice-description, .fact dd, .comparison-note { color: #a8abb3; }
-        .language-picker select, .help-button, .action.secondary { background: #24262b; border-color: #494c55; color: #f4f4f5; }
-        .language-picker::after { border-color: #a8abb3; }
-        .choice:hover, .help-button:hover { background: #252b36; color: #fff; }
-        .choice[aria-checked="true"] { background: #202b43; }
+        .brand-copy small, .language-inline-label, .choice-description, .fact dd, .comparison-note { color: #a8abb3; }
+        .language-trigger, .help-button, .action.secondary { background: linear-gradient(180deg, #292b31, #24262b); border-color: #494c55; color: #f4f4f5; }
+        .language-trigger:hover { background: #2d2f35; border-color: #626670; }
+        .language-trigger[aria-expanded="true"] { border-color: #657ba7; box-shadow: 0 0 0 3px rgb(120 163 243 / 10%); }
+        .language-chevron { border-color: #b8bbc3; }
+        .language-divider { background: #494c55; }
+        .language-menu { background: rgb(38 40 46 / 98%); border-color: #464951; box-shadow: 0 18px 42px rgb(0 0 0 / 42%); }
+        .language-option { color: #f0f1f3; }
+        .language-option:hover { background: #30333a; }
+        .language-option[aria-selected="true"] { background: #26385d; color: #a8c4f7; }
+        .language-code { color: #8d919c; }
+        .language-option[aria-selected="true"] .language-code { color: #89a8e4; }
+        .choice[data-mode="imported"] { --mode-accent: #78a3f3; --mode-border: #40557c; --mode-hover: #202735; --mode-shadow: rgb(0 0 0 / 18%); --mode-surface-start: #202b43; --mode-surface-end: #1d2330; }
+        .choice[data-mode="reused"] { --mode-accent: #e0ae55; --mode-border: #66502c; --mode-hover: #2c281f; --mode-shadow: rgb(0 0 0 / 18%); --mode-surface-start: #33291d; --mode-surface-end: #27241f; }
+        .choice[data-mode="fresh"] { --mode-accent: #70bd96; --mode-border: #355f4b; --mode-hover: #202d28; --mode-shadow: rgb(0 0 0 / 18%); --mode-surface-start: #1d3228; --mode-surface-end: #1d2924; }
+        .choice:hover, .help-button:hover { color: #fff; }
         .radio { border-color: #747986; }
         .recommended { background: #26385d; color: #8eb4ff; }
-        .risk, .reuse-column { background: #33291d; }
-        .risk { border-color: #725526; color: #f1b65d; }
+        .detail[data-mode="imported"] { --detail-accent: #91b5f7; --detail-dot: rgb(120 163 243 / 20%); --detail-surface: rgb(32 43 67 / 66%); }
+        .detail[data-mode="reused"] { --detail-accent: #e0ae55; --detail-dot: rgb(224 174 85 / 18%); --detail-surface: rgb(51 41 29 / 66%); }
+        .detail[data-mode="fresh"] { --detail-accent: #7bc3a0; --detail-dot: rgb(112 189 150 / 18%); --detail-surface: rgb(29 50 40 / 66%); }
+        .risk { background: #33291d; border-color: #725526; color: #f1b65d; }
         .overlay { background: rgb(0 0 0 / 58%); }
         .comparison { background: #222329; box-shadow: 0 20px 60px rgb(0 0 0 / 48%); }
         .close { color: #b7bac1; }
         .close img, .help-button img { filter: invert(1); }
-        .comparison-note { background: #2a2c32; }
+        .comparison-table-wrap { background: #24262b; border-color: #3a3d45; box-shadow: 0 8px 24px rgb(0 0 0 / 18%); }
+        th, td { border-color: #373a42; }
+        tbody th, thead th { background: #292b31; color: #d6d8dd; }
+        thead th[data-mode="imported"] { background: #273148; color: #a8c4f7; }
+        thead th[data-mode="reused"] { background: #352d21; color: #e6bd76; }
+        thead th[data-mode="fresh"] { background: #22342c; color: #8bcaab; }
+        .comparison-note { background: linear-gradient(135deg, #292b31, #26282e); border-color: #373a42; }
         .action.primary { background: #f4f4f5; border-color: #f4f4f5; color: #191a1e; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .choice, .detail, .detail-heading h1, .language-trigger, .language-chevron { transition: none; }
       }
       @media (max-width: 860px) {
         .content { grid-template-columns: 1fr; overflow: auto; }
@@ -171,20 +305,20 @@
   <body>
     <main class="shell">
       <header class="titlebar">
-        <div class="brand"><img src="icon.png" alt=""><span data-copy="windowTitle">选择数据目录</span></div>
-        <div class="language-picker">
-          <label for="language" data-copy="languageLabel">语言</label>
-          <select id="language">
-            <option value="zh">中文</option>
-            <option value="en">English</option>
-          </select>
+        <div class="brand"><img src="icon.png" alt=""><span class="brand-copy"><strong>DeepSeek Harness</strong><small data-copy="windowTitle">选择数据目录</small></span></div>
+        <div id="language-picker" class="language-picker">
+          <button id="language-trigger" class="language-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="language-inline-label" data-copy="languageLabel">语言</span><span class="language-divider" aria-hidden="true"></span><span id="language-current">中文</span><span class="language-chevron" aria-hidden="true"></span></button>
+          <div id="language-menu" class="language-menu" role="listbox" aria-label="语言" hidden>
+            <button class="language-option" type="button" role="option" aria-selected="true" data-language="zh"><span>中文</span><span class="language-code">ZH</span></button>
+            <button class="language-option" type="button" role="option" aria-selected="false" data-language="en"><span>English</span><span class="language-code">EN</span></button>
+          </div>
         </div>
       </header>
       <section class="content">
         <div id="choices" class="choices" role="radiogroup" aria-label="数据目录模式">
           <button class="choice" type="button" role="radio" aria-checked="true" data-mode="imported">
             <span class="radio" aria-hidden="true"></span>
-            <span><span class="choice-title"><span data-copy="importTitle">导入官方配置（独立环境）</span><span class="recommended" data-copy="recommended">推荐</span></span><span class="choice-description" data-copy="importSummary">复制用户数据与插件清单；插件进入后选择重新安装。</span></span>
+            <span><span class="choice-title"><span data-copy="importTitle">导入官方配置（独立环境）</span><span class="recommended" data-copy="recommended">推荐</span></span><span class="choice-description" data-copy="importSummary">复制用户数据和插件清单，进入后可选择恢复插件。</span></span>
           </button>
           <button class="choice" type="button" role="radio" aria-checked="false" data-mode="reused">
             <span class="radio" aria-hidden="true"></span>
@@ -195,7 +329,7 @@
             <span><span class="choice-title" data-copy="freshTitle">全新开始</span><span class="choice-description" data-copy="freshSummary">不导入任何现有数据。</span></span>
           </button>
         </div>
-        <article class="detail">
+        <article id="detail" class="detail" data-mode="imported">
           <div class="detail-heading"><h1 id="detail-title"></h1><button id="help" class="help-button" type="button" aria-label="查看三个选项的区别"><img src="question-outline-14.svg" alt=""></button></div>
           <p id="risk" class="risk" hidden></p>
           <dl class="facts">
@@ -214,15 +348,17 @@
     <div id="overlay" class="overlay" hidden>
       <section class="comparison" role="dialog" aria-modal="true" aria-labelledby="comparison-title">
         <header class="comparison-header"><h2 id="comparison-title" data-copy="comparisonTitle">这三个选项有什么区别？</h2><button id="close-comparison" class="close" type="button" aria-label="关闭"><img src="close-outline-16.svg" alt=""></button></header>
-        <table>
-          <thead><tr><th></th><th data-copy="importTitle">复制到独立目录</th><th class="reuse-column" data-copy="reuseTitle">直接复用官方配置</th><th data-copy="freshTitle">全新开始</th></tr></thead>
-          <tbody>
-            <tr><th data-copy="locationLabel">数据位置</th><td data-copy="compareImportLocation"></td><td class="reuse-column" data-copy="compareReuseLocation"></td><td data-copy="compareFreshLocation"></td></tr>
-            <tr><th data-copy="sharingLabel">是否共享</th><td data-copy="compareImportSharing"></td><td class="reuse-column" data-copy="compareReuseSharing"></td><td data-copy="compareFreshSharing"></td></tr>
-            <tr><th data-copy="pluginsLabel">已有插件</th><td data-copy="compareImportPlugins"></td><td class="reuse-column" data-copy="compareReusePlugins"></td><td data-copy="compareFreshPlugins"></td></tr>
-            <tr><th data-copy="suitableLabel">适合谁</th><td data-copy="compareImportSuitable"></td><td class="reuse-column" data-copy="compareReuseSuitable"></td><td data-copy="compareFreshSuitable"></td></tr>
-          </tbody>
-        </table>
+        <div class="comparison-table-wrap">
+          <table>
+            <thead><tr><th></th><th data-mode="imported" data-copy="importTitle">复制到独立目录</th><th data-mode="reused" data-copy="reuseTitle">直接复用官方配置</th><th data-mode="fresh" data-copy="freshTitle">全新开始</th></tr></thead>
+            <tbody>
+              <tr><th data-copy="locationLabel">数据位置</th><td data-copy="compareImportLocation"></td><td data-copy="compareReuseLocation"></td><td data-copy="compareFreshLocation"></td></tr>
+              <tr><th data-copy="sharingLabel">是否共享</th><td data-copy="compareImportSharing"></td><td data-copy="compareReuseSharing"></td><td data-copy="compareFreshSharing"></td></tr>
+              <tr><th data-copy="pluginsLabel">已有插件</th><td data-copy="compareImportPlugins"></td><td data-copy="compareReusePlugins"></td><td data-copy="compareFreshPlugins"></td></tr>
+              <tr><th data-copy="suitableLabel">适合谁</th><td data-copy="compareImportSuitable"></td><td data-copy="compareReuseSuitable"></td><td data-copy="compareFreshSuitable"></td></tr>
+            </tbody>
+          </table>
+        </div>
         <p class="comparison-note" data-copy="comparisonNote"></p>
         <footer class="comparison-footer"><button id="acknowledge" class="action primary" type="button" data-copy="acknowledge">知道了</button></footer>
       </section>

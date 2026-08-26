@@ -19,7 +19,7 @@ interface DetailCopy {
 
 const zh = {
   windowTitle: '选择数据目录', languageLabel: '语言', importTitle: '导入官方配置（独立环境）', recommended: '推荐',
-  importSummary: '复制用户数据与插件清单；插件进入后选择重新安装。', reuseTitle: '直接复用官方配置',
+  importSummary: '复制用户数据和插件清单，进入后可选择恢复插件。', reuseTitle: '直接复用官方配置',
   reuseSummary: '与官方 dsh 共享设置、凭据、会话和插件。', freshTitle: '全新开始',
   freshSummary: '不导入任何现有数据。', locationLabel: '数据位置', sharingLabel: '共享范围',
   pluginsLabel: '已有插件', buildsLabel: '构建权限', compare: '查看完整对比', cancel: '取消',
@@ -36,7 +36,7 @@ const zh = {
 
 const en: typeof zh = {
   windowTitle: 'Choose data directory', languageLabel: 'Language', importTitle: 'Import official configuration (independent)', recommended: 'Recommended',
-  importSummary: 'Copy user data and a plugin list; choose what to reinstall after entry.', reuseTitle: 'Reuse official configuration',
+  importSummary: 'Copy user data and the plugin list, then choose which plugins to restore.', reuseTitle: 'Reuse official configuration',
   reuseSummary: 'Share settings, credentials, sessions, and plugins with official dsh.', freshTitle: 'Start fresh',
   freshSummary: 'Do not import any existing data.', locationLabel: 'Data location', sharingLabel: 'Sharing',
   pluginsLabel: 'Existing plugins', buildsLabel: 'Build approvals', compare: 'View full comparison', cancel: 'Cancel',
@@ -113,10 +113,15 @@ window.addEventListener('DOMContentLoaded', () => {
   const help = required('#help') as HTMLButtonElement
   const close = required('#close-comparison') as HTMLButtonElement
   const choicesGroup = required('#choices')
-  const languageSelect = required('#language') as HTMLSelectElement
+  const languagePicker = required('#language-picker')
+  const languageTrigger = required('#language-trigger') as HTMLButtonElement
+  const languageMenu = required('#language-menu')
+  const languageCurrent = required('#language-current')
+  const languageOptions = [...document.querySelectorAll<HTMLButtonElement>('.language-option')]
 
   const choices = [...document.querySelectorAll<HTMLButtonElement>('.choice')]
   const overlay = required('#overlay')
+  const detailPanel = required('#detail')
   const detailTitle = required('#detail-title')
   const risk = required('#risk')
   const location = required('#location-value')
@@ -130,7 +135,10 @@ window.addEventListener('DOMContentLoaded', () => {
     const copy = language === 'zh' ? zh : en
     document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'
     document.title = copy.windowTitle
-    languageSelect.value = language
+    languageCurrent.textContent = language === 'zh' ? '中文' : 'English'
+    languageTrigger.ariaLabel = `${copy.languageLabel}: ${languageCurrent.textContent}`
+    languageMenu.ariaLabel = copy.languageLabel
+    for (const option of languageOptions) option.ariaSelected = String(option.dataset.language === language)
     help.ariaLabel = copy.helpLabel
     close.ariaLabel = copy.closeLabel
     choicesGroup.ariaLabel = copy.modeGroupLabel
@@ -143,6 +151,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const select = (mode: DataHomeMode): void => {
     selected = mode
     for (const choice of choices) choice.ariaChecked = String(choice.dataset.mode === mode)
+    detailPanel.dataset.mode = mode
     const detail = details[language][mode]
     detailTitle.textContent = detail.title
     risk.textContent = detail.risk ?? ''
@@ -155,13 +164,41 @@ window.addEventListener('DOMContentLoaded', () => {
   for (const choice of choices) {
     choice.addEventListener('click', () => { select(choice.dataset.mode as DataHomeMode) })
   }
-  languageSelect.addEventListener('change', () => {
-    language = languageSelect.value === 'en' ? 'en' : 'zh'
+
+  const closeLanguageMenu = (restoreFocus = false): void => {
+    languageMenu.hidden = true
+    languageTrigger.ariaExpanded = 'false'
+    if (restoreFocus) languageTrigger.focus()
+  }
+  const openLanguageMenu = (): void => {
+    languageMenu.hidden = false
+    languageTrigger.ariaExpanded = 'true'
+    languageOptions.find(option => option.dataset.language === language)?.focus()
+  }
+  const changeLanguage = (nextLanguage: 'zh' | 'en'): void => {
+    language = nextLanguage
     renderCopy()
     select(selected)
+    closeLanguageMenu(true)
+  }
+  languageTrigger.addEventListener('click', () => {
+    if (languageMenu.hidden) openLanguageMenu()
+    else closeLanguageMenu()
+  })
+  languageTrigger.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
+    event.preventDefault()
+    openLanguageMenu()
+  })
+  for (const option of languageOptions) {
+    option.addEventListener('click', () => { changeLanguage(option.dataset.language === 'en' ? 'en' : 'zh') })
+  }
+  document.addEventListener('click', (event) => {
+    if (!languageMenu.hidden && event.target instanceof Node && !languagePicker.contains(event.target)) closeLanguageMenu()
   })
 
   const showComparison = (): void => {
+    closeLanguageMenu()
     overlay.hidden = false
     required('#acknowledge').focus()
   }
@@ -181,6 +218,19 @@ window.addEventListener('DOMContentLoaded', () => {
     ipcRenderer.send('dsh:data-home:cancelled')
   })
   window.addEventListener('keydown', (event) => {
+    if (!languageMenu.hidden) {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeLanguageMenu(true)
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const focusedIndex = languageOptions.findIndex(option => option === document.activeElement)
+        const direction = event.key === 'ArrowDown' ? 1 : -1
+        const nextIndex = (focusedIndex + direction + languageOptions.length) % languageOptions.length
+        languageOptions[nextIndex]?.focus()
+      }
+      return
+    }
     if (event.key === 'Escape' && !overlay.hidden) hideComparison()
     else if (event.key === 'Escape') ipcRenderer.send('dsh:data-home:cancelled')
     else if (event.key === 'Enter' && overlay.hidden) ipcRenderer.send('dsh:data-home:selected', selected)
