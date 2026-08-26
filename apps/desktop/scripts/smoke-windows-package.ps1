@@ -8,6 +8,8 @@ $harnessLog = Join-Path $desktopDataRoot 'logs/harness.log'
 $unpackedResources = Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/win-unpacked/resources'
 $cliDirectory = Join-Path $installRoot 'resources/cli-bin'
 $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$processGuardDiagnostic = Join-Path $env:TEMP 'DeepSeek-Harness-process-guard.log'
+Remove-Item -LiteralPath $processGuardDiagnostic -Force -ErrorAction SilentlyContinue
 $upgradeRoot = "$installRoot-update"
 $similarRoot = "$installRoot-old"
 
@@ -152,6 +154,9 @@ try {
     throw 'Windows upgrade installer did not exit within 15 minutes'
   }
   if ($upgrade.ExitCode -ne 0) {
+    if (Test-Path -LiteralPath $processGuardDiagnostic) {
+      Write-Host "Installer process guard diagnostic:`n$(Get-Content -LiteralPath $processGuardDiagnostic -Raw)"
+    }
     $remainingOutput = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Action inspect -InstallDirectory $installRoot -AppExecutable 'DeepSeek Harness.exe' -ExcludeProcessId $PID 2>&1
     Write-Host "Post-upgrade process guard (exit $LASTEXITCODE):`n$($remainingOutput -join "`n")"
     throw "Windows upgrade installer exited with $($upgrade.ExitCode)"

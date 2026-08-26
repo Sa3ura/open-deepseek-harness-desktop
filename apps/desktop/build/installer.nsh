@@ -55,6 +55,9 @@ Var ProcessGuardOutput
     ${EndIf}
     Goto process_guard_stop
   ${Else}
+    FileOpen $3 "$TEMP\DeepSeek-Harness-process-guard.log" w
+    FileWrite $3 "inspect-exit=$0$\r$\n$ProcessGuardOutput$\r$\n"
+    FileClose $3
     MessageBox MB_RETRYCANCEL|MB_ICONSTOP "$(AppProcessInspectionFailed)$\r$\n$ProcessGuardOutput" /SD IDCANCEL IDRETRY process_guard_inspect
     Quit
   ${EndIf}
@@ -65,9 +68,13 @@ Var ProcessGuardOutput
   Pop $ProcessGuardOutput
   DetailPrint "$ProcessGuardOutput"
   ${If} $0 != 0
+    FileOpen $3 "$TEMP\DeepSeek-Harness-process-guard.log" w
+    FileWrite $3 "stop-exit=$0$\r$\n$ProcessGuardOutput$\r$\n"
+    FileClose $3
     MessageBox MB_RETRYCANCEL|MB_ICONSTOP "$(AppProcessesRemain)$\r$\n$ProcessGuardOutput" /SD IDCANCEL IDRETRY process_guard_inspect
     Quit
   ${EndIf}
+  Delete "$TEMP\DeepSeek-Harness-process-guard.log"
 
   process_guard_done:
 !macroend
