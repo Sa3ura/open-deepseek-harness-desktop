@@ -11,6 +11,8 @@ describe('Windows installer process guard', () => {
     expect(installer).toContain('installer-process-guard.ps1')
     expect(installer).toContain('GetCurrentProcessId')
     expect(installer).toContain('-ExcludeProcessId $R9')
+    expect(installer).toContain('IfFileExists "$INSTDIR\\${APP_EXECUTABLE_FILENAME}" process_guard_inspect')
+    expect(installer).toContain('IfFileExists "$INSTDIR\\resources\\*.*" process_guard_inspect')
   })
 
   it('declares custom translations with LCIDs available before MUI languages load', async () => {

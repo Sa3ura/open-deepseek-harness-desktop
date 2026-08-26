@@ -12,6 +12,8 @@ Electron Builder 26.15.3 会把可执行路径以 NSIS 安装目录开头的每�
 
 桌面端 NSIS include 使用安装目录自有进程守卫替换通用检查。它只匹配精确的应用可执行文件和位于 `resources` 目录边界下的可执行文件，排除当前安装器 PID，并报告命中的 PID、名称与可执行路径。交互安装在清理前征得确认；静默安装执行相同的有界清理。守卫先请求带窗口的进程退出，再仅强制结束剩余匹配项；如果更高权限的进程仍然存在，则携带可操作详情安全停止安装。
 
+全新目标目录既没有桌面端可执行文件，也没有已打包的 `resources`，因此不可能存在占用安装文件的旧进程。NSIS 会原生识别该状态并跳过 PowerShell 进程检查；只要目标中存在任一安装边界，已有安装与不完整安装仍会进入受保护的检查路径。
+
 Windows 桌面端显式退出也会通过 `taskkill /T` 停止受监管 Harness 的进程树，只有超过有界等待时间后才使用 `/F`。关闭窗口到托盘仍表示应用正在运行，升级时会有意识别到该状态。
 
 自定义安装器 include 的展开早于 Electron Builder 插入 MUI2 与 `MUI_LANGUAGE` 宏。因此自定义的中英文 `LangString` 直接使用稳定的 Windows LCID 2052 与 1033；如果在此处引用 `${LANG_SIMPCHINESE}` 或 `${LANG_ENGLISH}`，常量尚未定义，而 NSIS 会因警告按错误处理而终止构建。命令行选项页面的函数通过 Electron Builder 的 `customHeader` 钩子生成；该钩子位于 MUI2 和语言载入之后，因此 NSIS 展开 `MUI_HEADER_TEXT` 时宏已经可用。

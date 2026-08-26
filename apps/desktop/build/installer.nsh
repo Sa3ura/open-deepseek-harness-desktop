@@ -30,11 +30,17 @@ LangString AppProcessInspectionFailed 1033 "The installer could not safely inspe
 Var ProcessGuardOutput
 
 !macro customCheckAppRunning
+  # A fresh installation has no files that can be locked. Avoid invoking CIM
+  # until an existing desktop executable or packaged runtime is present.
+  IfFileExists "$INSTDIR\${APP_EXECUTABLE_FILENAME}" process_guard_inspect
+  IfFileExists "$INSTDIR\resources\*.*" process_guard_inspect
+  Goto process_guard_done
+
+  process_guard_inspect:
   InitPluginsDir
   File /oname=$PLUGINSDIR\installer-process-guard.ps1 "${BUILD_RESOURCES_DIR}\installer-process-guard.ps1"
   System::Call 'kernel32::GetCurrentProcessId() i.r9'
 
-  process_guard_inspect:
   nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\installer-process-guard.ps1" -Action inspect -InstallDirectory "$INSTDIR" -AppExecutable "${APP_EXECUTABLE_FILENAME}" -ExcludeProcessId $R9'
   Pop $0
   Pop $ProcessGuardOutput
