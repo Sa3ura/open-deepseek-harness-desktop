@@ -92,39 +92,43 @@ Var ProcessGuardOutput
     Page custom CliPathPageCreate CliPathPageLeave
   !macroend
 
-  Function CliPathPageCreate
-    ${If} ${Silent}
-      Abort
-    ${EndIf}
-    !insertmacro MUI_HEADER_TEXT "$(CliPageTitle)" "$(CliPageSubtitle)"
-    nsDialogs::Create 1018
-    Pop $0
-    ${If} $0 == error
-      Abort
-    ${EndIf}
-    ${NSD_CreateCheckbox} 0 8u 100% 18u "$(CliPathCheckbox)"
-    Pop $CliPathCheckboxHandle
-    ${If} $CliPathRequested == "1"
-      ${NSD_Check} $CliPathCheckboxHandle
-    ${EndIf}
-    ${NSD_CreateLabel} 12u 34u 94% 42u "$(CliPathDescription)"
-    Pop $0
-    nsExec::ExecToStack 'where.exe dsh'
-    Pop $0
-    Pop $1
-    ${If} $0 == 0
-      ${NSD_CreateLabel} 12u 80u 94% 36u "$(CliConflict)$\r$\n$1"
-      Pop $0
-      ${If} $CliPathRequested != "1"
-        ${NSD_Uncheck} $CliPathCheckboxHandle
+  # Electron Builder inserts customHeader after MUI2 and the selected languages.
+  # Emit the page functions there so their MUI macros are available.
+  !macro customHeader
+    Function CliPathPageCreate
+      ${If} ${Silent}
+        Abort
       ${EndIf}
-    ${EndIf}
-    nsDialogs::Show
-  FunctionEnd
+      !insertmacro MUI_HEADER_TEXT "$(CliPageTitle)" "$(CliPageSubtitle)"
+      nsDialogs::Create 1018
+      Pop $0
+      ${If} $0 == error
+        Abort
+      ${EndIf}
+      ${NSD_CreateCheckbox} 0 8u 100% 18u "$(CliPathCheckbox)"
+      Pop $CliPathCheckboxHandle
+      ${If} $CliPathRequested == "1"
+        ${NSD_Check} $CliPathCheckboxHandle
+      ${EndIf}
+      ${NSD_CreateLabel} 12u 34u 94% 42u "$(CliPathDescription)"
+      Pop $0
+      nsExec::ExecToStack 'where.exe dsh'
+      Pop $0
+      Pop $1
+      ${If} $0 == 0
+        ${NSD_CreateLabel} 12u 80u 94% 36u "$(CliConflict)$\r$\n$1"
+        Pop $0
+        ${If} $CliPathRequested != "1"
+          ${NSD_Uncheck} $CliPathCheckboxHandle
+        ${EndIf}
+      ${EndIf}
+      nsDialogs::Show
+    FunctionEnd
 
-  Function CliPathPageLeave
-    ${NSD_GetState} $CliPathCheckboxHandle $CliPathRequested
-  FunctionEnd
+    Function CliPathPageLeave
+      ${NSD_GetState} $CliPathCheckboxHandle $CliPathRequested
+    FunctionEnd
+  !macroend
 
   !macro customInstall
     ${If} $CliPathRequested == "1"

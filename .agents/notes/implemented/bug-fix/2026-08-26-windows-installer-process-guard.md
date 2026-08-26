@@ -14,7 +14,7 @@ The desktop NSIS include replaces the generic check with an installation-owned p
 
 Explicit Windows desktop quit also stops the supervised Harness process tree through `taskkill /T`, with `/F` reserved for the bounded timeout. Closing a window to the tray remains an ordinary running state and is intentionally detected during an upgrade.
 
-The custom installer include is expanded before Electron Builder inserts its `MUI_LANGUAGE` macros. Custom Chinese and English `LangString` declarations therefore use the stable Windows LCIDs 2052 and 1033 directly; referring to `${LANG_SIMPCHINESE}` or `${LANG_ENGLISH}` at that point leaves the constants undefined and makes NSIS fail because warnings are treated as errors.
+The custom installer include is expanded before Electron Builder inserts MUI2 and its `MUI_LANGUAGE` macros. Custom Chinese and English `LangString` declarations therefore use the stable Windows LCIDs 2052 and 1033 directly; referring to `${LANG_SIMPCHINESE}` or `${LANG_ENGLISH}` at that point leaves the constants undefined and makes NSIS fail because warnings are treated as errors. The command-line option page functions are emitted through Electron Builder's `customHeader` hook, after MUI2 and languages load, so `MUI_HEADER_TEXT` is available when NSIS expands it.
 
 ## Alternatives considered
 

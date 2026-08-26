@@ -14,7 +14,7 @@ Electron Builder 26.15.3 会把可执行路径以 NSIS 安装目录开头的每�
 
 Windows 桌面端显式退出也会通过 `taskkill /T` 停止受监管 Harness 的进程树，只有超过有界等待时间后才使用 `/F`。关闭窗口到托盘仍表示应用正在运行，升级时会有意识别到该状态。
 
-自定义安装器 include 的展开早于 Electron Builder 插入 `MUI_LANGUAGE` 宏。因此自定义的中英文 `LangString` 直接使用稳定的 Windows LCID 2052 与 1033；如果在此处引用 `${LANG_SIMPCHINESE}` 或 `${LANG_ENGLISH}`，常量尚未定义，而 NSIS 会因警告按错误处理而终止构建。
+自定义安装器 include 的展开早于 Electron Builder 插入 MUI2 与 `MUI_LANGUAGE` 宏。因此自定义的中英文 `LangString` 直接使用稳定的 Windows LCID 2052 与 1033；如果在此处引用 `${LANG_SIMPCHINESE}` 或 `${LANG_ENGLISH}`，常量尚未定义，而 NSIS 会因警告按错误处理而终止构建。命令行选项页面的函数通过 Electron Builder 的 `customHeader` 钩子生成；该钩子位于 MUI2 和语言载入之后，因此 NSIS 展开 `MUI_HEADER_TEXT` 时宏已经可用。
 
 ## 曾考虑的替代方案
 

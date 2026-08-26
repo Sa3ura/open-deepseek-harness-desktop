@@ -16,6 +16,8 @@ describe('packaged desktop CLI inputs', () => {
     expect(installer).toContain('StrCpy $CliPathRequested "0"')
     expect(installer).toContain('${GetOptions} $0 "/ADDCLI=" $1')
     expect(installer).toContain('${If} $1 == "1"')
+    expect(installer).toContain('!macro customHeader')
+    expect(installer).toContain('Page custom CliPathPageCreate CliPathPageLeave')
     expect(installer).not.toContain('dangerouslyAllowAllBuilds')
   })
 
