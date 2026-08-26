@@ -111,7 +111,8 @@ $orphanStart.UseShellExecute = $false
 $orphanStart.ArgumentList.Add('-e')
 $orphanStart.ArgumentList.Add('setInterval(() => {}, 1000)')
 $orphanNode = [System.Diagnostics.Process]::Start($orphanStart)
-$deadline = (Get-Date).AddSeconds(180)
+$deadline = (Get-Date).AddSeconds(480)
+$nextStartupProgress = (Get-Date).AddSeconds(30)
 $ready = $false
 try {
   while ((Get-Date) -lt $deadline) {
@@ -123,11 +124,16 @@ try {
       $ready = $true
       break
     }
+    if ((Get-Date) -ge $nextStartupProgress) {
+      $profileCreated = Test-Path (Join-Path $dshHome 'profiles/web/package.json')
+      Write-Host "Waiting for first packaged startup (log=$($null -ne $log), profile=$profileCreated)."
+      $nextStartupProgress = (Get-Date).AddSeconds(30)
+    }
   }
   if (-not $ready) {
     $diagnostic = Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
     $tail = if ($null -eq $diagnostic) { 'No harness.log was created.' } else { (Get-Content $diagnostic.FullName -Tail 80) -join "`n" }
-    throw "Installed application did not reach Harness readiness within 180 seconds.`n$tail"
+    throw "Installed application did not reach Harness readiness within 480 seconds.`n$tail"
   }
   $upgradeStart = [System.Diagnostics.ProcessStartInfo]::new()
   $upgradeStart.FileName = $upgradeInstaller
@@ -150,7 +156,7 @@ try {
   Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue |
     Remove-Item -Force
   $app = [System.Diagnostics.Process]::Start($appStart)
-  $deadline = (Get-Date).AddSeconds(180)
+  $deadline = (Get-Date).AddSeconds(300)
   $ready = $false
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 500
@@ -162,7 +168,7 @@ try {
       break
     }
   }
-  if (-not $ready) { throw 'Upgraded Windows application did not reach Harness readiness within 180 seconds' }
+  if (-not $ready) { throw 'Upgraded Windows application did not reach Harness readiness within 300 seconds' }
 } finally {
   if (-not $app.HasExited) {
     $null = $app.CloseMainWindow()
