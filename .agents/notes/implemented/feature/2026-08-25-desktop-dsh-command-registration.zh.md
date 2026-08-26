@@ -12,7 +12,7 @@ Status: implemented
 
 **桌面端只可选注册 `dsh`。** Windows 提供默认不勾选的安装页面，以及“通用设置”中对应的控制。注册只把一个精确的应用资源目录前置到当前用户 PATH；静默安装只有 `/ADDCLI=1` 会启用。macOS 由“通用设置”向 `.zprofile` 或 `.bash_profile` 写入一个带标记的 PATH 区块，并保留一次备份；无法识别的 Shell 不会被修改。移除时只处理 Windows 中精确的自有条目或 macOS 标记区块。
 
-**Windows 在实际安装段中读取静默安装选项。** Assisted NSIS 安装器可能在初始化后跨越外层／内层实例边界，因此真正执行安装的阶段会再次解析 `/ADDCLI=`，而不是只依赖 `customInit` 写入的变量。两个阶段都直接检查 NSIS 原始 `$CMDLINE`，不先重组可能在 assisted-install 边界或含空格路径附近丢失自定义选项的参数字符串。安装详情会记录最终选择和注册失败原因。静默注册失败也不会等待一个不可见的消息框；应用安装可以结束，同时保留可诊断的可选命令缺失状态。
+**Windows 在实际安装段中读取静默安装选项。** Assisted NSIS 安装器可能在初始化后跨越外层／内层实例边界，因此真正执行安装的阶段会再次解析 `/ADDCLI=`，而不是只依赖 `customInit` 写入的变量。两个阶段都使用 `StdUtils.GetAllParameters`——即 Electron Builder 为含空格 `/D=` 路径采用的同一份完整参数来源——再把结果交给 `GetOptions`。安装详情会记录最终选择和注册失败原因。静默注册失败也不会等待一个不可见的消息框；应用安装可以结束，同时保留可诊断的可选命令缺失状态。
 
 **PATH 持久化不会再同步等待每一个桌面窗口。** Windows 辅助脚本直接写入当前用户的 `HKCU\Environment\Path`，并保留既有注册表值类型，随后用异步 `SendNotifyMessage` 发送 `WM_SETTINGCHANGE`。这避免了 `.NET` 环境变量持久化再叠加 `SendMessageTimeout(HWND_BROADCAST, ...)`，从而不再因为某个无响应窗口让静默安装器卡住数分钟、且迟迟无法写入可选命令注册标记。
 
