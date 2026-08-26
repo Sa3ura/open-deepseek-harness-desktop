@@ -22,7 +22,11 @@ const make = (host = stubSettingsScope<ThemeSettings>()): {
 }
 
 describe('ThemeRuntime', () => {
-  beforeEach(() => { localStorage.clear() })
+  beforeEach(() => {
+    localStorage.clear()
+    delete (globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop
+  })
+  afterEach(() => { vi.restoreAllMocks() })
   it('defaults to the system preference resolved against prefers-color-scheme', () => {
     const { theme } = make()
     const snapshot = theme.getTheme()
@@ -110,6 +114,39 @@ describe('ThemeRuntime', () => {
     })
     expect(events).toHaveLength(1)
     expect(JSON.parse(localStorage.getItem('dsh.theme.chat-background') ?? '{}')).toMatchObject({ id: 'deep-ocean' })
+  })
+
+  it('restores a custom background from desktop storage after a new origin starts', async () => {
+    const stored = { id: 'custom', url: 'data:image/webp;base64,AAAA' }
+    const read = vi.fn().mockResolvedValue(stored)
+    const write = vi.fn().mockResolvedValue(undefined)
+    ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = {
+      chatBackground: { read, write },
+    }
+
+    const { theme, events } = make()
+    expect(theme.getTheme().background).toEqual({ id: 'none' })
+    await vi.waitFor(() => { expect(theme.getTheme().background).toEqual(stored) })
+    expect(localStorage.getItem('dsh.theme.chat-background')).toBe(JSON.stringify(stored))
+    expect(events.at(-1)?.background).toEqual(stored)
+  })
+
+  it('does not let a late desktop read replace a newer user selection', async () => {
+    let resolveRead: ((background: unknown) => void) | undefined
+    const read = vi.fn().mockReturnValue(new Promise((resolve) => { resolveRead = resolve }))
+    const write = vi.fn().mockResolvedValue(undefined)
+    ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = {
+      chatBackground: { read, write },
+    }
+
+    const { theme } = make()
+    theme.setBackground('moon-whale')
+    resolveRead?.({ id: 'custom', url: 'data:image/webp;base64,AAAA' })
+    await Promise.resolve()
+    expect(theme.getTheme().background.id).toBe('moon-whale')
+    expect(write).toHaveBeenCalledWith({
+      id: 'moon-whale', url: '/theme-backgrounds/moon-whale.webp',
+    })
   })
 
   it('publishes the subject-safe layout carried by an artwork preset', () => {

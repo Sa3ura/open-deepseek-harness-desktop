@@ -48,21 +48,13 @@ describe('BundledPluginInstaller', () => {
       .toBe(join('/resources', 'bundled-plugins'))
   })
 
-  it('prefers registry identity and falls back to the bundled archive', async () => {
+  it('installs only the bundled archive without attempting the registry', async () => {
     const f = await fixture()
     const entry = f.manifest.plugins[0]!
-    const online = vi.fn(async () => {})
-    await expect(installBundledPluginSource(entry, '/archive.tgz', online)).resolves.toBe('registry')
-    expect(online).toHaveBeenCalledWith('startup@1.0.0', true)
-
-    const fallback = vi.fn(async (spec: string) => {
-      if (spec === 'startup@1.0.0') throw new Error('offline')
-    })
-    const onRegistryFailure = vi.fn()
-    await expect(installBundledPluginSource(entry, '/archive.tgz', fallback, onRegistryFailure))
-      .resolves.toBe('archive')
-    expect(fallback.mock.calls).toEqual([['startup@1.0.0', true], ['/archive.tgz', false]])
-    expect(onRegistryFailure).toHaveBeenCalledOnce()
+    const install = vi.fn(async () => {})
+    await expect(installBundledPluginSource(entry, '/archive.tgz', install)).resolves.toBe('archive')
+    expect(install).toHaveBeenCalledOnce()
+    expect(install).toHaveBeenCalledWith('/archive.tgz', false)
   })
 
   it('seeds only startup entries and isolates one failure', async () => {
@@ -77,6 +69,57 @@ describe('BundledPluginInstaller', () => {
     expect(results.map(item => item.entry.packageName)).toEqual(['startup'])
     expect(install).toHaveBeenCalledOnce()
     expect(onFailure).toHaveBeenCalledOnce()
+  })
+
+  it('reports the current startup plugin and its real seed milestones', async () => {
+    const f = await fixture()
+    const progress: Array<{ packageName: string; index: number; total: number; stage: string; progress: number }> = []
+    const installer = new BundledPluginInstaller({
+      manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'),
+      install: async () => {},
+    })
+
+    await installer.seedStartup((event) => {
+      progress.push({
+        packageName: event.entry.packageName,
+        index: event.index,
+        total: event.total,
+        stage: event.stage,
+        progress: event.progress,
+      })
+    })
+
+    expect(progress).toEqual([
+      { packageName: 'startup', index: 0, total: 1, stage: 'verifying', progress: 0 },
+      { packageName: 'startup', index: 0, total: 1, stage: 'verifying', progress: 8 },
+      { packageName: 'startup', index: 0, total: 1, stage: 'extracting', progress: 46 },
+      { packageName: 'startup', index: 0, total: 1, stage: 'configuring', progress: 90 },
+      { packageName: 'startup', index: 0, total: 1, stage: 'configuring', progress: 100 },
+    ])
+
+    progress.length = 0
+    await installer.seedStartup(event => progress.push({
+      packageName: event.entry.packageName,
+      index: event.index,
+      total: event.total,
+      stage: event.stage,
+      progress: event.progress,
+    }))
+    expect(progress).toEqual([
+      { packageName: 'startup', index: 0, total: 1, stage: 'verifying', progress: 0 },
+      { packageName: 'startup', index: 0, total: 1, stage: 'configuring', progress: 100 },
+    ])
+  })
+
+  it('does not let a startup progress observer interrupt plugin installation', async () => {
+    const f = await fixture()
+    const install = vi.fn(async () => {})
+    const installer = new BundledPluginInstaller({
+      manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'), install,
+    })
+
+    await expect(installer.seedStartup(() => { throw new Error('observer failed') })).resolves.toHaveLength(1)
+    expect(install).toHaveBeenCalledOnce()
   })
 
   it('handles only an exact manual allowlist request and keeps one active writer', async () => {

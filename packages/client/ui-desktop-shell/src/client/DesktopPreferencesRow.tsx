@@ -1,8 +1,8 @@
 /** General Settings rows owned by the Electron desktop shell feature. */
 
-import { useState, useSyncExternalStore } from 'react'
+import { useCallback, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { Button, IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconChevronDownOutline14, Menu, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { DesktopShellController } from './controller.ts'
 import css from './DesktopShell.module.css'
@@ -15,7 +15,7 @@ function Toggle({ enabled, disabled, label, onChange }: {
   enabled: boolean
   disabled?: boolean
   label: string
-  onChange(enabled: boolean): void
+  onChange: (enabled: boolean) => void
 }) {
   return (
     <button
@@ -34,20 +34,27 @@ function Toggle({ enabled, disabled, label, onChange }: {
 }
 
 export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowProps) {
-  const state = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
+  const subscribe = useCallback((listener: () => void) => controller.subscribe(listener), [controller])
+  const getSnapshot = useCallback(() => controller.getSnapshot(), [controller])
+  const state = useSyncExternalStore(subscribe, getSnapshot)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [developmentUpdateAvailable, setDevelopmentUpdateAvailable] = useState(false)
+  const [confirmingCommandLine, setConfirmingCommandLine] = useState(false)
   const preferences = state.preferences
   if (preferences === null || state.capabilities === null) return null
   const release = state.release
-  const releaseText = release.phase === 'checking'
-    ? t('release.checking')
-    : release.phase === 'available'
-      ? t('release.available', { version: release.latestVersion })
-      : release.phase === 'current'
-        ? t('release.current')
-        : release.phase === 'error'
-          ? t('release.error')
-          : t('release.unsupported')
+  const commandLine = state.commandLine
+  const releaseText = release.phase === 'unsupported'
+    ? developmentUpdateAvailable
+      ? t('release.developmentAvailable', { version: '0.1.1-rc.3' })
+      : t('release.developmentCurrent')
+    : release.phase === 'checking'
+      ? t('release.checking')
+      : release.phase === 'available'
+        ? t('release.available', { version: release.latestVersion })
+        : release.phase === 'current'
+          ? t('release.current')
+          : t('release.error')
 
   return (
     <section className={css.group}>
@@ -78,6 +85,45 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
           )}
         />
       </div>
+      {state.capabilities.commandLineAvailable && commandLine !== null && (
+        <div className={css.row}>
+          <div className={css.text}>
+            <div className={css.title}>{t('cli.title')}</div>
+            <div className={commandLine.phase === 'broken' ? css.error : css.description}>
+              {t(`cli.phase.${commandLine.phase}`)}
+            </div>
+            <div className={css.path}>{commandLine.commandPath}</div>
+            {commandLine.dataHome !== '' && (
+              <div className={css.description}>{t('cli.dataHome', { path: commandLine.dataHome })}</div>
+            )}
+            {commandLine.reason !== undefined && <div className={css.error}>{t(`cli.reason.${commandLine.reason}`)}</div>}
+            {commandLine.message !== undefined && <div className={css.error}>{commandLine.message}</div>}
+          </div>
+          <div className={css.actions}>
+            {commandLine.phase === 'installed' ? (
+              <>
+                <Button variant="outline" disabled={state.busy} onClick={() => { void controller.installCommandLine(false) }}>
+                  {t('cli.repair')}
+                </Button>
+                <Button variant="outline" disabled={state.busy} onClick={() => { void controller.removeCommandLine() }}>
+                  {t('cli.remove')}
+                </Button>
+              </>
+            ) : commandLine.phase === 'unsupported-shell' || commandLine.phase === 'setup-required' ? null : (
+              <Button
+                variant="outline"
+                disabled={state.busy}
+                onClick={() => {
+                  if (commandLine.phase === 'conflict') setConfirmingCommandLine(true)
+                  else void controller.installCommandLine(false)
+                }}
+              >
+                {t(commandLine.phase === 'broken' ? 'cli.repair' : 'cli.install')}
+              </Button>
+            )}
+          </div>
+        </div>
+      )}
       <div className={css.row}>
         <div className={css.text}>
           <div className={css.title}>{t('notifications.title')}</div>
@@ -104,12 +150,21 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
           onChange={(enabled) => { controller.setLaunchAtLogin(enabled) }}
         />
       </div>
-      {release.phase !== 'unsupported' && (
-        <div className={css.row}>
-          <div className={css.text}>
-            <div className={css.title}>{t('release.title')}</div>
-            <div className={release.phase === 'error' ? css.error : css.description}>{releaseText}</div>
+      <div className={css.row}>
+        <div className={css.text}>
+          <div className={css.title}>{t('release.title')}</div>
+          <div className={release.phase === 'error' ? css.error : css.description}>{releaseText}</div>
+        </div>
+        {release.phase === 'unsupported' ? (
+          <div className={css.actions}>
+            <Button
+              variant={developmentUpdateAvailable ? 'primary' : 'outline'}
+              onClick={() => { setDevelopmentUpdateAvailable(value => !value) }}
+            >
+              {t(developmentUpdateAvailable ? 'release.developmentOpen' : 'release.check')}
+            </Button>
           </div>
+        ) : (
           <div className={css.actions}>
             <Button variant="outline" disabled={release.phase === 'checking'} onClick={() => { void controller.checkRelease() }}>
               {t('release.check')}
@@ -118,9 +173,28 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
               <Button variant="primary" onClick={() => { void controller.openRelease() }}>{t('release.open')}</Button>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </div>
       {state.error !== null && <div className={css.error} role="alert">{state.error}</div>}
+      <Modal
+        open={confirmingCommandLine}
+        title={t('cli.conflict.title')}
+        description={t('cli.conflict.description', { path: commandLine?.conflictPath ?? '' })}
+        onClose={() => { setConfirmingCommandLine(false) }}
+      >
+        <div className={css.modalActions}>
+          <Button variant="outline" onClick={() => { setConfirmingCommandLine(false) }}>{t('cli.conflict.cancel')}</Button>
+          <Button
+            variant="primary"
+            onClick={() => {
+              setConfirmingCommandLine(false)
+              void controller.installCommandLine(true)
+            }}
+          >
+            {t('cli.conflict.confirm')}
+          </Button>
+        </div>
+      </Modal>
     </section>
   )
 }

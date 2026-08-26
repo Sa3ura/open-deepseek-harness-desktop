@@ -25,7 +25,8 @@ import {
   type ThemePreference, type ThemeSettings,
 } from '../theme-settings.ts'
 import {
-  CHAT_BACKGROUND_PRESETS, prepareCustomBackground, readChatBackground, writeChatBackground,
+  CHAT_BACKGROUND_PRESETS, prepareCustomBackground, readChatBackground, readDesktopChatBackground,
+  writeChatBackground, writeDesktopChatBackground,
   type ChatBackground, type ChatBackgroundId,
 } from '../chat-background.ts'
 
@@ -302,6 +303,8 @@ export class ThemeRuntime {
   private themes: ThemeDefinition[] = [...BUILTIN_THEMES]
   private preference: ThemePreference
   private background: ChatBackground
+  private backgroundRevision = 0
+  private active = true
   private revision = 0
   private snapshot: ThemeSnapshot
   private readonly media: MediaQueryList | undefined
@@ -334,7 +337,9 @@ export class ThemeRuntime {
       }, 'ui-theme: prefers-color-scheme listener')
     }
     ctx.effect(() => host.subscribe(() => { this.adopt() }), 'ui-theme: settings scope adoption')
+    ctx.effect(() => () => { this.active = false }, 'ui-theme: desktop background restore lifetime')
     this.adopt()
+    void this.restoreDesktopBackground()
   }
 
   /**
@@ -389,6 +394,8 @@ export class ThemeRuntime {
     if (id === 'custom' && background.id !== 'custom') return
     if (this.background.id === background.id && this.background.url === background.url) return
     writeChatBackground(background)
+    this.backgroundRevision += 1
+    this.persistDesktopBackground(background)
     this.background = background
     this.publish()
   }
@@ -399,9 +406,37 @@ export class ThemeRuntime {
    */
   async setCustomBackground(file: File): Promise<void> {
     const background: ChatBackground = { id: 'custom', url: await prepareCustomBackground(file) }
+    await writeDesktopChatBackground(background)
     writeChatBackground(background)
+    this.backgroundRevision += 1
     this.background = background
     this.publish()
+  }
+
+  private async restoreDesktopBackground(): Promise<void> {
+    const read = readDesktopChatBackground()
+    if (read === undefined) return
+    const revision = this.backgroundRevision
+    try {
+      const background = await read
+      if (!this.active || revision !== this.backgroundRevision) return
+      if (background === undefined) {
+        if (this.background.id !== 'none') this.persistDesktopBackground(this.background)
+        return
+      }
+      writeChatBackground(background)
+      if (this.background.id === background.id && this.background.url === background.url) return
+      this.background = background
+      this.publish()
+    } catch (error) {
+      console.warn('ui-theme: could not restore the desktop chat background', error)
+    }
+  }
+
+  private persistDesktopBackground(background: ChatBackground): void {
+    void writeDesktopChatBackground(background)?.catch((error: unknown) => {
+      console.warn('ui-theme: could not persist the desktop chat background', error)
+    })
   }
 
   /** Adopt the scope's accepted durable preference without writing it back. */

@@ -2,7 +2,7 @@
 
 import { spawn } from 'node:child_process'
 import { appendFile, readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -45,13 +45,25 @@ import { parseStartupBuildApproval } from './startup-build-approval.ts'
 import {
   desktopDataHomeSetup,
   hasDesktopData,
+  IMPORTED_ONBOARDING_RESET_VERSION,
   importOfficialDesktopData,
   readDesktopDataHomeSetup,
+  resetImportedDesktopOnboarding,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
   writeDesktopDataHomeSetup,
   type DesktopDataHomeLayout,
 } from './desktop-data-home.ts'
+import { mapBundledPluginProgress, type DesktopStartupProgress } from './startup-progress.ts'
+import {
+  DesktopCliManager,
+  type DesktopCliRuntime,
+  type DesktopCliStatus,
+} from './desktop-cli-registration.ts'
+import {
+  createDesktopChatBackgroundStore,
+  type DesktopChatBackgroundStore,
+} from './chat-background-store.ts'
 
 const APP_NAME = 'DeepSeek Harness'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
@@ -86,6 +98,9 @@ let hiddenLaunch = false
 let harnessLogPath = ''
 let releaseChecker: DesktopReleaseChecker | undefined
 let bundledPluginInstaller: BundledPluginInstaller | undefined
+let desktopCliManager: DesktopCliManager | undefined
+let chatBackgroundStore: DesktopChatBackgroundStore | undefined
+let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 
 type DataHomeSelection = 'imported' | 'reused' | 'fresh'
 
@@ -101,6 +116,7 @@ interface DesktopCapabilities {
   packaged: boolean
   launchAtLoginAvailable: boolean
   sourceUpdateAvailable: boolean
+  commandLineAvailable: boolean
 }
 
 function desktopCapabilities(): DesktopCapabilities {
@@ -109,11 +125,13 @@ function desktopCapabilities(): DesktopCapabilities {
     packaged: app.isPackaged,
     launchAtLoginAvailable: app.isPackaged && process.platform === 'darwin',
     sourceUpdateAvailable: !app.isPackaged,
+    commandLineAvailable: app.isPackaged && (process.platform === 'win32' || process.platform === 'darwin'),
   }
 }
 
 function desktopCopy(): {
   open: string
+  restart: string
   openLog: string
   launchAtLogin: string
   notifications: string
@@ -122,11 +140,11 @@ function desktopCopy(): {
 } {
   return app.getLocale().toLowerCase().startsWith('zh')
     ? {
-      open: '打开窗口', openLog: '打开 Harness 日志', launchAtLogin: '开机自启',
+      open: '打开窗口', restart: '快速重启', openLog: '打开 Harness 日志', launchAtLogin: '开机自启',
       notifications: '系统通知', quit: '退出', logErrorTitle: '无法打开日志',
     }
     : {
-      open: 'Open Window', openLog: 'Open Harness Log', launchAtLogin: 'Launch at Login',
+      open: 'Open Window', restart: 'Quick Restart', openLog: 'Open Harness Log', launchAtLogin: 'Launch at Login',
       notifications: 'Notifications', quit: 'Quit', logErrorTitle: 'Could Not Open Log',
     }
 }
@@ -138,11 +156,11 @@ function dataHomeCopy(): {
 } {
   return app.getLocale().toLowerCase().startsWith('zh')
     ? {
-      completeTitle: '导入完成', completeMessage: '官方数据已复制到独立的桌面目录。',
+      completeTitle: '导入完成', completeMessage: '官方用户数据已复制到独立桌面目录。插件未复制，需要在桌面版重新安装。',
       failedTitle: '无法导入官方数据',
     }
     : {
-      completeTitle: 'Import complete', completeMessage: 'Official data was copied into the independent desktop directory.',
+      completeTitle: 'Import complete', completeMessage: 'Official user data was copied into the independent desktop directory. Plugins were not copied and must be reinstalled in Desktop.',
       failedTitle: 'Could not import official data',
     }
 }
@@ -214,7 +232,13 @@ async function showDataHomeChooser(initialSelection: DataHomeSelection = 'import
 }
 
 async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<string> {
-  const previous = await readDesktopDataHomeSetup(layout.setupFile)
+  let previous = await readDesktopDataHomeSetup(layout.setupFile)
+  if (previous?.mode === 'imported'
+    && previous.importedOnboardingReset !== IMPORTED_ONBOARDING_RESET_VERSION) {
+    await resetImportedDesktopOnboarding(previous.dshHome)
+    previous = { ...previous, importedOnboardingReset: IMPORTED_ONBOARDING_RESET_VERSION }
+    await writeDesktopDataHomeSetup(layout.setupFile, previous)
+  }
   if (layout.explicitDshHome) {
     await writeDesktopDataHomeSetup(
       layout.setupFile,
@@ -305,11 +329,25 @@ async function openHarnessLog(): Promise<OpenLogResult> {
   return result
 }
 
+function requestDesktopRestart(): void {
+  if (lifecycle !== undefined) {
+    void lifecycle.requestRestart(() => { app.relaunch() })
+    return
+  }
+  app.relaunch()
+  quitReleased = true
+  app.quit()
+}
+
 function buildTrayMenu(): Menu {
   const copy = desktopCopy()
   const capabilities = desktopCapabilities()
   const template: MenuItemConstructorOptions[] = [
     { label: copy.open, click: () => { lifecycle?.showWindow() } },
+    {
+      label: copy.restart,
+      click: requestDesktopRestart,
+    },
     { label: copy.openLog, click: () => { void openHarnessLog() } },
     { type: 'separator' },
     {
@@ -450,11 +488,22 @@ function assertMainRenderer(sender: Electron.WebContents): void {
   }
 }
 
+function publishStartupProgress(next: DesktopStartupProgress): void {
+  startupProgress = next
+  const window = mainWindow
+  if (window !== undefined && !window.isDestroyed()) {
+    window.webContents.send('dsh:startup-progress', startupProgress)
+  }
+}
+
 function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: string }): void {
   if (mainWindow === undefined || mainWindow.isDestroyed() || state === 'ready' || state === 'stopped') return
   void mainWindow.loadFile(LOADING_PAGE, {
     query: {
       state,
+      stage: startupProgress.stage,
+      progress: String(startupProgress.progress),
+      ...(startupProgress.detail === undefined ? {} : { detail: startupProgress.detail }),
       ...(failure === undefined ? {} : { message: failure.message, logPath: failure.logPath }),
     },
   })
@@ -555,6 +604,10 @@ async function startApplication(): Promise<void> {
     (error) => { console.error('desktop: could not read preferences; using defaults', error) },
   )
   preferences = preferencesStore.read()
+  chatBackgroundStore = createDesktopChatBackgroundStore(
+    join(app.getPath('userData'), 'chat-background.json'),
+    (error) => { console.error('desktop: could not read chat background; using browser fallback', error) },
+  )
   if (!desktopCapabilities().launchAtLoginAvailable) preferences.launchAtLoginEnabled = false
   applyLaunchAtLogin(preferences.launchAtLoginEnabled)
   hiddenLaunch = process.platform === 'darwin'
@@ -572,7 +625,36 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:capabilities', () => desktopCapabilities())
   ipcMain.handle('dsh:desktop:preferences:get', () => preferences)
   ipcMain.handle('dsh:desktop:preferences:update', (_event, patch: unknown) => updatePreferences(patch))
+  ipcMain.handle('dsh:desktop:chat-background:read', (event) => {
+    assertMainRenderer(event.sender)
+    return chatBackgroundStore?.read()
+  })
+  ipcMain.handle('dsh:desktop:chat-background:write', (event, background: unknown) => {
+    assertMainRenderer(event.sender)
+    if (chatBackgroundStore === undefined) throw new Error('desktop: chat background store is unavailable')
+    return chatBackgroundStore.write(background)
+  })
   ipcMain.handle('dsh:desktop:log:open', () => openHarnessLog())
+  ipcMain.handle('dsh:desktop:cli:get', async (event): Promise<DesktopCliStatus> => {
+    assertMainRenderer(event.sender)
+    if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
+    return desktopCliManager.getStatus()
+  })
+  ipcMain.handle('dsh:desktop:cli:install', async (event, force: unknown): Promise<DesktopCliStatus> => {
+    assertMainRenderer(event.sender)
+    if (typeof force !== 'boolean') throw new TypeError('desktop: invalid command-line conflict confirmation')
+    if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
+    return desktopCliManager.install(force)
+  })
+  ipcMain.handle('dsh:desktop:cli:remove', async (event): Promise<DesktopCliStatus> => {
+    assertMainRenderer(event.sender)
+    if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
+    return desktopCliManager.remove()
+  })
+  ipcMain.handle('dsh:desktop:startup-progress:get', (event): DesktopStartupProgress => {
+    assertMainRenderer(event.sender)
+    return startupProgress
+  })
   ipcMain.handle('dsh:desktop:releases:get', (): DesktopReleaseStatus => (
     releaseChecker?.status ?? { phase: 'unsupported' }
   ))
@@ -594,16 +676,14 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.handle('dsh:source-update:restart', () => {
     setTimeout(() => {
-      app.relaunch()
-      app.quit()
+      requestDesktopRestart()
     }, 250)
     return { restarting: true as const }
   })
   ipcMain.handle('dsh:desktop:restart', (event) => {
     assertMainRenderer(event.sender)
     setTimeout(() => {
-      app.relaunch()
-      app.quit()
+      requestDesktopRestart()
     }, 250)
     return { restarting: true as const }
   })
@@ -679,6 +759,9 @@ async function startApplication(): Promise<void> {
   createTray()
   createWindow()
 
+  publishStartupProgress(app.isPackaged
+    ? { stage: 'preparing-runtime', progress: 10 }
+    : { stage: 'preparing-desktop', progress: 24 })
   const packagedRuntimeRoot = app.isPackaged
     ? packagedRuntimeArchiveRoot(process.platform, process.arch)
     : undefined
@@ -692,27 +775,64 @@ async function startApplication(): Promise<void> {
   const packageRuntimeBin = packagedRuntime === undefined
     ? undefined
     : join(packagedRuntime, 'package-runtime', 'bin')
+  let desktopCliRuntime: DesktopCliRuntime | undefined
   if (app.isPackaged) {
     if (process.platform === 'win32') {
       const windowsRuntime = join(process.resourcesPath, 'runtime', 'win32-x64')
+      const harnessBin = join(process.resourcesPath, 'harness', 'lib', 'bin.js')
+      const nodeCommand = join(windowsRuntime, 'node.exe')
+      const packageManagerBin = join(windowsRuntime, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs')
       launchOptions = {
-        harnessBin: join(process.resourcesPath, 'harness', 'lib', 'bin.js'),
-        nodeCommand: join(windowsRuntime, 'node.exe'),
-        packageManagerBin: join(windowsRuntime, 'node_modules', 'pnpm', 'bin', 'pnpm.mjs'),
+        harnessBin,
+        nodeCommand,
+        packageManagerBin,
         runtimeBinPath: windowsRuntime,
       }
+      desktopCliRuntime = {
+        harnessBin,
+        nodeBin: nodeCommand,
+        pnpmBin: packageManagerBin,
+        launcherSource: join(process.resourcesPath, 'cli', 'desktop-cli.mjs'),
+      }
     } else if (packagedRuntime !== undefined && packageRuntimeBin !== undefined) {
+      const harnessBin = join(packagedRuntime, 'lib', 'bin.js')
+      const nodeCommand = join(packageRuntimeBin, 'node')
+      const packageManagerBin = join(packageRuntimeBin, 'pnpm')
       launchOptions = {
-        harnessBin: join(packagedRuntime, 'lib', 'bin.js'),
-        nodeCommand: join(packageRuntimeBin, 'node'),
-        packageManagerBin: join(packageRuntimeBin, 'pnpm'),
+        harnessBin,
+        nodeCommand,
+        packageManagerBin,
         runtimeBinPath: packageRuntimeBin,
+      }
+      desktopCliRuntime = {
+        harnessBin,
+        nodeBin: nodeCommand,
+        pnpmBin: packageManagerBin,
+        launcherSource: join(process.resourcesPath, 'cli', 'desktop-cli.mjs'),
       }
     } else {
       throw new Error(`desktop: packaged runtime is unavailable for ${process.platform}-${process.arch}`)
     }
 
   }
+  const desktopShellPath = process.env.SHELL ?? (process.platform === 'darwin' ? userInfo().shell ?? '' : '')
+  desktopCliManager = new DesktopCliManager({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    desktopRoot: DESKTOP_DATA_HOME.desktopRoot,
+    setupFile: DESKTOP_DATA_HOME.setupFile,
+    homeDirectory: homedir(),
+    resourcesPath: process.resourcesPath,
+    environment: process.env,
+    ...(desktopShellPath === '' ? {} : { shellPath: desktopShellPath }),
+    ...(desktopCliRuntime === undefined ? {} : { runtime: desktopCliRuntime }),
+  })
+  try {
+    await desktopCliManager.refresh()
+  } catch (error) {
+    console.warn('desktop: could not refresh the registered dsh command', error)
+  }
+  publishStartupProgress({ stage: 'checking-profile', progress: 28 })
   let initialProfileRepairDiagnostic: string
   try {
     initialProfileRepairDiagnostic = await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
@@ -730,6 +850,7 @@ async function startApplication(): Promise<void> {
   if (profileRepairDiagnostic.trim() !== '') {
     await appendFile(harnessLogPath, `[desktop] Profile startup repair:\n${profileRepairDiagnostic.trim()}\n`)
   }
+  publishStartupProgress({ stage: 'checking-profile', progress: 34 })
   const bundledDirectory = resolveBundledPluginResourcesDirectory(
     app.isPackaged,
     process.resourcesPath,
@@ -751,13 +872,10 @@ async function startApplication(): Promise<void> {
       }
     },
     install: async (archivePath, plugin) => {
-      await installBundledPluginSource(plugin, archivePath, async (packageSpec, preferOffline) => {
+      await installBundledPluginSource(plugin, archivePath, async (packageSpec) => {
         await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
-          'plugin', '--profile', plugin.profile, 'add', '--save-exact',
-          ...(preferOffline ? ['--prefer-offline'] : []), packageSpec,
+          'plugin', '--profile', plugin.profile, 'add', '--save-exact', packageSpec,
         ], launchOptions))
-      }, (error) => {
-        console.warn(`desktop: registry install failed for ${plugin.packageName}; using bundled archive`, error)
       })
     },
     onFailure: async (error) => {
@@ -765,7 +883,16 @@ async function startApplication(): Promise<void> {
       console.error(error)
     },
   })
-  await bundledPluginInstaller.seedStartup()
+  await bundledPluginInstaller.seedStartup((progress) => {
+    publishStartupProgress(mapBundledPluginProgress(
+      progress.entry.packageName,
+      progress.index,
+      progress.total,
+      progress.stage,
+      progress.progress,
+    ))
+  })
+  publishStartupProgress({ stage: 'starting-harness', progress: 88 })
   const launch = resolveHarnessLaunch(harnessEnvironment, launchOptions)
   const notificationCopy = desktopNotificationDictionary(app.getLocale())
   const allowNotification = createNotificationThrottle(5 * 60_000)
@@ -782,9 +909,12 @@ async function startApplication(): Promise<void> {
     environment: harnessEnvironment,
     onReady: (url) => {
       harnessOrigin = new URL(url).origin
-      if (mainWindow !== undefined && !mainWindow.isDestroyed()) {
+      publishStartupProgress({ stage: 'ready', progress: 100 })
+      const readyOrigin = harnessOrigin
+      setTimeout(() => {
+        if (harnessOrigin !== readyOrigin || mainWindow === undefined || mainWindow.isDestroyed()) return
         void mainWindow.loadURL(withCustomWindowFrameInset(url, process.platform))
-      }
+      }, 120)
       if (recovering) {
         recovering = false
         showNotification('recovered', notificationCopy.recovered)
@@ -792,6 +922,8 @@ async function startApplication(): Promise<void> {
     },
     onState: (state) => {
       if (state === 'restarting' || state === 'failed') harnessOrigin = undefined
+      if (state === 'starting') publishStartupProgress({ stage: 'starting-harness', progress: 92 })
+      if (state === 'restarting') publishStartupProgress({ stage: 'restarting-harness', progress: 90 })
       if (state !== 'failed') showLoading(state)
       if (state === 'restarting' && !recovering) {
         recovering = true

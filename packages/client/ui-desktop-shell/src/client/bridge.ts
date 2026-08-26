@@ -15,6 +15,18 @@ export interface DesktopCapabilities {
   packaged: boolean
   launchAtLoginAvailable: boolean
   sourceUpdateAvailable: boolean
+  commandLineAvailable: boolean
+}
+
+/** Desktop-owned terminal command state mirrored from the Electron main process. */
+export interface DesktopCliStatus {
+  phase: 'unsupported' | 'uninstalled' | 'installed' | 'conflict' | 'broken' | 'setup-required' | 'unsupported-shell'
+  commandPath: string
+  dataHome: string
+  conflictPath?: string
+  shellProfile?: string
+  reason?: 'setup-damaged' | 'setup-invalid' | 'runtime-unavailable' | 'runtime-incomplete' | 'launcher-missing' | 'profile-damaged'
+  message?: string
 }
 
 /** Release discovery phases mirrored from the desktop wire protocol. */
@@ -31,6 +43,9 @@ export interface DesktopShellBridge {
   updatePreferences(patch: Partial<DesktopPreferences>): Promise<DesktopPreferences>
   onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
   openLog(): Promise<{ kind: 'file' | 'directory'; error: string }>
+  getCommandLine(): Promise<DesktopCliStatus>
+  installCommandLine(force: boolean): Promise<DesktopCliStatus>
+  removeCommandLine(): Promise<DesktopCliStatus>
 }
 
 /** Read-only Release discovery and validated external-link operations. */

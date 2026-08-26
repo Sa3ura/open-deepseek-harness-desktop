@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-桌面宿主偏好与 Release 发现功能的 Electron 专属浏览器 UI。存在 `window.deepSeekHarnessDesktop` 时，插件向“通用设置”贡献关闭行为、原生通知、macOS 登录启动和桌面版本设置行，并在“设置”入口上方贡献可用版本操作。普通 `dsh web` 浏览器不会收到任何贡献。
+桌面宿主偏好与 Release 发现功能的 Electron 专属浏览器 UI。存在 `window.deepSeekHarnessDesktop` 时，插件向“通用设置”贡献关闭行为、原生通知、macOS 登录启动和“检查更新”设置行。Release 状态与下载页面入口只显示在设置内，不再占用侧边栏底部。普通 `dsh web` 浏览器不会收到任何贡献。
 
 所有高权限操作均由 preload bridge（预加载桥）持有。本包接收规范化偏好与 Release 状态，请求受白名单限制的偏好更改，并可要求主进程打开选定的 `flaqai/open-deepseek-harness-desktop` Release 页面。它不能读取任意文件、运行命令、选择任意外部 URL、下载安装程序或更新应用。
 

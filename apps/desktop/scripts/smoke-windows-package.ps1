@@ -5,6 +5,8 @@ $installRoot = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness 安装测试'
 $appData = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness AppData'
 $dshHome = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Home'
 $unpackedResources = Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/win-unpacked/resources'
+$cliDirectory = Join-Path $installRoot 'resources/cli-bin'
+$originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 
 foreach ($path in @(
   (Join-Path $unpackedResources 'harness/lib/bin.js'),
@@ -12,6 +14,9 @@ foreach ($path in @(
   (Join-Path $unpackedResources 'runtime/win32-x64/node.exe'),
   (Join-Path $unpackedResources 'runtime/win32-x64/pnpm.cmd'),
   (Join-Path $unpackedResources 'runtime/win32-x64/node_modules/pnpm/bin/pnpm.mjs'),
+  (Join-Path $unpackedResources 'cli/desktop-cli.mjs'),
+  (Join-Path $unpackedResources 'cli-bin/dsh.cmd'),
+  (Join-Path $unpackedResources 'cli-bin/manage-path.ps1'),
   (Join-Path $unpackedResources 'bundled-plugins/manifest.json')
 )) {
   if (-not (Test-Path $path)) { throw "Unpacked package is missing $path" }
@@ -22,6 +27,7 @@ $installStart.FileName = $installer
 $installStart.UseShellExecute = $false
 $installStart.ArgumentList.Add('/S')
 $installStart.ArgumentList.Add('/currentuser')
+$installStart.ArgumentList.Add('/ADDCLI=1')
 $installStart.ArgumentList.Add("/D=$installRoot")
 $install = [System.Diagnostics.Process]::Start($installStart)
 $installDeadline = (Get-Date).AddMinutes(15)
@@ -53,10 +59,23 @@ $required = @(
   (Join-Path $installRoot 'resources/runtime/win32-x64/node.exe'),
   (Join-Path $installRoot 'resources/runtime/win32-x64/pnpm.cmd'),
   (Join-Path $installRoot 'resources/runtime/win32-x64/node_modules/pnpm/bin/pnpm.mjs'),
+  (Join-Path $installRoot 'resources/cli/desktop-cli.mjs'),
+  (Join-Path $cliDirectory 'dsh.cmd'),
+  (Join-Path $cliDirectory 'manage-path.ps1'),
   (Join-Path $installRoot 'resources/bundled-plugins/manifest.json')
 )
 foreach ($path in $required) {
   if (-not (Test-Path $path)) { throw "Installed package is missing $path" }
+}
+$registeredUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$registeredEntries = @($registeredUserPath.Split(';') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+if (-not ($registeredEntries | Where-Object { [string]::Equals($_.TrimEnd('\', '/'), $cliDirectory.TrimEnd('\', '/'), [StringComparison]::OrdinalIgnoreCase) })) {
+  throw "Silent installer did not register the exact desktop CLI directory: $cliDirectory"
+}
+$cliRegistration = Get-ItemProperty -Path 'HKCU:\Software\FLAQ.AI\DeepSeek Harness' -ErrorAction Stop
+if ($cliRegistration.CliPathRegistered -ne 1 -or
+    -not [string]::Equals($cliRegistration.CliPathDirectory, $cliDirectory, [StringComparison]::OrdinalIgnoreCase)) {
+  throw 'Silent installer and Settings do not share the expected CLI registration marker.'
 }
 
 $env:APPDATA = $appData
@@ -99,6 +118,25 @@ try {
     $null = $app.CloseMainWindow()
     if (-not $app.WaitForExit(10000)) { Stop-Process -Id $app.Id -Force }
   }
+}
+
+$cliStart = [System.Diagnostics.ProcessStartInfo]::new()
+$cliStart.FileName = Join-Path $cliDirectory 'dsh.cmd'
+$cliStart.UseShellExecute = $false
+$cliStart.RedirectStandardOutput = $true
+$cliStart.RedirectStandardError = $true
+$cliStart.ArgumentList.Add('--help')
+$cli = [System.Diagnostics.Process]::Start($cliStart)
+if (-not $cli.WaitForExit(30000)) {
+  $cli.Kill($true)
+  throw 'Installed desktop dsh command did not exit within 30 seconds'
+}
+$cliOutput = "$($cli.StandardOutput.ReadToEnd())`n$($cli.StandardError.ReadToEnd())"
+if ($cli.ExitCode -ne 0) {
+  throw "Installed desktop dsh command exited with $($cli.ExitCode).`n$cliOutput"
+}
+if ($cliOutput -notmatch '(?i)deepseek|dsh|usage') {
+  throw "Installed desktop dsh command did not print recognizable help.`n$cliOutput"
 }
 
 $profileDirectory = Join-Path $dshHome 'profiles/web'
@@ -168,4 +206,25 @@ if ($null -ne $bundledFailure) {
   throw "Bundled plugin failure was written to $($bundledFailure.FullName)"
 }
 
-Write-Host 'Installed Windows package reached Harness readiness, seeded startup plugins, completed deferred Better Sidebar, and kept Codex and Claude Code online-only.'
+$uninstaller = Join-Path $installRoot 'Uninstall DeepSeek Harness.exe'
+if (-not (Test-Path $uninstaller)) { throw "Installed package is missing $uninstaller" }
+$uninstallStart = [System.Diagnostics.ProcessStartInfo]::new()
+$uninstallStart.FileName = $uninstaller
+$uninstallStart.UseShellExecute = $false
+$uninstallStart.ArgumentList.Add('/S')
+$uninstall = [System.Diagnostics.Process]::Start($uninstallStart)
+if (-not $uninstall.WaitForExit(180000)) {
+  $uninstall.Kill($true)
+  throw 'Windows uninstaller did not exit within 3 minutes'
+}
+if ($uninstall.ExitCode -ne 0) { throw "Windows uninstaller exited with $($uninstall.ExitCode)" }
+$restoredUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ($restoredUserPath -ne $originalUserPath) {
+  throw "Windows uninstaller did not restore the original current-user PATH.`nBefore: $originalUserPath`nAfter: $restoredUserPath"
+}
+$remainingRegistration = Get-ItemProperty -Path 'HKCU:\Software\FLAQ.AI\DeepSeek Harness' -ErrorAction SilentlyContinue
+if ($null -ne $remainingRegistration.CliPathRegistered -or $null -ne $remainingRegistration.CliPathDirectory) {
+  throw 'Windows uninstaller left the desktop CLI registration marker behind.'
+}
+
+Write-Host 'Installed Windows package registered and ran the desktop dsh command, reached Harness readiness, seeded startup plugins, completed deferred Better Sidebar, kept external tools online-only, and restored PATH on uninstall.'

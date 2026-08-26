@@ -4,9 +4,12 @@ import {
   chmod, copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile,
 } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
+import { parseDocument } from 'yaml'
 
 const DESKTOP_DATA_DIRECTORY = 'open-deepseek-harness-desktop'
 const SETUP_SCHEMA = 'open-deepseek-harness-desktop/data-home-setup/v1'
+const ONBOARDING_SETTINGS_NAMESPACE = 'ui-onboarding'
+export const IMPORTED_ONBOARDING_RESET_VERSION = '1'
 const IMPORTABLE_ENTRIES = Object.freeze([
   '.agent-presets',
   '.credentials.yaml',
@@ -44,6 +47,7 @@ export interface DesktopDataHomeSetup {
   readonly mode: 'fresh' | 'imported' | 'reused' | 'existing' | 'explicit'
   readonly dshHome: string
   readonly source?: string
+  readonly importedOnboardingReset?: string
   readonly completedAt: string
 }
 
@@ -166,6 +170,31 @@ async function copySafeTree(
 }
 
 /**
+ * Remove the source installation's onboarding acknowledgement from an imported settings document.
+ * @param path - Staged settings file copied from the official Harness home.
+ * @returns A promise settled after the independent copy is ready for first-run onboarding.
+ */
+async function resetImportedOnboardingSettings(path: string): Promise<boolean> {
+  if (!await pathExists(path)) return false
+  const document = parseDocument(await readFile(path, 'utf8'), { prettyErrors: true })
+  if (document.errors.length > 0) {
+    throw new Error(`desktop: imported settings are invalid YAML: ${document.errors[0]?.message ?? 'unknown parse error'}`)
+  }
+  if (!document.delete(ONBOARDING_SETTINGS_NAMESPACE)) return false
+  await writeFile(path, document.toString())
+  return true
+}
+
+/**
+ * Reset onboarding copied into an independent desktop Harness home.
+ * @param dshHome - Independent desktop Harness home created by import.
+ * @returns Whether an imported acknowledgement was removed.
+ */
+export function resetImportedDesktopOnboarding(dshHome: string): Promise<boolean> {
+  return resetImportedOnboardingSettings(join(dshHome, 'settings.yaml'))
+}
+
+/**
  * Atomically copy supported configuration and history without importing plugin runtimes.
  * @param officialDshHome - Existing official `~/.dsh` source.
  * @param targetDshHome - Empty repository-owned destination.
@@ -194,6 +223,7 @@ export async function importOfficialDesktopData(
       await copySafeTree(source, join(staging, entry), entry, skippedSymlinks)
       if (skippedSymlinks.length === skippedBefore) copied.push(entry)
     }
+    await resetImportedOnboardingSettings(join(staging, 'settings.yaml'))
     if (await pathExists(targetDshHome)) await rm(targetDshHome, { recursive: true })
     await rename(staging, targetDshHome)
   } catch (error) {
@@ -219,7 +249,9 @@ export async function readDesktopDataHomeSetup(path: string): Promise<DesktopDat
         && value.mode !== 'explicit')
       || typeof value.dshHome !== 'string'
       || typeof value.completedAt !== 'string'
-      || (value.source !== undefined && typeof value.source !== 'string')) return undefined
+      || (value.source !== undefined && typeof value.source !== 'string')
+      || (value.importedOnboardingReset !== undefined
+        && value.importedOnboardingReset !== IMPORTED_ONBOARDING_RESET_VERSION)) return undefined
     return value as DesktopDataHomeSetup
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) return undefined
@@ -257,6 +289,7 @@ export function desktopDataHomeSetup(
     mode,
     dshHome,
     ...(source === undefined ? {} : { source }),
+    ...(mode === 'imported' ? { importedOnboardingReset: IMPORTED_ONBOARDING_RESET_VERSION } : {}),
     completedAt: new Date().toISOString(),
   }
 }

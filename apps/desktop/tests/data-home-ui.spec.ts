@@ -13,6 +13,10 @@ describe('desktop data-home chooser', () => {
     expect(html).toContain('id="help"')
     expect(html).toContain('id="overlay"')
     expect(html).toContain('id="continue"')
+    expect(html).toContain('id="language"')
+    expect(html).toContain('value="zh"')
+    expect(html).toContain('value="en"')
+    expect(html).toContain('导入官方配置（独立环境）')
   })
 
   it('keeps the chooser sandboxed and sends only bounded selections', async () => {
@@ -23,5 +27,7 @@ describe('desktop data-home chooser', () => {
     expect(preload).toContain("type DataHomeMode = 'imported' | 'reused' | 'fresh'")
     expect(preload).toContain("ipcRenderer.send('dsh:data-home:selected', selected)")
     expect(preload).toContain("ipcRenderer.send('dsh:data-home:cancelled')")
+    expect(preload).toContain("languageSelect.addEventListener('change'")
+    expect(preload).toContain('Profiles, plugin manifests, and node_modules are not copied')
   })
 })

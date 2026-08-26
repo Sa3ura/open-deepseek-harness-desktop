@@ -10,6 +10,9 @@
   },
   "type": "module",
   "main": "lib/main.js",
+  "dependencies": {
+    "yaml": "^2.9.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json && pnpm --config.verifyDepsBeforeRun=false exec tsdown --config tsdown.preload.config.ts && node scripts/copy-assets.mjs",
     "dev": "node scripts/dev-watch.mjs",

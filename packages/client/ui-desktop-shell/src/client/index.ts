@@ -3,12 +3,10 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { DesktopPreferencesRow } from './DesktopPreferencesRow.tsx'
 import { readDesktopBridge } from './bridge.ts'
 import { DesktopShellController } from './controller.ts'
 import { en, zh, type DesktopShellKey } from './locales.ts'
-import { ReleaseFooterAction } from './ReleaseFooterAction.tsx'
 
 export type { DesktopShellKey } from './locales.ts'
 export { DesktopShellController } from './controller.ts'
@@ -35,8 +33,4 @@ export function apply(ctx: ClientContext): void {
     name: 'settings.general.item', id: 'desktop-shell', order: 75, locale: NS,
     inject: () => ({ controller }),
   }, DesktopPreferencesRow))
-  ctx.slots.inject('sidebar.footer.action', () => ctx.slots.register({
-    name: 'sidebar.footer.action', id: 'desktop-release', order: -1000, locale: NS,
-    inject: () => ({ controller }),
-  }, ReleaseFooterAction))
 }

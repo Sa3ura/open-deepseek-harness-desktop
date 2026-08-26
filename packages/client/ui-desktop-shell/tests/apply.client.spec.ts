@@ -5,7 +5,6 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import { DesktopPreferencesRow } from '../src/client/DesktopPreferencesRow.tsx'
-import { ReleaseFooterAction } from '../src/client/ReleaseFooterAction.tsx'
 
 afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop
@@ -16,11 +15,16 @@ function installBridge(): void {
     shell: {
       getCapabilities: vi.fn(() => Promise.resolve({
         platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
+        commandLineAvailable: true,
       })),
       getPreferences: vi.fn(() => Promise.resolve({
         closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false,
       })),
       updatePreferences: vi.fn(), onPreferences: vi.fn(() => () => {}), openLog: vi.fn(),
+      getCommandLine: vi.fn(() => Promise.resolve({
+        phase: 'uninstalled', commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
+      })),
+      installCommandLine: vi.fn(), removeCommandLine: vi.fn(),
     },
     releases: {
       getStatus: vi.fn(() => Promise.resolve({ phase: 'current', currentVersion: '0.1.0' })),
@@ -39,7 +43,6 @@ async function bench() {
     name: 'root',
     children: {
       'settings.general.item': { kind: 'list', scope: 'root' },
-      'sidebar.footer.action': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
   return { ctx, slots }
@@ -51,21 +54,16 @@ describe('ui-desktop-shell apply', () => {
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(b.slots.entries('settings.general.item')).toEqual([])
-    expect(b.slots.entries('sidebar.footer.action')).toEqual([])
     await fiber.dispose()
   })
 
-  it('registers desktop preferences and Release badge when the bridge exists', async () => {
+  it('registers desktop preferences and Release checks when the bridge exists', async () => {
     installBridge()
     const b = await bench()
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     expect(b.slots.entries('settings.general.item')[0]?.component).toBe(DesktopPreferencesRow)
-    const release = b.slots.entries('sidebar.footer.action')[0]
-    expect(release?.component).toBe(ReleaseFooterAction)
-    expect(release?.options).toMatchObject({ id: 'desktop-release', order: -1000 })
     await fiber.dispose()
     expect(b.slots.entries('settings.general.item')).toEqual([])
-    expect(b.slots.entries('sidebar.footer.action')).toEqual([])
   })
 })

@@ -6,6 +6,11 @@ const MAX_STORED_CHARACTERS = 3 * 1024 * 1024
 const MAX_WIDTH = 1920
 const MAX_HEIGHT = 1200
 
+interface DesktopChatBackgroundBridge {
+  read(): Promise<unknown>
+  write(background: ChatBackground): Promise<unknown>
+}
+
 /** Shipped and user-provided chat background identifiers. */
 export const CHAT_BACKGROUND_IDS = [
   'none', 'deep-ocean', 'moon-whale', 'bubble-whale',
@@ -88,6 +93,26 @@ export function writeChatBackground(background: ChatBackground): void {
 }
 
 /**
+ * Read the desktop-owned background when the Electron bridge is available.
+ * @returns a pending validated background, or undefined in an ordinary browser.
+ */
+export function readDesktopChatBackground(): Promise<ChatBackground | undefined> | undefined {
+  const bridge = desktopChatBackgroundBridge()
+  if (bridge === undefined) return undefined
+  return bridge.read().then(value => parseStoredBackground(value))
+}
+
+/**
+ * Persist a validated background through the optional Electron bridge.
+ * @param background - selection already accepted by ThemeRuntime.
+ * @returns completion of the desktop write, or undefined in an ordinary browser.
+ */
+export function writeDesktopChatBackground(background: ChatBackground): Promise<void> | undefined {
+  const bridge = desktopChatBackgroundBridge()
+  return bridge?.write(background).then(() => {})
+}
+
+/**
  * Downscale one user image into a bounded WebP data URL suitable for local persistence.
  * @param file - PNG, JPEG, or WebP source selected through the browser file picker.
  * @returns compressed WebP data URL.
@@ -130,4 +155,29 @@ function blobToDataUrl(blob: Blob): Promise<string> {
     reader.addEventListener('error', () => { reject(new Error('background.failed')) })
     reader.readAsDataURL(blob)
   })
+}
+
+function desktopChatBackgroundBridge(): DesktopChatBackgroundBridge | undefined {
+  const desktop = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop
+  if (typeof desktop !== 'object' || desktop === null) return undefined
+  const bridge = (desktop as { chatBackground?: unknown }).chatBackground
+  if (typeof bridge !== 'object' || bridge === null) return undefined
+  const candidate = bridge as Partial<DesktopChatBackgroundBridge>
+  return typeof candidate.read === 'function' && typeof candidate.write === 'function'
+    ? candidate as DesktopChatBackgroundBridge
+    : undefined
+}
+
+function parseStoredBackground(raw: unknown): ChatBackground | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const id = (raw as { id?: unknown }).id
+  if (typeof id !== 'string' || !CHAT_BACKGROUND_IDS.some(candidate => candidate === id)) return undefined
+  const backgroundId = id as ChatBackgroundId
+  if (backgroundId !== 'custom') return CHAT_BACKGROUND_PRESETS[backgroundId]
+  const url = (raw as { url?: unknown }).url
+  return typeof url === 'string'
+    && url.startsWith('data:image/webp;base64,')
+    && url.length <= MAX_STORED_CHARACTERS
+    ? { id: 'custom', url }
+    : undefined
 }

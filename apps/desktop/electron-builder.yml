@@ -28,6 +28,12 @@ extraResources:
     to: runtime
     filter:
       - "**/*"
+  - from: build/cli-bin
+    to: cli-bin
+    filter:
+      - "**/*"
+  - from: lib/desktop-cli-launcher.js
+    to: cli/desktop-cli.mjs
 win:
   icon: build/icon.ico
   target:
@@ -38,6 +44,7 @@ win:
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
+  include: build/installer.nsh
   # Ask before any assisted-installer page. Keep the shipped language set
   # intentionally small so every installer string has a reviewed translation.
   displayLanguageSelector: true

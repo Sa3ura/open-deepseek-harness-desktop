@@ -7,18 +7,29 @@ function bench() {
     closeBehavior: 'tray', notificationsEnabled: true, launchAtLoginEnabled: false,
   }
   let release: DesktopReleaseStatus = { phase: 'idle', currentVersion: '0.1.0-rc.7' }
+  const openDownload = vi.fn(() => Promise.resolve({ error: '' }))
   const bridge: DesktopBridge = {
     shell: {
       getCapabilities: vi.fn(() => Promise.resolve({
         platform: 'darwin', packaged: true, launchAtLoginAvailable: true, sourceUpdateAvailable: false,
+        commandLineAvailable: true,
       })),
       getPreferences: vi.fn(() => Promise.resolve(preferences)),
-      updatePreferences: vi.fn((patch) => {
+      updatePreferences: vi.fn((patch: Partial<DesktopPreferences>) => {
         preferences = { ...preferences, ...patch }
         return Promise.resolve(preferences)
       }),
       onPreferences: vi.fn(() => () => {}),
       openLog: vi.fn(),
+      getCommandLine: vi.fn(() => Promise.resolve({
+        phase: 'uninstalled' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
+      })),
+      installCommandLine: vi.fn(() => Promise.resolve({
+        phase: 'installed' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
+      })),
+      removeCommandLine: vi.fn(() => Promise.resolve({
+        phase: 'uninstalled' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
+      })),
     },
     releases: {
       getStatus: vi.fn(() => Promise.resolve(release)),
@@ -30,11 +41,11 @@ function bench() {
         return Promise.resolve(release)
       }),
       onStatus: vi.fn(() => () => {}),
-      openDownload: vi.fn(() => Promise.resolve({ error: '' })),
+      openDownload,
     },
   }
   const controller = new DesktopShellController(bridge)
-  return { bridge, controller }
+  return { bridge, controller, openDownload }
 }
 
 describe('DesktopShellController', () => {
@@ -47,7 +58,11 @@ describe('DesktopShellController', () => {
     await b.controller.checkRelease()
     expect(b.controller.getSnapshot().release.phase).toBe('available')
     await b.controller.openRelease()
-    expect(b.bridge.releases.openDownload).toHaveBeenCalledOnce()
+    expect(b.openDownload).toHaveBeenCalledOnce()
+    await b.controller.installCommandLine()
+    expect(b.controller.getSnapshot().commandLine?.phase).toBe('installed')
+    await b.controller.removeCommandLine()
+    expect(b.controller.getSnapshot().commandLine?.phase).toBe('uninstalled')
     b.controller.dispose()
   })
 })

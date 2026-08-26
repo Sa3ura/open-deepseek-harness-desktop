@@ -18,37 +18,37 @@ interface DetailCopy {
 }
 
 const zh = {
-  windowTitle: '选择数据目录', importTitle: '复制到独立目录', recommended: '推荐',
-  importSummary: '保留官方数据副本，之后互不影响。', reuseTitle: '直接复用官方配置',
+  windowTitle: '选择数据目录', languageLabel: '语言', importTitle: '导入官方配置（独立环境）', recommended: '推荐',
+  importSummary: '复制用户数据但不复制插件；之后两套环境互不共享。', reuseTitle: '直接复用官方配置',
   reuseSummary: '与官方 dsh 共享设置、凭据、会话和插件。', freshTitle: '全新开始',
   freshSummary: '不导入任何现有数据。', locationLabel: '数据位置', sharingLabel: '共享范围',
   pluginsLabel: '已有插件', buildsLabel: '构建权限', compare: '查看完整对比', cancel: '取消',
   continue: '使用此配置', comparisonTitle: '这三个选项有什么区别？', suitableLabel: '适合谁',
-  compareImportLocation: '复制用户数据到桌面版独立目录。', compareReuseLocation: '直接使用官方 ~/.dsh。',
+  compareImportLocation: '将设置、凭据、会话、Skills 等用户数据复制到桌面版独立目录。', compareReuseLocation: '直接使用官方 ~/.dsh。',
   compareFreshLocation: '创建新的桌面版独立目录。', compareImportSharing: '不共享；复制后互不影响。',
   compareReuseSharing: '共享；两端修改会互相影响。', compareFreshSharing: '不共享任何既有数据。',
-  compareImportPlugins: '插件运行时不复制；预置项在新目录核对。', compareReusePlugins: '直接使用官方目录中已有插件。',
+  compareImportPlugins: '不复制 Profile、插件清单或运行时；预置插件由客户端安装，其他插件需重新安装。', compareReusePlugins: '直接使用官方目录中已有插件。',
   compareFreshPlugins: '从空白 Profile 开始，只安装预置项。', compareImportSuitable: '希望保留数据，同时隔离桌面版的用户。',
   compareReuseSuitable: '希望桌面版与官方 dsh 始终一致的用户。', compareFreshSuitable: '希望完全从零配置的用户。',
-  comparisonNote: '同名、npm alias 或同 GitHub 仓库与子路径的插件不会重复安装；allowBuilds 只与已有许可合并，不覆盖显式拒绝。',
-  acknowledge: '知道了', helpLabel: '查看三个选项的区别', closeLabel: '关闭',
+  comparisonNote: '“导入”和“全新开始”使用独立的 Profile、插件目录与构建许可；只有“直接复用”会与官方 dsh 共享插件环境。',
+  acknowledge: '知道了', helpLabel: '查看三个选项的区别', closeLabel: '关闭', modeGroupLabel: '数据目录模式',
 }
 
 const en: typeof zh = {
-  windowTitle: 'Choose data directory', importTitle: 'Copy to an independent directory', recommended: 'Recommended',
-  importSummary: 'Keep a copy of official data, then work independently.', reuseTitle: 'Reuse official configuration',
+  windowTitle: 'Choose data directory', languageLabel: 'Language', importTitle: 'Import official configuration (independent)', recommended: 'Recommended',
+  importSummary: 'Copy user data without plugins; the two environments remain independent.', reuseTitle: 'Reuse official configuration',
   reuseSummary: 'Share settings, credentials, sessions, and plugins with official dsh.', freshTitle: 'Start fresh',
   freshSummary: 'Do not import any existing data.', locationLabel: 'Data location', sharingLabel: 'Sharing',
   pluginsLabel: 'Existing plugins', buildsLabel: 'Build approvals', compare: 'View full comparison', cancel: 'Cancel',
   continue: 'Use this configuration', comparisonTitle: 'How do these options differ?', suitableLabel: 'Best for',
-  compareImportLocation: 'Copy user data into an independent desktop directory.', compareReuseLocation: 'Use official ~/.dsh directly.',
+  compareImportLocation: 'Copy user settings, credentials, sessions, Skills, and other supported data into an independent desktop directory.', compareReuseLocation: 'Use official ~/.dsh directly.',
   compareFreshLocation: 'Create a new independent desktop directory.', compareImportSharing: 'Not shared; each side changes independently.',
   compareReuseSharing: 'Shared; changes on either side affect the other.', compareFreshSharing: 'No existing data is shared.',
-  compareImportPlugins: 'Plugin runtimes are not copied; presets are reconciled in the new directory.', compareReusePlugins: 'Use plugins already installed in the official home.',
+  compareImportPlugins: 'Profiles, plugin manifests, and runtimes are not copied. Presets are installed by the client; other plugins must be reinstalled.', compareReusePlugins: 'Use plugins already installed in the official home.',
   compareFreshPlugins: 'Start with an empty Profile and install only presets.', compareImportSuitable: 'Keep existing data while isolating the desktop app.',
   compareReuseSuitable: 'Keep the desktop app and official dsh fully aligned.', compareFreshSuitable: 'Configure everything from scratch.',
-  comparisonNote: 'Plugins with the same name, npm alias, or GitHub repository and subpath are not installed twice. allowBuilds is merged with existing approvals and never overrides an explicit denial.',
-  acknowledge: 'Got it', helpLabel: 'Compare the three options', closeLabel: 'Close',
+  comparisonNote: 'Import and Start fresh use independent Profiles, plugin directories, and build approvals. Only Reuse shares the official dsh plugin environment.',
+  acknowledge: 'Got it', helpLabel: 'Compare the three options', closeLabel: 'Close', modeGroupLabel: 'Data directory mode',
 }
 
 const details: Record<'zh' | 'en', Record<DataHomeMode, DetailCopy>> = {
@@ -57,8 +57,8 @@ const details: Record<'zh' | 'en', Record<DataHomeMode, DetailCopy>> = {
       title: zh.importTitle,
       location: '复制到桌面版独立数据目录，官方 ~/.dsh 保持不变。',
       sharing: '复制完成后不共享；桌面版与官方 dsh 的后续修改互不影响。',
-      plugins: '不复制旧运行时；已有同名或同仓库依赖会被识别，不重复安装。',
-      builds: '所需许可与现有 allowBuilds 合并，显式拒绝保持不变。',
+      plugins: '不复制官方 Profile、插件清单或 node_modules；预置插件由客户端重新安装，其他插件需手动重新安装。',
+      builds: '不导入官方 Profile 的 allowBuilds；桌面版只写入预置插件所需的构建许可。',
     },
     reused: {
       title: zh.reuseTitle,
@@ -81,8 +81,8 @@ const details: Record<'zh' | 'en', Record<DataHomeMode, DetailCopy>> = {
       title: en.importTitle,
       location: 'Copy into the desktop-owned data directory while leaving official ~/.dsh unchanged.',
       sharing: 'Nothing stays shared after copying; later changes remain independent.',
-      plugins: 'Old runtimes are not copied; matching package or repository dependencies are adopted without duplication.',
-      builds: 'Required entries merge into allowBuilds while explicit denials remain unchanged.',
+      plugins: 'Official Profiles, plugin manifests, and node_modules are not copied. Client presets are installed again; other plugins must be reinstalled manually.',
+      builds: 'Official Profile allowBuilds rules are not imported. Desktop writes only the approvals required by its presets.',
     },
     reused: {
       title: en.reuseTitle,
@@ -109,17 +109,11 @@ function required(selector: string): HTMLElement {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
-  const language: 'zh' | 'en' = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
-  const copy = language === 'zh' ? zh : en
-  for (const element of document.querySelectorAll<HTMLElement>('[data-copy]')) {
-    const key = element.dataset.copy as keyof typeof copy
-    element.textContent = copy[key]
-  }
-  document.title = copy.windowTitle
+  let language: 'zh' | 'en' = navigator.language.toLowerCase().startsWith('zh') ? 'zh' : 'en'
   const help = required('#help') as HTMLButtonElement
   const close = required('#close-comparison') as HTMLButtonElement
-  help.ariaLabel = copy.helpLabel
-  close.ariaLabel = copy.closeLabel
+  const choicesGroup = required('#choices')
+  const languageSelect = required('#language') as HTMLSelectElement
 
   const choices = [...document.querySelectorAll<HTMLButtonElement>('.choice')]
   const overlay = required('#overlay')
@@ -131,6 +125,20 @@ window.addEventListener('DOMContentLoaded', () => {
   const builds = required('#builds-value')
   const requestedMode = new URLSearchParams(window.location.search).get('selected')
   let selected: DataHomeMode = isDataHomeMode(requestedMode) ? requestedMode : 'imported'
+
+  const renderCopy = (): void => {
+    const copy = language === 'zh' ? zh : en
+    document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en'
+    document.title = copy.windowTitle
+    languageSelect.value = language
+    help.ariaLabel = copy.helpLabel
+    close.ariaLabel = copy.closeLabel
+    choicesGroup.ariaLabel = copy.modeGroupLabel
+    for (const element of document.querySelectorAll<HTMLElement>('[data-copy]')) {
+      const key = element.dataset.copy as keyof typeof copy
+      element.textContent = copy[key]
+    }
+  }
 
   const select = (mode: DataHomeMode): void => {
     selected = mode
@@ -147,6 +155,11 @@ window.addEventListener('DOMContentLoaded', () => {
   for (const choice of choices) {
     choice.addEventListener('click', () => { select(choice.dataset.mode as DataHomeMode) })
   }
+  languageSelect.addEventListener('change', () => {
+    language = languageSelect.value === 'en' ? 'en' : 'zh'
+    renderCopy()
+    select(selected)
+  })
 
   const showComparison = (): void => {
     overlay.hidden = false
@@ -172,5 +185,6 @@ window.addEventListener('DOMContentLoaded', () => {
     else if (event.key === 'Escape') ipcRenderer.send('dsh:data-home:cancelled')
     else if (event.key === 'Enter' && overlay.hidden) ipcRenderer.send('dsh:data-home:selected', selected)
   })
+  renderCopy()
   select(selected)
 }, { once: true })

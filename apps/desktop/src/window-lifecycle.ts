@@ -19,12 +19,14 @@ export interface DesktopLifecycle {
   onWindowClose(event: Event): void
   showWindow(): void
   requestQuit(): Promise<void>
+  requestRestart(relaunch: () => void): Promise<void>
 }
 
 /** Create one controller for every route that can hide or quit the app. */
 export function createDesktopLifecycle(options: DesktopLifecycleOptions): DesktopLifecycle {
   let quitting = false
   let quitOperation: Promise<void> | undefined
+  let restartRequested = false
 
   const showWindow = (): void => {
     const window = options.getWindow() ?? options.createWindow()
@@ -55,5 +57,12 @@ export function createDesktopLifecycle(options: DesktopLifecycleOptions): Deskto
     },
     showWindow,
     requestQuit,
+    requestRestart(relaunch) {
+      if (!restartRequested) {
+        restartRequested = true
+        relaunch()
+      }
+      return requestQuit()
+    },
   }
 }

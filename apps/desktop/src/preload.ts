@@ -5,12 +5,19 @@ import type { OpenLogResult } from './log-reveal.ts'
 import type { DesktopPreferences, DesktopPreferencesPatch } from './preferences.ts'
 import type { DesktopReleaseStatus } from './release-checker.ts'
 import type { SourceUpdateResult, SourceUpdateStatus } from './source-updater.ts'
+import type { DesktopCliStatus } from './desktop-cli-registration.ts'
+import type { DesktopChatBackground } from './chat-background-store.ts'
 import type {
   BundledPluginDeferredStartResult,
   BundledPluginInstallSnapshot,
   BundledPluginStartResult,
 } from './bundled-plugin-installer.ts'
 import { CUSTOM_WINDOW_TITLE_BAR_HEIGHT, usesCustomWindowFrame } from './window-frame.ts'
+import {
+  parseDesktopStartupProgress,
+  type DesktopStartupProgress,
+  type DesktopStartupStage,
+} from './startup-progress.ts'
 
 /** Renderer-visible update methods; no generic process or filesystem access is exposed. */
 export interface DesktopUpdateBridge {
@@ -31,6 +38,7 @@ export interface DesktopCapabilities {
   packaged: boolean
   launchAtLoginAvailable: boolean
   sourceUpdateAvailable: boolean
+  commandLineAvailable: boolean
 }
 
 /** Narrow desktop-shell preference and diagnostics bridge. */
@@ -41,6 +49,9 @@ export interface DesktopShellBridge {
   onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
   openLog(): Promise<OpenLogResult>
   restart(): Promise<{ restarting: true }>
+  getCommandLine(): Promise<DesktopCliStatus>
+  installCommandLine(force: boolean): Promise<DesktopCliStatus>
+  removeCommandLine(): Promise<DesktopCliStatus>
 }
 
 /** Release discovery bridge; it never downloads or installs application files. */
@@ -63,6 +74,12 @@ export interface DesktopDiagnosticFixturesBridge {
   install(): Promise<{ installed: true; diagnostic: string }>
 }
 
+/** Device-local background persistence owned by the desktop data directory. */
+export interface DesktopChatBackgroundBridge {
+  read(): Promise<DesktopChatBackground | undefined>
+  write(background: DesktopChatBackground): Promise<DesktopChatBackground>
+}
+
 const shellBridge: DesktopShellBridge = {
   getCapabilities: () => ipcRenderer.invoke('dsh:desktop:capabilities') as Promise<DesktopCapabilities>,
   getPreferences: () => ipcRenderer.invoke('dsh:desktop:preferences:get') as Promise<DesktopPreferences>,
@@ -74,6 +91,9 @@ const shellBridge: DesktopShellBridge = {
   },
   openLog: () => ipcRenderer.invoke('dsh:desktop:log:open') as Promise<OpenLogResult>,
   restart: () => ipcRenderer.invoke('dsh:desktop:restart') as Promise<{ restarting: true }>,
+  getCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:get') as Promise<DesktopCliStatus>,
+  installCommandLine: force => ipcRenderer.invoke('dsh:desktop:cli:install', force) as Promise<DesktopCliStatus>,
+  removeCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:remove') as Promise<DesktopCliStatus>,
 }
 
 const releasesBridge: DesktopReleasesBridge = {
@@ -97,11 +117,19 @@ const diagnosticFixturesBridge: DesktopDiagnosticFixturesBridge = {
   install: () => ipcRenderer.invoke('dsh:desktop:diagnostic-fixture:install') as Promise<{ installed: true; diagnostic: string }>,
 }
 
+const chatBackgroundBridge: DesktopChatBackgroundBridge = {
+  read: () => ipcRenderer.invoke('dsh:desktop:chat-background:read') as Promise<DesktopChatBackground | undefined>,
+  write: background => ipcRenderer.invoke(
+    'dsh:desktop:chat-background:write', background,
+  ) as Promise<DesktopChatBackground>,
+}
+
 const sourceMode = process.argv.includes('--dsh-source')
 contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   shell: Object.freeze(shellBridge),
   releases: Object.freeze(releasesBridge),
   bundledPlugins: Object.freeze(bundledPluginsBridge),
+  chatBackground: Object.freeze(chatBackgroundBridge),
   ...(sourceMode ? {
     updater: Object.freeze(bridge),
     diagnosticFixtures: Object.freeze(diagnosticFixturesBridge),
@@ -114,24 +142,54 @@ function installLoadingPage(): void {
   const chinese = navigator.language.toLowerCase().startsWith('zh')
   const copy = chinese
     ? {
+      startupTitle: '正在启动 DeepSeek Harness',
+      startupDescription: '正在准备本地运行环境与预设插件。会话和凭据仅保存在本机。',
       title: 'DeepSeek Harness 启动失败',
       description: '内置 Harness 连续三次未能完成启动。你可以重试或打开日志目录查看详情。',
       retry: '重新启动',
       logs: '打开日志目录',
       logLabel: '日志：',
       slow: '启动时间较长，你可以打开 Harness 日志查看当前进度。',
+      stages: {
+        'preparing-desktop': '正在准备桌面环境',
+        'preparing-runtime': '正在准备内置运行时',
+        'checking-profile': '正在检查插件兼容性',
+        'verifying-plugin': '正在校验插件',
+        'extracting-plugin': '正在解压插件',
+        'configuring-plugin': '正在配置插件',
+        'starting-harness': '正在启动 Harness',
+        'restarting-harness': '正在重新启动 Harness',
+        ready: '启动完成',
+      } satisfies Record<DesktopStartupStage, string>,
     }
     : {
+      startupTitle: 'Starting DeepSeek Harness',
+      startupDescription: 'Preparing the local runtime and preset plugins. Your sessions and credentials stay on this machine.',
       title: 'DeepSeek Harness could not start',
       description: 'The embedded Harness failed to become ready after three attempts. Retry or open the log folder for details.',
       retry: 'Retry',
       logs: 'Open log folder',
       logLabel: 'Log: ',
       slow: 'Startup is taking longer than expected. Open the Harness log to inspect its progress.',
+      stages: {
+        'preparing-desktop': 'Preparing desktop environment',
+        'preparing-runtime': 'Preparing the embedded runtime',
+        'checking-profile': 'Checking plugin compatibility',
+        'verifying-plugin': 'Verifying plugin',
+        'extracting-plugin': 'Extracting plugin',
+        'configuring-plugin': 'Configuring plugin',
+        'starting-harness': 'Starting Harness',
+        'restarting-harness': 'Restarting Harness',
+        ready: 'Startup complete',
+      } satisfies Record<DesktopStartupStage, string>,
     }
   const title = document.querySelector<HTMLElement>('#title')
   const description = document.querySelector<HTMLElement>('#description')
   const progress = document.querySelector<HTMLElement>('#progress')
+  const progressSurface = document.querySelector<HTMLElement>('#progress-surface')
+  const progressBar = document.querySelector<HTMLElement>('#progress-bar')
+  const progressTask = document.querySelector<HTMLElement>('#progress-task')
+  const progressPercent = document.querySelector<HTMLElement>('#progress-percent')
   const failure = document.querySelector<HTMLElement>('#failure')
   const message = document.querySelector<HTMLElement>('#failure-message')
   const logPath = document.querySelector<HTMLElement>('#log-path')
@@ -141,10 +199,43 @@ function installLoadingPage(): void {
   const slowMessage = document.querySelector<HTMLElement>('#slow-message')
   const openSlowLog = document.querySelector<HTMLButtonElement>('#open-slow-log')
   if (
-    title === null || description === null || progress === null || failure === null
+    title === null || description === null || progress === null || progressSurface === null
+    || progressBar === null || progressTask === null || progressPercent === null || failure === null
     || message === null || logPath === null || retry === null || openLogs === null
     || slow === null || slowMessage === null || openSlowLog === null
   ) return
+  title.textContent = copy.startupTitle
+  description.textContent = copy.startupDescription
+  const renderProgress = (snapshot: DesktopStartupProgress): void => {
+    const value = snapshot.progress
+    progressBar.style.width = `${value}%`
+    progressPercent.textContent = `${value}%`
+    progressTask.textContent = snapshot.detail === undefined
+      ? copy.stages[snapshot.stage]
+      : `${copy.stages[snapshot.stage]} · ${snapshot.detail}`
+    progress.setAttribute('aria-valuenow', String(value))
+    progress.setAttribute('aria-valuetext', progressTask.textContent)
+  }
+  const initial = parseDesktopStartupProgress({
+    stage: query.get('stage'),
+    progress: Number(query.get('progress')),
+    detail: query.get('detail') ?? undefined,
+  })
+  if (initial !== undefined) renderProgress(initial)
+  const progressListener = (_event: Electron.IpcRendererEvent, value: unknown): void => {
+    const snapshot = parseDesktopStartupProgress(value)
+    if (snapshot !== undefined) renderProgress(snapshot)
+  }
+  ipcRenderer.on('dsh:startup-progress', progressListener)
+  window.addEventListener('unload', () => {
+    ipcRenderer.removeListener('dsh:startup-progress', progressListener)
+  }, { once: true })
+  void ipcRenderer.invoke('dsh:desktop:startup-progress:get').then((value: unknown) => {
+    const snapshot = parseDesktopStartupProgress(value)
+    if (snapshot !== undefined) renderProgress(snapshot)
+  }, () => {
+    // The query snapshot remains usable if navigation starts before the reply.
+  })
   const openLog = (): void => { void ipcRenderer.invoke('dsh:desktop:log:open') }
   openLogs.textContent = copy.logs
   openSlowLog.textContent = copy.logs
@@ -162,7 +253,7 @@ function installLoadingPage(): void {
   message.textContent = query.get('message') ?? copy.description
   logPath.textContent = `${copy.logLabel}${query.get('logPath') ?? ''}`
   retry.textContent = copy.retry
-  progress.hidden = true
+  progressSurface.hidden = true
   failure.hidden = false
   retry.addEventListener('click', () => {
     retry.disabled = true

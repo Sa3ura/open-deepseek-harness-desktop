@@ -1,10 +1,15 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-  CHAT_BACKGROUND_PRESETS, readChatBackground, writeChatBackground,
+  CHAT_BACKGROUND_PRESETS, readChatBackground, readDesktopChatBackground,
+  writeChatBackground, writeDesktopChatBackground,
 } from '../src/chat-background.ts'
 
-beforeEach(() => { localStorage.clear() })
+beforeEach(() => {
+  localStorage.clear()
+  delete (globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop
+})
+afterEach(() => { vi.restoreAllMocks() })
 
 describe('chat background persistence', () => {
   it('defaults to no artwork and round-trips a shipped selection', () => {
@@ -32,5 +37,19 @@ describe('chat background persistence', () => {
       url: '/theme-backgrounds/idea-collage.webp',
       layout: 'focus-right',
     })
+  })
+
+  it('uses the optional desktop bridge for cross-origin persistence', async () => {
+    const read = vi.fn().mockResolvedValue({ id: 'custom', url: 'data:image/webp;base64,AAAA' })
+    const write = vi.fn().mockResolvedValue(undefined)
+    ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = {
+      chatBackground: { read, write },
+    }
+
+    await expect(readDesktopChatBackground()).resolves.toEqual({
+      id: 'custom', url: 'data:image/webp;base64,AAAA',
+    })
+    await expect(writeDesktopChatBackground(CHAT_BACKGROUND_PRESETS['deep-ocean'])).resolves.toBeUndefined()
+    expect(write).toHaveBeenCalledWith(CHAT_BACKGROUND_PRESETS['deep-ocean'])
   })
 })

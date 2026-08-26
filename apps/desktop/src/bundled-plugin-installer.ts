@@ -52,6 +52,13 @@ export interface BundledPluginInstallerOptions {
   readonly repairLegacyMarkers?: boolean
 }
 
+/** One startup plugin's real seed milestone, including its manifest position. */
+export interface BundledPluginStartupProgress extends BundledPluginSeedProgress {
+  readonly entry: BundledPluginManifestEntry
+  readonly index: number
+  readonly total: number
+}
+
 /**
  * Resolve the trusted bundled-plugin directory for packaged and source launches.
  * @param packaged - Whether Electron is running from an installed application.
@@ -79,21 +86,12 @@ function bundledPluginRequestSpec(entry: BundledPluginManifestEntry): string {
   return entry.registrySpec ?? `${entry.packageName}@${entry.version}`
 }
 
-/** Prefer updateable package identity, retaining the verified archive as fallback. */
+/** Install the verified archive carried by the desktop package without registry access. */
 export async function installBundledPluginSource(
-  entry: BundledPluginManifestEntry,
+  _entry: BundledPluginManifestEntry,
   archivePath: string,
   installSpec: (packageSpec: string, preferOffline: boolean) => Promise<void>,
-  onRegistryFailure?: (error: unknown) => void,
-): Promise<'registry' | 'archive'> {
-  if (entry.registrySpec !== undefined) {
-    try {
-      await installSpec(entry.registrySpec, true)
-      return 'registry'
-    } catch (error) {
-      onRegistryFailure?.(error)
-    }
-  }
+): Promise<'archive'> {
   await installSpec(archivePath, false)
   return 'archive'
 }
@@ -142,13 +140,28 @@ export class BundledPluginInstaller {
     this.options = options
   }
 
-  /** Install startup entries in manifest order while isolating failures. */
-  async seedStartup(): Promise<ReadonlyArray<{ entry: BundledPluginManifestEntry; result?: SeedBundledPluginResult }>> {
+  /**
+   * Install startup entries in manifest order while reporting their real seed milestones.
+   * @param onProgress - Optional presentation observer; exceptions cannot interrupt installation.
+   * @returns One result per startup entry, including isolated failures without a result.
+   */
+  async seedStartup(
+    onProgress?: (progress: BundledPluginStartupProgress) => void,
+  ): Promise<ReadonlyArray<{ entry: BundledPluginManifestEntry; result?: SeedBundledPluginResult }>> {
     const results: Array<{ entry: BundledPluginManifestEntry; result?: SeedBundledPluginResult }> = []
-    for (const entry of this.options.manifest.plugins) {
-      if (entry.installPolicy !== 'startup') continue
+    const entries = this.options.manifest.plugins.filter(entry => entry.installPolicy === 'startup')
+    for (const [index, entry] of entries.entries()) {
+      const report = (progress: BundledPluginSeedProgress): void => {
+        try {
+          onProgress?.({ ...progress, entry, index, total: entries.length })
+        } catch {
+          // A presentation observer cannot interrupt plugin installation.
+        }
+      }
       try {
-        const result = await this.seed(entry, false)
+        report({ stage: 'verifying', progress: 0 })
+        const result = await this.seed(entry, false, report)
+        if (result === 'already-seeded') report({ stage: 'configuring', progress: 100 })
         results.push({ entry, result })
       } catch (error) {
         results.push({ entry })

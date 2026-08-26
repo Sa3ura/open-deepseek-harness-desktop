@@ -16,7 +16,11 @@ The source host must establish a macOS development path without claiming broad i
 
 `apps/desktop` is an Electron application assembly outside `packages/`. Its main process directly starts the built `dsh` launcher with the `web` profile on `127.0.0.1` and port `0`, then loads the exact URL from the canonical `dsh web:` readiness line. The renderer is the existing Web GUI; desktop does not copy client plugins, API Provider settings, credentials, sessions, or Skills into a second application model.
 
+The first-run data-home chooser distinguishes import from reuse. Import copies an allowlisted set of user data into a desktop-owned home, excludes the official Profile and plugin runtime, and clears the copied onboarding acknowledgement so the independent environment performs its own setup. A versioned setup marker applies that reset once to existing imported homes and preserves later completion. Reuse points `DSH_HOME` at the official home and therefore shares Profiles, plugins, build approvals, and onboarding state. The chooser follows the operating-system language initially and lets the user switch its Chinese or English copy without changing either home.
+
 One `HarnessSupervisor` owns the child process, its combined append-only log, unexpected-exit restart delay, and bounded shutdown. The launch uses an argv vector with no shell. Readiness accepts only an HTTP URL on literal `127.0.0.1`; unrelated output and non-loopback URLs cannot choose renderer navigation.
+
+The static loading document presents one determinate left-to-right bar. Main-process milestones for desktop preparation, packaged runtime preparation, Profile compatibility repair, each bundled plugin's verification, extraction, and configuration, and Harness startup drive its percentage and current-task label. The preload subscribes before requesting the current snapshot, so navigation cannot lose an earlier milestone. Progress reaches 100% only after the canonical readiness line, then the host navigates to the Web GUI. Slow-start and terminal-failure actions remain available without replacing progress with an artificial timer.
 
 The BrowserWindow enables context isolation and renderer sandboxing and disables Node integration. Top-level navigation is limited to the chosen loopback origin. New HTTPS windows are handed to the system browser and other window creation is denied. Renderer permissions remain denied except for sanitized clipboard writes from the main frame at the exact supervised Harness origin; clipboard reads remain denied. The shared client uses the standard Web Clipboard API, so no generic privileged clipboard bridge is added.
 
@@ -46,6 +50,8 @@ Future WeChat, Discord, and Slack control enters through a Harness transport ser
 ## Consequences
 
 macOS developers get one command that opens the complete Harness GUI and supervises its real local process. The window inherits every existing Provider, plugin, Skill, workspace, and conversation improvement without desktop-specific synchronization.
+
+Startup work is visible without exposing package-manager output or filesystem authority to the renderer. Progress is milestone-based rather than a duration estimate, so long repair, extraction, or process startup work can hold at one value while the named operation remains accurate.
 
 The loopback HTTP server remains part of the desktop process tree. Its existing host and origin fences therefore remain security-critical, and the Electron window adds no privileged bridge that could bypass them. Profile plugins remain trusted executable code: deterministic Node and pnpm selection does not sandbox registry or Git lifecycle scripts.
 

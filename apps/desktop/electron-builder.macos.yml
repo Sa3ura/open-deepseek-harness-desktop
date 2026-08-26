@@ -15,6 +15,8 @@ extraResources:
       - "**/*"
   - from: ../../.artifacts/desktop-runtime-darwin-${arch}.tar.gz
     to: harness-runtime.tar.gz
+  - from: lib/desktop-cli-launcher.js
+    to: cli/desktop-cli.mjs
 mac:
   icon: build/icon.icns
   # Open-source release baseline: keep Apple Silicon code structurally signed

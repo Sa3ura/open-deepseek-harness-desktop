@@ -37,4 +37,17 @@ describe('desktop lifecycle', () => {
     expect(b.disposeHost).toHaveBeenCalledOnce()
     expect(b.releaseQuit).toHaveBeenCalledOnce()
   })
+
+  it('schedules one relaunch and performs the same graceful host disposal', async () => {
+    const b = bench('tray')
+    const relaunch = vi.fn()
+    const first = b.lifecycle.requestRestart(relaunch)
+    const second = b.lifecycle.requestRestart(relaunch)
+
+    expect(first).toBe(second)
+    expect(relaunch).toHaveBeenCalledOnce()
+    await first
+    expect(b.disposeHost).toHaveBeenCalledOnce()
+    expect(b.releaseQuit).toHaveBeenCalledOnce()
+  })
 })

@@ -1,7 +1,7 @@
 /** Reactive owner of desktop bridge snapshots and operations. */
 
 import type {
-  CloseBehavior, DesktopBridge, DesktopCapabilities, DesktopPreferences, DesktopReleaseStatus,
+  CloseBehavior, DesktopBridge, DesktopCapabilities, DesktopCliStatus, DesktopPreferences, DesktopReleaseStatus,
 } from './bridge.ts'
 
 /** Immutable renderer state shared by the desktop settings and footer action. */
@@ -9,6 +9,7 @@ export interface DesktopShellSnapshot {
   capabilities: DesktopCapabilities | null
   preferences: DesktopPreferences | null
   release: DesktopReleaseStatus
+  commandLine: DesktopCliStatus | null
   busy: boolean
   error: string | null
 }
@@ -19,6 +20,7 @@ export class DesktopShellController {
     capabilities: null,
     preferences: null,
     release: { phase: 'unsupported' },
+    commandLine: null,
     busy: false,
     error: null,
   }
@@ -54,8 +56,9 @@ export class DesktopShellController {
       this.bridge.shell.getCapabilities(),
       this.bridge.shell.getPreferences(),
       this.bridge.releases.getStatus(),
-    ]).then(([capabilities, preferences, release]) => {
-      this.#publish({ capabilities, preferences, release })
+      this.bridge.shell.getCommandLine(),
+    ]).then(([capabilities, preferences, release, commandLine]) => {
+      this.#publish({ capabilities, preferences, release, commandLine })
     }).catch((error: unknown) => {
       this.#publish({ error: error instanceof Error ? error.message : String(error) })
     })
@@ -93,6 +96,32 @@ export class DesktopShellController {
    * @param enabled - desired login-launch state.
    */
   setLaunchAtLogin(enabled: boolean): void { void this.setPreference({ launchAtLoginEnabled: enabled }) }
+
+  /** Install or repair the packaged desktop `dsh` command.
+   * @param force - whether a detected non-owned command may be shadowed.
+   */
+  async installCommandLine(force = false): Promise<void> {
+    this.#publish({ busy: true, error: null })
+    try {
+      this.#publish({ commandLine: await this.bridge.shell.installCommandLine(force) })
+    } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    } finally {
+      this.#publish({ busy: false })
+    }
+  }
+
+  /** Remove only the terminal registration owned by the desktop app. */
+  async removeCommandLine(): Promise<void> {
+    this.#publish({ busy: true, error: null })
+    try {
+      this.#publish({ commandLine: await this.bridge.shell.removeCommandLine() })
+    } catch (error) {
+      this.#publish({ error: error instanceof Error ? error.message : String(error) })
+    } finally {
+      this.#publish({ busy: false })
+    }
+  }
 
   /** Ask the main process to refresh GitHub Release status. */
   async checkRelease(): Promise<void> {

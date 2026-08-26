@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-Web 的 Appearance、Language 和繁忙态 Enter 偏好原本存在浏览器 `localStorage` 中。浏览器存储以 origin 为作用域，因此换一个端口重新打开 `dsh web` 会选中另一个存储分区并丢失选择，即使两个进程使用同一个 DSH home。这些是用户级产品偏好；会话选择、草稿、折叠展开状态和其他瞬态浏览器状态仍保留在页面内。
+Web 的 Appearance、Language 和繁忙态 Enter 偏好原本存在浏览器 `localStorage` 中。浏览器存储以 origin 为作用域，因此换一个端口重新打开 `dsh web` 会选中另一个存储分区并丢失选择，即使两个进程使用同一个 DSH home。桌面客户端中的自定义聊天背景也有同样的缺陷，因为受监管的 Harness 会在启动时选择新的回环端口。这些是用户级产品偏好；会话选择、草稿、折叠展开状态和其他瞬态浏览器状态仍保留在页面内。
 
 第一版主题实现只把 Appearance 移入 Host settings，但会在提供 `ThemeRuntime` 之前等待初始 RPC。缓慢或不可用的 settings 请求因而会挂起组装后的页面。该实现还在读取后才建立订阅，可能错过此窗口内的失效通知；它写入时不携带 namespace revision，并且允许已释放插件所排队的写入到达 Host。
 
@@ -18,7 +18,7 @@ Web 的 Appearance、Language 和繁忙态 Enter 偏好原本存在浏览器 `lo
 
 用户变更会同步更新实时服务，并经 `scope.set` 将一项 `settings.mutate` 路径操作排入队列。scope 会串行处理手势，以最新已知 namespace revision 作为 `expectedRevision` 发送，记录每次成功写入的 revision，并且只允许最新写入的结算结果重新发布实时状态。最新写入被拒或失败时，scope 会重新加载 Host 状态。插件释放会拒绝新工作、跳过已排队操作、抑制运行中操作发布状态，并等待该操作结算后才让插件达到完全停稳。
 
-远程浏览器无法调用仅限回环请求的配置 API，因此其偏好仅保留在进程内。动态第三方主题 id 仍是内置 Host schema 之外的进程内扩展；移除其中一个会重置实时注册表，但不会替换上一个持久化的内置偏好。
+远程浏览器无法调用仅限回环请求的配置 API，因此其偏好仅保留在进程内。动态第三方主题 id 仍是内置 Host schema 之外的进程内扩展；移除其中一个会重置实时注册表，但不会替换上一个持久化的内置偏好。自定义背景图片属于设备数据而非 Host 配置：普通浏览器把有界的 WebP data URL 存在当前 origin，Electron 则提供一项窄范围读写能力，由桌面数据目录中的 `chat-background.json` 支撑。ThemeRuntime 从浏览器值立即启动而不阻塞激活，随后异步采纳桌面值；如果用户在读取完成前作出了更新选择，则忽略迟到的读取。每次桌面写入还会在主进程再次校验；内置 id 会丢弃渲染进程传入的 URL，自定义值只接受有大小限制的 WebP data URL。
 
 ## 曾考虑的替代方案
 
@@ -34,9 +34,11 @@ Web 的 Appearance、Language 和繁忙态 Enter 偏好原本存在浏览器 `lo
 
 **把每个 `localStorage` 条目都移入 settings。** 当前会话、草稿、面板展开状态、trajectory 显示状态和类似条目属于浏览器实例状态，而非用户配置。将它们提升为设置，会在没有产品契约的情况下，跨标签页和端口同步短暂导航状态。
 
+**把自定义图片字节存入 Host settings。** 数 MB 的图片数据会膨胀结构化用户配置文档，并让只属于设备的展示资源对同一 Host 的其他客户端可见。桌面数据目录是范围更窄的所有者。
+
 ## 后果
 
-Appearance、Language 和繁忙态 Enter 选择会跟随 DSH 用户 home，跨越重新加载、端口与回环 origin。直接编辑 `settings.yaml` 所产生的变更会通过现有失效流收敛，而旧的 `dsh.theme`、`dsh.locale` 和 `dsh.conversation.busyEnter` 条目既不会被读取，也不会被写入。
+Appearance、Language 和繁忙态 Enter 选择会跟随 DSH 用户 home，跨越重新加载、端口与回环 origin。桌面自定义背景会跟随桌面数据目录跨越应用重启，但不会漫游到其他设备或进入 Host settings。直接编辑 `settings.yaml` 所产生的变更会通过现有失效流收敛，而旧的 `dsh.theme`、`dsh.locale` 和 `dsh.conversation.busyEnter` 条目既不会被读取，也不会被写入。
 
 启动时可能会在后台读取结算前短暂显示领域默认值。短暂的读取失败会保留该默认值或上一个正确的进程内值；重连时会重试。写入被拒时，界面可能会在本地值立即变化后明显恢复为持久化偏好。
 

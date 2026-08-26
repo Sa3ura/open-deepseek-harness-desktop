@@ -7,7 +7,9 @@ import {
   hasDesktopData,
   hasImportableDesktopData,
   importOfficialDesktopData,
+  IMPORTED_ONBOARDING_RESET_VERSION,
   readDesktopDataHomeSetup,
+  resetImportedDesktopOnboarding,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
   writeDesktopDataHomeSetup,
@@ -51,7 +53,13 @@ describe('desktop data home', () => {
     await mkdir(join(official, 'sessions', 'one'), { recursive: true })
     await mkdir(join(official, 'profiles', 'web', 'node_modules'), { recursive: true })
     await mkdir(join(official, 'bundled-plugins'), { recursive: true })
-    await writeFile(join(official, 'settings.yaml'), 'locale: zh\n')
+    await writeFile(join(official, 'settings.yaml'), [
+      '# keep this comment',
+      'locale: zh',
+      'ui-onboarding:',
+      '  welcomeNoticeVersion: 2026-08-19.1',
+      '',
+    ].join('\n'))
     await writeFile(join(official, '.credentials.yaml'), 'version: "1"\n')
     await writeFile(join(official, 'sessions', 'one', 'session.jsonl'), '{}\n')
     await writeFile(join(official, 'profiles', 'web', 'package.json'), '{}\n')
@@ -63,7 +71,11 @@ describe('desktop data home', () => {
     const result = await importOfficialDesktopData(official, target)
     expect(result.copied).toEqual(['.credentials.yaml', 'sessions', 'settings.yaml'])
     expect(result.skippedSymlinks).toEqual(['AGENTS.md'])
-    expect(await readFile(join(target, 'settings.yaml'), 'utf8')).toBe('locale: zh\n')
+    const importedSettings = await readFile(join(target, 'settings.yaml'), 'utf8')
+    expect(importedSettings).toContain('# keep this comment')
+    expect(importedSettings).toContain('locale: zh')
+    expect(importedSettings).not.toContain('ui-onboarding')
+    expect(importedSettings).not.toContain('welcomeNoticeVersion')
     expect(await readFile(join(target, 'sessions', 'one', 'session.jsonl'), 'utf8')).toBe('{}\n')
     await expect(readFile(join(target, 'profiles', 'web', 'package.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(readFile(join(target, 'bundled-plugins', 'plugin.seeded.json'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
@@ -83,10 +95,29 @@ describe('desktop data home', () => {
     expect(await readFile(join(target, 'owned.txt'), 'utf8')).toBe('keep')
 
     const setup = desktopDataHomeSetup('imported', target, official)
+    expect(setup.importedOnboardingReset).toBe(IMPORTED_ONBOARDING_RESET_VERSION)
     await writeDesktopDataHomeSetup(setupPath, setup)
     expect(await readDesktopDataHomeSetup(setupPath)).toEqual(setup)
     await writeFile(setupPath, '{broken')
     expect(await readDesktopDataHomeSetup(setupPath)).toBeUndefined()
+  })
+
+  it('resets a copied onboarding acknowledgement once without changing other settings', async () => {
+    const root = await fixture()
+    const dshHome = join(root, 'dsh-home')
+    await mkdir(dshHome, { recursive: true })
+    await writeFile(join(dshHome, 'settings.yaml'), [
+      'locale: en',
+      'ui-onboarding:',
+      '  welcomeNoticeVersion: 2026-08-19.1',
+      '',
+    ].join('\n'))
+
+    await expect(resetImportedDesktopOnboarding(dshHome)).resolves.toBe(true)
+    const settings = await readFile(join(dshHome, 'settings.yaml'), 'utf8')
+    expect(settings).toContain('locale: en')
+    expect(settings).not.toContain('ui-onboarding')
+    await expect(resetImportedDesktopOnboarding(dshHome)).resolves.toBe(false)
   })
 
   it('records direct reuse of the official home without copying it', async () => {
