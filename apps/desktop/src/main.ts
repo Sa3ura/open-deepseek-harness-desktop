@@ -6,7 +6,7 @@ import { homedir, userInfo } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, shell, Tray,
+  app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray,
   type MenuItemConstructorOptions, type MessageBoxOptions,
 } from 'electron'
 import { appendBundledPluginFailure } from './bundled-plugin-seed.ts'
@@ -30,6 +30,7 @@ import {
 import { allowsHarnessPermission } from './permissions.ts'
 import { ensurePackagedRuntime, packagedRuntimeArchiveRoot } from './packaged-runtime.ts'
 import { HarnessSupervisor, type HarnessFailure, type HarnessState } from './supervisor.ts'
+import { terminateWindowsProcessTree } from './windows-process-tree.ts'
 import { revealHarnessLog, type OpenLogResult } from './log-reveal.ts'
 import { createNotificationThrottle, desktopNotificationDictionary } from './notifications.ts'
 import {
@@ -64,6 +65,16 @@ import {
   createDesktopChatBackgroundStore,
   type DesktopChatBackgroundStore,
 } from './chat-background-store.ts'
+import {
+  desktopThemeBackground,
+  isDesktopThemeSource,
+  readDesktopThemeSource,
+  type DesktopThemeSource,
+} from './desktop-theme.ts'
+import {
+  ImportedPluginRestoreManager,
+  type ImportedPluginRestoreSnapshot,
+} from './imported-plugin-restore.ts'
 
 const APP_NAME = 'DeepSeek Harness'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
@@ -98,9 +109,11 @@ let hiddenLaunch = false
 let harnessLogPath = ''
 let releaseChecker: DesktopReleaseChecker | undefined
 let bundledPluginInstaller: BundledPluginInstaller | undefined
+let importedPluginRestoreManager: ImportedPluginRestoreManager | undefined
 let desktopCliManager: DesktopCliManager | undefined
 let chatBackgroundStore: DesktopChatBackgroundStore | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
+let desktopThemeSource: DesktopThemeSource = 'system'
 
 type DataHomeSelection = 'imported' | 'reused' | 'fresh'
 
@@ -117,6 +130,15 @@ interface DesktopCapabilities {
   launchAtLoginAvailable: boolean
   sourceUpdateAvailable: boolean
   commandLineAvailable: boolean
+}
+
+function applyDesktopThemeSource(source: DesktopThemeSource): void {
+  desktopThemeSource = source
+  nativeTheme.themeSource = source
+  const window = mainWindow
+  if (window !== undefined && !window.isDestroyed()) {
+    window.setBackgroundColor(desktopThemeBackground(source, nativeTheme.shouldUseDarkColors))
+  }
 }
 
 function desktopCapabilities(): DesktopCapabilities {
@@ -156,11 +178,11 @@ function dataHomeCopy(): {
 } {
   return app.getLocale().toLowerCase().startsWith('zh')
     ? {
-      completeTitle: '导入完成', completeMessage: '官方用户数据已复制到独立桌面目录。插件未复制，需要在桌面版重新安装。',
+      completeTitle: '导入完成', completeMessage: '用户数据与插件恢复清单已复制到独立桌面目录。进入客户端后可选择重新安装插件。',
       failedTitle: '无法导入官方数据',
     }
     : {
-      completeTitle: 'Import complete', completeMessage: 'Official user data was copied into the independent desktop directory. Plugins were not copied and must be reinstalled in Desktop.',
+      completeTitle: 'Import complete', completeMessage: 'User data and a plugin restore list were copied into the independent desktop directory. Choose plugins to reinstall after entering Desktop.',
       failedTitle: 'Could not import official data',
     }
 }
@@ -177,7 +199,7 @@ async function showDataHomeChooser(initialSelection: DataHomeSelection = 'import
     useContentSize: true,
     minWidth: 920,
     minHeight: 620,
-    backgroundColor: '#ffffff',
+    backgroundColor: desktopThemeBackground('system', nativeTheme.shouldUseDarkColors),
     icon: WINDOW_ICON,
     show: false,
     webPreferences: {
@@ -552,7 +574,7 @@ function createWindow(): BrowserWindow {
     height: 920,
     minWidth: 960,
     minHeight: 640,
-    backgroundColor: '#f4f2ed',
+    backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
     icon: WINDOW_ICON,
     frame: !customWindowFrame,
     show: false,
@@ -589,6 +611,10 @@ async function startApplication(): Promise<void> {
   if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
   await app.whenReady()
   const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
+  applyDesktopThemeSource(await readDesktopThemeSource(
+    dshHome,
+    (error) => { console.warn('desktop: could not read theme preference; following the system appearance', error) },
+  ))
   const harnessEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: dshHome,
@@ -655,6 +681,11 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return startupProgress
   })
+  ipcMain.on('dsh:desktop:theme-source', (event, source: unknown) => {
+    assertMainRenderer(event.sender)
+    if (!isDesktopThemeSource(source)) throw new TypeError('desktop: invalid theme source')
+    applyDesktopThemeSource(source)
+  })
   ipcMain.handle('dsh:desktop:releases:get', (): DesktopReleaseStatus => (
     releaseChecker?.status ?? { phase: 'unsupported' }
   ))
@@ -715,6 +746,35 @@ async function startApplication(): Promise<void> {
     if (typeof installId !== 'string') throw new TypeError('desktop: invalid bundled plugin install id')
     if (bundledPluginInstaller === undefined) throw new Error('desktop: bundled plugin installer is unavailable')
     return bundledPluginInstaller.getInstall(installId)
+  })
+  ipcMain.handle('dsh:desktop:imported-plugins:get', (event): ImportedPluginRestoreSnapshot | undefined => {
+    assertMainRenderer(event.sender)
+    return importedPluginRestoreManager?.snapshot()
+  })
+  ipcMain.handle('dsh:desktop:imported-plugins:start', (
+    event,
+    restoreIds: unknown,
+  ): Promise<ImportedPluginRestoreSnapshot> => {
+    assertMainRenderer(event.sender)
+    if (!Array.isArray(restoreIds) || restoreIds.some(value => typeof value !== 'string')) {
+      throw new TypeError('desktop: invalid imported plugin restore ids')
+    }
+    if (importedPluginRestoreManager === undefined) {
+      throw new Error('desktop: imported plugin restore manager is unavailable')
+    }
+    return importedPluginRestoreManager.start(restoreIds)
+  })
+  ipcMain.handle('dsh:desktop:imported-plugins:dismiss', async (
+    event,
+  ): Promise<ImportedPluginRestoreSnapshot | undefined> => {
+    assertMainRenderer(event.sender)
+    return importedPluginRestoreManager?.dismissPrompt()
+  })
+  ipcMain.handle('dsh:desktop:imported-plugins:ignore', async (
+    event,
+  ): Promise<ImportedPluginRestoreSnapshot | undefined> => {
+    assertMainRenderer(event.sender)
+    return importedPluginRestoreManager?.ignorePending()
   })
   ipcMain.handle('dsh:desktop:diagnostic-fixture:install', async (event) => {
     assertMainRenderer(event.sender)
@@ -892,6 +952,30 @@ async function startApplication(): Promise<void> {
       progress.progress,
     ))
   })
+  const installedProfileDependencies: Record<string, string> = {}
+  try {
+    const profileManifest = JSON.parse(
+      await readFile(join(dshHome, 'profiles', 'web', 'package.json'), 'utf8'),
+    ) as { dependencies?: Record<string, unknown> }
+    for (const [packageName, declaredSpec] of Object.entries(profileManifest.dependencies ?? {})) {
+      if (typeof declaredSpec === 'string') installedProfileDependencies[packageName] = declaredSpec
+    }
+  } catch (error) {
+    console.warn('desktop: could not identify installed startup plugins for imported restore', error)
+  }
+  importedPluginRestoreManager = new ImportedPluginRestoreManager({
+    dshHome,
+    providedDependencies: installedProfileDependencies,
+    install: packageSpec => runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
+      'plugin', '--profile', 'web', 'add', packageSpec,
+    ], launchOptions)),
+  })
+  try {
+    await importedPluginRestoreManager.prepare()
+  } catch (error) {
+    console.warn('desktop: imported plugin restore metadata is unavailable; startup will continue', error)
+    await appendFile(harnessLogPath, `[desktop] Imported plugin restore unavailable: ${error instanceof Error ? error.message : String(error)}\n`)
+  }
   publishStartupProgress({ stage: 'starting-harness', progress: 88 })
   const launch = resolveHarnessLaunch(harnessEnvironment, launchOptions)
   const notificationCopy = desktopNotificationDictionary(app.getLocale())
@@ -907,6 +991,7 @@ async function startApplication(): Promise<void> {
     launch,
     logPath: harnessLogPath,
     environment: harnessEnvironment,
+    ...(process.platform === 'win32' ? { terminateProcessTree: terminateWindowsProcessTree } : {}),
     onReady: (url) => {
       harnessOrigin = new URL(url).origin
       publishStartupProgress({ stage: 'ready', progress: 100 })

@@ -24,6 +24,8 @@ import type {
   PluginInstallSnapshot,
 } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import { en, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
+import { ImportedPluginRestore } from '../src/client/ImportedPluginRestore.tsx'
+import type { ImportedPluginRestoreSnapshot } from '../src/client/imported-restore-bridge.ts'
 
 afterEach(() => {
   cleanup()
@@ -172,6 +174,58 @@ describe('PluginInventorySettingsTab', () => {
     const pendingFailure = render(<PluginInventorySettingsTab {...props(() => deferredFailure.promise)} />)
     pendingFailure.unmount()
     await act(async () => { deferredFailure.reject(new Error('late failure')) })
+  })
+})
+
+describe('ImportedPluginRestore', () => {
+  const snapshot: ImportedPluginRestoreSnapshot = {
+    firstPromptDismissed: false,
+    ignored: false,
+    sourceIssues: [],
+    active: false,
+    restartRequired: false,
+    entries: [
+      { restoreId: 'plugin', packageName: 'community-plugin', declaredSpec: '^1.0.0', category: 'plugin', defaultSelected: true, recoverable: true, state: 'pending' },
+      { restoreId: 'codex', packageName: '@deepseek-ai/dsh-subagent-codex', declaredSpec: '^0.1.0', category: 'external-tool', tool: 'codex', defaultSelected: false, recoverable: true, state: 'pending' },
+      { restoreId: 'local', packageName: 'local-plugin', declaredSpec: 'file:../local', category: 'plugin', defaultSelected: false, recoverable: false, unsupportedReason: 'local-source', state: 'pending' },
+    ],
+  }
+
+  it('defaults ordinary plugins on, keeps disconnected tools off, and submits opaque ids only', async () => {
+    const startRestore = vi.fn(async () => ({ ...snapshot, active: true, firstPromptDismissed: true }))
+    render(<ImportedPluginRestore
+      mode="dialog"
+      t={t}
+      getRestore={async () => snapshot}
+      startRestore={startRestore}
+      dismissRestore={vi.fn()}
+      ignoreRestore={vi.fn()}
+      restart={vi.fn()}
+    />)
+    const plugin = await screen.findByRole('checkbox', { name: /community-plugin/u })
+    const codex = screen.getByRole('checkbox', { name: /dsh-subagent-codex/u })
+    const local = screen.getByRole('checkbox', { name: /local-plugin/u })
+    expect((plugin as HTMLInputElement).checked).toBe(true)
+    expect((codex as HTMLInputElement).checked).toBe(false)
+    expect(local.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: en['restore.install'] }))
+    await waitFor(() => { expect(startRestore).toHaveBeenCalledWith(['plugin']) })
+  })
+
+  it('dismisses the first prompt without deleting the reopenable restore list', async () => {
+    const dismissRestore = vi.fn(async () => ({ ...snapshot, firstPromptDismissed: true }))
+    render(<ImportedPluginRestore
+      mode="dialog"
+      t={t}
+      getRestore={async () => snapshot}
+      startRestore={vi.fn()}
+      dismissRestore={dismissRestore}
+      ignoreRestore={vi.fn()}
+      restart={vi.fn()}
+    />)
+    fireEvent.click(await screen.findByRole('button', { name: en['restore.later'] }))
+    await waitFor(() => { expect(dismissRestore).toHaveBeenCalledOnce() })
+    expect(screen.queryByRole('heading', { name: en['restore.title'] })).toBeNull()
   })
 })
 

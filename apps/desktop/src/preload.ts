@@ -12,6 +12,7 @@ import type {
   BundledPluginInstallSnapshot,
   BundledPluginStartResult,
 } from './bundled-plugin-installer.ts'
+import type { ImportedPluginRestoreSnapshot } from './imported-plugin-restore.ts'
 import { CUSTOM_WINDOW_TITLE_BAR_HEIGHT, usesCustomWindowFrame } from './window-frame.ts'
 import {
   parseDesktopStartupProgress,
@@ -69,6 +70,14 @@ export interface DesktopBundledPluginsBridge {
   getInstall(installId: string): Promise<BundledPluginInstallSnapshot>
 }
 
+/** Opaque-id restore operations; package specs never cross from renderer to main. */
+export interface DesktopImportedPluginsBridge {
+  get(): Promise<ImportedPluginRestoreSnapshot | undefined>
+  start(restoreIds: readonly string[]): Promise<ImportedPluginRestoreSnapshot>
+  dismiss(): Promise<ImportedPluginRestoreSnapshot | undefined>
+  ignore(): Promise<ImportedPluginRestoreSnapshot | undefined>
+}
+
 /** Fixed source-mode fixture operation; no renderer-supplied path is accepted. */
 export interface DesktopDiagnosticFixturesBridge {
   install(): Promise<{ installed: true; diagnostic: string }>
@@ -113,6 +122,19 @@ const bundledPluginsBridge: DesktopBundledPluginsBridge = {
   getInstall: installId => ipcRenderer.invoke('dsh:desktop:bundled-plugins:get', installId) as Promise<BundledPluginInstallSnapshot>,
 }
 
+const importedPluginsBridge: DesktopImportedPluginsBridge = {
+  get: () => ipcRenderer.invoke('dsh:desktop:imported-plugins:get') as Promise<ImportedPluginRestoreSnapshot | undefined>,
+  start: restoreIds => ipcRenderer.invoke(
+    'dsh:desktop:imported-plugins:start', [...restoreIds],
+  ) as Promise<ImportedPluginRestoreSnapshot>,
+  dismiss: () => ipcRenderer.invoke(
+    'dsh:desktop:imported-plugins:dismiss',
+  ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
+  ignore: () => ipcRenderer.invoke(
+    'dsh:desktop:imported-plugins:ignore',
+  ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
+}
+
 const diagnosticFixturesBridge: DesktopDiagnosticFixturesBridge = {
   install: () => ipcRenderer.invoke('dsh:desktop:diagnostic-fixture:install') as Promise<{ installed: true; diagnostic: string }>,
 }
@@ -129,12 +151,35 @@ contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   shell: Object.freeze(shellBridge),
   releases: Object.freeze(releasesBridge),
   bundledPlugins: Object.freeze(bundledPluginsBridge),
+  importedPlugins: Object.freeze(importedPluginsBridge),
   chatBackground: Object.freeze(chatBackgroundBridge),
   ...(sourceMode ? {
     updater: Object.freeze(bridge),
     diagnosticFixtures: Object.freeze(diagnosticFixturesBridge),
   } : {}),
 }))
+
+type DesktopThemeSource = 'system' | 'light' | 'dark'
+
+function readDesktopThemeSource(): DesktopThemeSource | undefined {
+  const source = document.documentElement.getAttribute('data-dsh-color-scheme-source')
+  return source === 'system' || source === 'light' || source === 'dark' ? source : undefined
+}
+
+function installDesktopThemeSync(): void {
+  const root = document.documentElement
+  let published: DesktopThemeSource | undefined
+  const publish = (): void => {
+    const source = readDesktopThemeSource()
+    if (source === undefined || source === published) return
+    published = source
+    ipcRenderer.send('dsh:desktop:theme-source', source)
+  }
+  publish()
+  const observer = new MutationObserver(publish)
+  observer.observe(root, { attributes: true, attributeFilter: ['data-dsh-color-scheme-source'] })
+  window.addEventListener('unload', () => { observer.disconnect() }, { once: true })
+}
 
 function installLoadingPage(): void {
   if (!location.pathname.endsWith('/loading.html')) return
@@ -417,6 +462,7 @@ function installCustomTitleBar(): void {
 }
 
 window.addEventListener('DOMContentLoaded', () => {
+  installDesktopThemeSync()
   installLoadingPage()
   if (usesCustomWindowFrame(process.platform)) installCustomTitleBar()
 }, { once: true })

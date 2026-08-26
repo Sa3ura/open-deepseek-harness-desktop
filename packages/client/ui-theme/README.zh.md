@@ -6,7 +6,7 @@
 
 外观设置还可独立选择八张原创插画或一张用户图片。五张带人物或场景主体的背景使用 `focus-right` 布局，另外三张鲸鱼背景保持沉浸式构图。在该设置行选择 `inspiration-collage` 皮肤时，同一操作还会选择配套的 `idea-collage` 背景；此后两项设置仍可独立编辑，Host 主题采用也不会替换用户后来选择的背景。内置插画由默认 Web 应用从 `/theme-backgrounds/` 提供。自定义 PNG、JPEG 或 WebP 会在浏览器中缩放到最大 1920×1200 并编码为 WebP。普通浏览器把结果保存在当前 origin 的 `localStorage` 中；桌面外壳还会把经过校验的选择写入自身数据目录，并在新的回环 origin 启动时恢复它，因此 Harness 端口改变不会丢失背景。图片不会进入 Host settings，也不会发送给模型。超过 12 MB 的源文件和编码后超过 3 MB 的结果会被拒绝。ui-layout 呈现器把选择与可选主体安全布局投射为 body 属性和 CSS 图片变量。ui-conversation 将聚焦插画的低细节区域放在工作区下方、把主体露在外侧；低于 900px、无法保留独立画面侧栏时会加强可读性遮罩。
 
-当主机组合包含 HTTP 服务器时，主机侧紧接 `<body>` 起始标签注入同步引导代码。每份 index 响应会嵌入已注册的 Host 设置 `ui-theme.preference`，没有 settings provider 时则嵌入 `system`；浏览器按操作系统配色解析 `system`，随后在外壳加载页面渲染前设置 `color-scheme` 和 `body[data-ds-dark-theme]`。不含 HTTP 服务器的组合不受影响，插件树激活后，ThemeRuntime 与 ui-layout 仍分别是客户端状态和后续 DOM 更新的权威来源。
+当主机组合包含 HTTP 服务器时，主机侧紧接 `<body>` 起始标签注入同步引导代码。每份 index 响应会嵌入已注册的 Host 设置 `ui-theme.preference`，没有 settings provider 时则嵌入 `system`；浏览器按操作系统配色解析 `system`，随后在外壳加载页面渲染前设置 `color-scheme`、`html[data-dsh-color-scheme-source]` 和 `body[data-ds-dark-theme]`。来源属性会保留 `system`，而不是把它压平为当前明暗结果，使桌面宿主能够同步周边边框，同时继续响应操作系统变化。不含 HTTP 服务器的组合不受影响，插件树激活后，ThemeRuntime 与 ui-layout 仍分别是客户端状态和后续 DOM 更新的权威来源。
 
 `src/styles/` 下有五张样式表，由 ui-theme 的动态客户端 entry 依次导入：`base.css`、`design-platform.css`、`scrollbar.css`、`gradient-shadow-text.css` 与 `shiki.css`。客户端 bundle 将其编译并注入为插件持有的全局样式，因此卸载与 HMR 会随 ui-theme 一同移除这些样式，而不会把主题 CSS 留在静态 Web 外壳中。`scrollbar.css` 是 `--dsw-alias-scrollbar-*` token 的唯一消费方，必须排在声明这些 token 的 `design-platform.css` 之后。
 

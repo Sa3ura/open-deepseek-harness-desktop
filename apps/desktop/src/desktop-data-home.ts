@@ -5,6 +5,10 @@ import {
 } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { parseDocument } from 'yaml'
+import {
+  extractImportedPluginRestorePlan,
+  writeImportedPluginRestorePlan,
+} from './imported-plugin-restore.ts'
 
 const DESKTOP_DATA_DIRECTORY = 'open-deepseek-harness-desktop'
 const SETUP_SCHEMA = 'open-deepseek-harness-desktop/data-home-setup/v1'
@@ -39,6 +43,8 @@ export interface DesktopDataHomeLayout {
 export interface DesktopDataImportResult {
   readonly copied: readonly string[]
   readonly skippedSymlinks: readonly string[]
+  readonly restorablePlugins: number
+  readonly pluginRestoreIssues: readonly string[]
 }
 
 /** Durable first-run decision kept outside the selected Harness home. */
@@ -224,13 +230,22 @@ export async function importOfficialDesktopData(
       if (skippedSymlinks.length === skippedBefore) copied.push(entry)
     }
     await resetImportedOnboardingSettings(join(staging, 'settings.yaml'))
+    const restorePlan = await extractImportedPluginRestorePlan(officialDshHome)
+    await writeImportedPluginRestorePlan(staging, restorePlan)
     if (await pathExists(targetDshHome)) await rm(targetDshHome, { recursive: true })
     await rename(staging, targetDshHome)
   } catch (error) {
     await rm(staging, { recursive: true, force: true })
     throw error
   }
-  return { copied, skippedSymlinks }
+  const restorePlan = await readFile(join(targetDshHome, 'imported-plugin-restore.v1.json'), 'utf8')
+    .then(value => JSON.parse(value) as { entries: unknown[]; sourceIssues: string[] })
+  return {
+    copied,
+    skippedSymlinks,
+    restorablePlugins: restorePlan.entries.length,
+    pluginRestoreIssues: restorePlan.sourceIssues,
+  }
 }
 
 /**

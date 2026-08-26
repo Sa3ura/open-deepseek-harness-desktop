@@ -12,6 +12,7 @@ import { PluginDiagnosticsSection } from '../src/client/PluginDiagnosticsSection
 import { ExternalToolsSection } from '../src/client/ExternalToolsSection.tsx'
 import { PluginDiscovery } from '../src/client/PluginDiscovery.tsx'
 import { BetterSidebarInstallCard } from '../src/client/BetterSidebarInstallCard.tsx'
+import { ImportedPluginRestoreDialog } from '../src/client/ImportedPluginRestore.tsx'
 import type { PluginInventorySettingsTabInjected } from '../src/client/PluginInventorySettingsTab.tsx'
 
 usePinnedBrowserLanguages('zh-CN')
@@ -104,7 +105,9 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(diagnostics.options).toMatchObject({ id: 'diagnostics', order: 25 })
     expect(resolveSlotLabel(diagnostics.options.label)).toBe('诊断')
     expect(b.slots.entries('conversation.hero.pluginDiscovery')[0]?.component).toBe(PluginDiscovery)
-    expect(b.slots.entries('shell.overlay')[0]?.component).toBe(BetterSidebarInstallCard)
+    const overlays = b.slots.entries('shell.overlay')
+    expect(overlays.find(entry => entry.options.id === 'imported-plugin-restore')?.component).toBe(ImportedPluginRestoreDialog)
+    expect(overlays.find(entry => entry.options.id === 'better-sidebar-install')?.component).toBe(BetterSidebarInstallCard)
     expect(b.list).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => PluginInventorySettingsTabInjected)()
@@ -145,7 +148,9 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
       expect(sections.find(section => section.options.id === 'external-tools')?.component).toBe(ExternalToolsSection)
       expect(sections.find(section => section.options.id === 'diagnostics')?.component).toBe(PluginDiagnosticsSection)
       expect(b.slots.entries('conversation.hero.pluginDiscovery')[0]?.component).toBe(PluginDiscovery)
-      expect(b.slots.entries('shell.overlay')[0]?.component).toBe(BetterSidebarInstallCard)
+      const overlays = b.slots.entries('shell.overlay')
+      expect(overlays.find(entry => entry.options.id === 'imported-plugin-restore')?.component).toBe(ImportedPluginRestoreDialog)
+      expect(overlays.find(entry => entry.options.id === 'better-sidebar-install')?.component).toBe(BetterSidebarInstallCard)
     })
 
     await fiber.dispose()

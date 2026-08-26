@@ -28,6 +28,10 @@ export interface HarnessSupervisorOptions {
   onReady(url: string): void
   onState(state: HarnessState): void
   onFailure(failure: HarnessFailure): void
+  /** Windows-only process-tree cleanup; omitted on Unix hosts. */
+  terminateProcessTree?(processId: number, force: boolean): Promise<void>
+  /** Test override for the bounded graceful shutdown interval. */
+  stopTimeoutMs?: number
 }
 
 /** Owns one restartable Harness child and its durable combined log. */
@@ -156,15 +160,37 @@ export class HarnessSupervisor {
     const child = this.#child
     if (child !== undefined) {
       await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          child.kill('SIGKILL')
-          resolve()
-        }, STOP_TIMEOUT_MS)
-        child.once('close', () => {
+        let settled = false
+        const finish = (): void => {
+          if (settled) return
+          settled = true
           clearTimeout(timeout)
           resolve()
+        }
+        const forceStop = async (): Promise<void> => {
+          try {
+            if (child.pid !== undefined && this.#options.terminateProcessTree !== undefined) {
+              await this.#options.terminateProcessTree(child.pid, true)
+            } else {
+              child.kill('SIGKILL')
+            }
+          } catch (error) {
+            this.#log?.write(`[desktop] failed to force-stop Harness process tree: ${error instanceof Error ? error.message : String(error)}\n`)
+          } finally {
+            finish()
+          }
+        }
+        const timeout = setTimeout(() => { void forceStop() }, this.#options.stopTimeoutMs ?? STOP_TIMEOUT_MS)
+        child.once('close', () => {
+          finish()
         })
-        child.kill('SIGTERM')
+        if (child.pid !== undefined && this.#options.terminateProcessTree !== undefined) {
+          void this.#options.terminateProcessTree(child.pid, false).catch((error: unknown) => {
+            this.#log?.write(`[desktop] failed to request Harness process-tree shutdown: ${error instanceof Error ? error.message : String(error)}\n`)
+          })
+        } else {
+          child.kill('SIGTERM')
+        }
       })
     }
     this.#child = undefined

@@ -19,7 +19,7 @@ interface DetailCopy {
 
 const zh = {
   windowTitle: '选择数据目录', languageLabel: '语言', importTitle: '导入官方配置（独立环境）', recommended: '推荐',
-  importSummary: '复制用户数据但不复制插件；之后两套环境互不共享。', reuseTitle: '直接复用官方配置',
+  importSummary: '复制用户数据与插件清单；插件进入后选择重新安装。', reuseTitle: '直接复用官方配置',
   reuseSummary: '与官方 dsh 共享设置、凭据、会话和插件。', freshTitle: '全新开始',
   freshSummary: '不导入任何现有数据。', locationLabel: '数据位置', sharingLabel: '共享范围',
   pluginsLabel: '已有插件', buildsLabel: '构建权限', compare: '查看完整对比', cancel: '取消',
@@ -27,16 +27,16 @@ const zh = {
   compareImportLocation: '将设置、凭据、会话、Skills 等用户数据复制到桌面版独立目录。', compareReuseLocation: '直接使用官方 ~/.dsh。',
   compareFreshLocation: '创建新的桌面版独立目录。', compareImportSharing: '不共享；复制后互不影响。',
   compareReuseSharing: '共享；两端修改会互相影响。', compareFreshSharing: '不共享任何既有数据。',
-  compareImportPlugins: '不复制 Profile、插件清单或运行时；预置插件由客户端安装，其他插件需重新安装。', compareReusePlugins: '直接使用官方目录中已有插件。',
+  compareImportPlugins: '复制安全的插件恢复清单但不复制 Profile 或运行时；进入后可选择联网重新安装。', compareReusePlugins: '直接使用官方目录中已有插件。',
   compareFreshPlugins: '从空白 Profile 开始，只安装预置项。', compareImportSuitable: '希望保留数据，同时隔离桌面版的用户。',
   compareReuseSuitable: '希望桌面版与官方 dsh 始终一致的用户。', compareFreshSuitable: '希望完全从零配置的用户。',
-  comparisonNote: '“导入”和“全新开始”使用独立的 Profile、插件目录与构建许可；只有“直接复用”会与官方 dsh 共享插件环境。',
+  comparisonNote: '“导入”一次性复制用户数据、插件清单与精确构建许可，恢复后仍使用独立 Profile；只有“直接复用”会持续共享官方插件环境。',
   acknowledge: '知道了', helpLabel: '查看三个选项的区别', closeLabel: '关闭', modeGroupLabel: '数据目录模式',
 }
 
 const en: typeof zh = {
   windowTitle: 'Choose data directory', languageLabel: 'Language', importTitle: 'Import official configuration (independent)', recommended: 'Recommended',
-  importSummary: 'Copy user data without plugins; the two environments remain independent.', reuseTitle: 'Reuse official configuration',
+  importSummary: 'Copy user data and a plugin list; choose what to reinstall after entry.', reuseTitle: 'Reuse official configuration',
   reuseSummary: 'Share settings, credentials, sessions, and plugins with official dsh.', freshTitle: 'Start fresh',
   freshSummary: 'Do not import any existing data.', locationLabel: 'Data location', sharingLabel: 'Sharing',
   pluginsLabel: 'Existing plugins', buildsLabel: 'Build approvals', compare: 'View full comparison', cancel: 'Cancel',
@@ -44,10 +44,10 @@ const en: typeof zh = {
   compareImportLocation: 'Copy user settings, credentials, sessions, Skills, and other supported data into an independent desktop directory.', compareReuseLocation: 'Use official ~/.dsh directly.',
   compareFreshLocation: 'Create a new independent desktop directory.', compareImportSharing: 'Not shared; each side changes independently.',
   compareReuseSharing: 'Shared; changes on either side affect the other.', compareFreshSharing: 'No existing data is shared.',
-  compareImportPlugins: 'Profiles, plugin manifests, and runtimes are not copied. Presets are installed by the client; other plugins must be reinstalled.', compareReusePlugins: 'Use plugins already installed in the official home.',
+  compareImportPlugins: 'Copy a safe restore list without Profiles or runtimes, then choose plugins to reinstall online.', compareReusePlugins: 'Use plugins already installed in the official home.',
   compareFreshPlugins: 'Start with an empty Profile and install only presets.', compareImportSuitable: 'Keep existing data while isolating the desktop app.',
   compareReuseSuitable: 'Keep the desktop app and official dsh fully aligned.', compareFreshSuitable: 'Configure everything from scratch.',
-  comparisonNote: 'Import and Start fresh use independent Profiles, plugin directories, and build approvals. Only Reuse shares the official dsh plugin environment.',
+  comparisonNote: 'Import copies user data, a plugin list, and exact build rules once while keeping an independent Profile. Only Reuse continuously shares the official plugin environment.',
   acknowledge: 'Got it', helpLabel: 'Compare the three options', closeLabel: 'Close', modeGroupLabel: 'Data directory mode',
 }
 
@@ -57,8 +57,8 @@ const details: Record<'zh' | 'en', Record<DataHomeMode, DetailCopy>> = {
       title: zh.importTitle,
       location: '复制到桌面版独立数据目录，官方 ~/.dsh 保持不变。',
       sharing: '复制完成后不共享；桌面版与官方 dsh 的后续修改互不影响。',
-      plugins: '不复制官方 Profile、插件清单或 node_modules；预置插件由客户端重新安装，其他插件需手动重新安装。',
-      builds: '不导入官方 Profile 的 allowBuilds；桌面版只写入预置插件所需的构建许可。',
+      plugins: '复制插件恢复清单但不复制 Profile、node_modules 或锁文件；进入后可选择重新安装，预置同名项不会重复安装。',
+      builds: '导入经过验证的精确 allowBuilds 布尔规则并与独立 Profile 合并；任何明确 false 都不会被放宽。',
     },
     reused: {
       title: zh.reuseTitle,
@@ -81,8 +81,8 @@ const details: Record<'zh' | 'en', Record<DataHomeMode, DetailCopy>> = {
       title: en.importTitle,
       location: 'Copy into the desktop-owned data directory while leaving official ~/.dsh unchanged.',
       sharing: 'Nothing stays shared after copying; later changes remain independent.',
-      plugins: 'Official Profiles, plugin manifests, and node_modules are not copied. Client presets are installed again; other plugins must be reinstalled manually.',
-      builds: 'Official Profile allowBuilds rules are not imported. Desktop writes only the approvals required by its presets.',
+      plugins: 'Copy a plugin restore list without Profiles, node_modules, or lockfiles. Choose what to reinstall after entry; matching presets are not duplicated.',
+      builds: 'Merge validated exact allowBuilds booleans into the independent Profile. Every explicit false remains denied.',
     },
     reused: {
       title: en.reuseTitle,

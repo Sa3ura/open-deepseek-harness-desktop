@@ -17,7 +17,9 @@ function bootThemeScript(preference: ThemePreference): string {
     && matchMedia('(prefers-color-scheme: dark)').matches
   const darkThemes = ['dark', 'ocean', 'moonlight', 'starlight', 'pirate', 'shinobi', 'rift']
   const dark = darkThemes.includes(preference) || systemDark
+  const source = preference === 'system' ? 'system' : (dark ? 'dark' : 'light')
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+  document.documentElement.setAttribute('data-dsh-color-scheme-source', source)
   document.body.toggleAttribute('data-ds-dark-theme', dark)
 })()`
 }

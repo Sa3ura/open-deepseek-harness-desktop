@@ -7,6 +7,8 @@ $dshHome = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Home'
 $unpackedResources = Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/win-unpacked/resources'
 $cliDirectory = Join-Path $installRoot 'resources/cli-bin'
 $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+$upgradeRoot = "$installRoot-update"
+$similarRoot = "$installRoot-old"
 
 foreach ($path in @(
   (Join-Path $unpackedResources 'harness/lib/bin.js'),
@@ -52,6 +54,24 @@ if ($install.ExitCode -ne 0) {
   throw "Windows installer exited with $($install.ExitCode)"
 }
 
+# Run the upgrade installer from a sibling whose name starts with the install
+# directory. The old electron-builder guard treated this as an installed app.
+New-Item -ItemType Directory -Path $upgradeRoot -Force | Out-Null
+$upgradeInstaller = Join-Path $upgradeRoot 'DeepSeek-Harness-windows-x64.exe'
+Copy-Item -LiteralPath $installer -Destination $upgradeInstaller -Force
+
+# Keep an unrelated executable alive in another prefix-similar sibling. The
+# precise guard must neither report nor terminate it.
+New-Item -ItemType Directory -Path $similarRoot -Force | Out-Null
+$decoyExecutable = Join-Path $similarRoot 'unrelated-process.exe'
+Copy-Item -LiteralPath (Join-Path $env:WINDIR 'System32\ping.exe') -Destination $decoyExecutable -Force
+$decoyStart = [System.Diagnostics.ProcessStartInfo]::new()
+$decoyStart.FileName = $decoyExecutable
+$decoyStart.UseShellExecute = $false
+$decoyStart.ArgumentList.Add('-t')
+$decoyStart.ArgumentList.Add('127.0.0.1')
+$decoy = [System.Diagnostics.Process]::Start($decoyStart)
+
 $required = @(
   (Join-Path $installRoot 'DeepSeek Harness.exe'),
   (Join-Path $installRoot 'resources/harness/lib/bin.js'),
@@ -85,6 +105,12 @@ $appStart.FileName = Join-Path $installRoot 'DeepSeek Harness.exe'
 $appStart.UseShellExecute = $false
 $appStart.ArgumentList.Add("--user-data-dir=$appData")
 $app = [System.Diagnostics.Process]::Start($appStart)
+$orphanStart = [System.Diagnostics.ProcessStartInfo]::new()
+$orphanStart.FileName = Join-Path $installRoot 'resources/runtime/win32-x64/node.exe'
+$orphanStart.UseShellExecute = $false
+$orphanStart.ArgumentList.Add('-e')
+$orphanStart.ArgumentList.Add('setInterval(() => {}, 1000)')
+$orphanNode = [System.Diagnostics.Process]::Start($orphanStart)
 $deadline = (Get-Date).AddSeconds(180)
 $ready = $false
 try {
@@ -113,11 +139,49 @@ try {
     $tail = if ($null -eq $diagnostic) { 'No harness.log was created.' } else { (Get-Content $diagnostic.FullName -Tail 80) -join "`n" }
     throw "Better Sidebar did not finish its post-entry deferred install within 180 seconds.`n$tail"
   }
+
+
+  $upgradeStart = [System.Diagnostics.ProcessStartInfo]::new()
+  $upgradeStart.FileName = $upgradeInstaller
+  $upgradeStart.UseShellExecute = $false
+  $upgradeStart.ArgumentList.Add('/S')
+  $upgradeStart.ArgumentList.Add('/currentuser')
+  $upgradeStart.ArgumentList.Add('/ADDCLI=1')
+  $upgradeStart.ArgumentList.Add("/D=$installRoot")
+  $upgrade = [System.Diagnostics.Process]::Start($upgradeStart)
+  if (-not $upgrade.WaitForExit(900000)) {
+    $upgrade.Kill($true)
+    throw 'Windows upgrade installer did not exit within 15 minutes'
+  }
+  if ($upgrade.ExitCode -ne 0) { throw "Windows upgrade installer exited with $($upgrade.ExitCode)" }
+  if (-not $app.WaitForExit(30000)) { throw 'Upgrade did not close the installed desktop application' }
+  if (-not $orphanNode.WaitForExit(30000)) { throw 'Upgrade did not close the installation-owned orphan Node process' }
+  $decoy.Refresh()
+  if ($decoy.HasExited) { throw 'Upgrade incorrectly closed an unrelated process from a prefix-similar directory' }
+
+  Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue |
+    Remove-Item -Force
+  $app = [System.Diagnostics.Process]::Start($appStart)
+  $deadline = (Get-Date).AddSeconds(180)
+  $ready = $false
+  while ((Get-Date) -lt $deadline) {
+    Start-Sleep -Milliseconds 500
+    $app.Refresh()
+    if ($app.HasExited) { throw "Upgraded application exited before Harness readiness with $($app.ExitCode)" }
+    $log = Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($null -ne $log -and (Get-Content $log.FullName -Raw) -match '(?m)^dsh web: http://127\.0\.0\.1:\d+$') {
+      $ready = $true
+      break
+    }
+  }
+  if (-not $ready) { throw 'Upgraded Windows application did not reach Harness readiness within 180 seconds' }
 } finally {
   if (-not $app.HasExited) {
     $null = $app.CloseMainWindow()
     if (-not $app.WaitForExit(10000)) { Stop-Process -Id $app.Id -Force }
   }
+  if (-not $orphanNode.HasExited) { Stop-Process -Id $orphanNode.Id -Force }
+  if (-not $decoy.HasExited) { Stop-Process -Id $decoy.Id -Force }
 }
 
 $cliStart = [System.Diagnostics.ProcessStartInfo]::new()
@@ -227,4 +291,4 @@ if ($null -ne $remainingRegistration.CliPathRegistered -or $null -ne $remainingR
   throw 'Windows uninstaller left the desktop CLI registration marker behind.'
 }
 
-Write-Host 'Installed Windows package registered and ran the desktop dsh command, reached Harness readiness, seeded startup plugins, completed deferred Better Sidebar, kept external tools online-only, and restored PATH on uninstall.'
+Write-Host 'Installed and upgraded the Windows package, precisely cleaned owned processes without touching a prefix-similar decoy, reached Harness readiness, seeded startup plugins, ran desktop dsh, kept external tools online-only, and restored PATH on uninstall.'
