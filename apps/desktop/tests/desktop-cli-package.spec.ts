@@ -28,6 +28,8 @@ describe('packaged desktop CLI inputs', () => {
     expect(pathManager).not.toContain('SendMessageTimeout')
     expect(installer).toContain('!macro customHeader')
     expect(installer).toContain('Page custom CliPathPageCreate CliPathPageLeave')
+    expect(installer).toContain('!macro customUnInit')
+    expect(installer).not.toContain('!macro customUnInstall')
     expect(installer).not.toContain('dangerouslyAllowAllBuilds')
   })
 
