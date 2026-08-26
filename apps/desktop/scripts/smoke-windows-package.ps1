@@ -2,8 +2,9 @@ $ErrorActionPreference = 'Stop'
 
 $installer = (Resolve-Path (Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe')).Path
 $installRoot = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness 安装测试'
-$appData = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness AppData'
 $dshHome = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Home'
+$desktopDataRoot = Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'open-deepseek-harness-desktop'
+$harnessLog = Join-Path $desktopDataRoot 'logs/harness.log'
 $unpackedResources = Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/win-unpacked/resources'
 $cliDirectory = Join-Path $installRoot 'resources/cli-bin'
 $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
@@ -98,12 +99,11 @@ if ($cliRegistration.CliPathRegistered -ne 1 -or
   throw 'Silent installer and Settings do not share the expected CLI registration marker.'
 }
 
-$env:APPDATA = $appData
 $env:DSH_HOME = $dshHome
+Remove-Item -LiteralPath $harnessLog -Force -ErrorAction SilentlyContinue
 $appStart = [System.Diagnostics.ProcessStartInfo]::new()
 $appStart.FileName = Join-Path $installRoot 'DeepSeek Harness.exe'
 $appStart.UseShellExecute = $false
-$appStart.ArgumentList.Add("--user-data-dir=$appData")
 $app = [System.Diagnostics.Process]::Start($appStart)
 $orphanStart = [System.Diagnostics.ProcessStartInfo]::new()
 $orphanStart.FileName = Join-Path $installRoot 'resources/runtime/win32-x64/node.exe'
@@ -119,20 +119,19 @@ try {
     Start-Sleep -Milliseconds 500
     $app.Refresh()
     if ($app.HasExited) { throw "Installed application exited before Harness readiness with $($app.ExitCode)" }
-    $log = Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -ne $log -and (Get-Content $log.FullName -Raw) -match '(?m)^dsh web: http://127\.0\.0\.1:\d+$') {
+    $logExists = Test-Path -LiteralPath $harnessLog
+    if ($logExists -and (Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^dsh web: http://127\.0\.0\.1:\d+$') {
       $ready = $true
       break
     }
     if ((Get-Date) -ge $nextStartupProgress) {
       $profileCreated = Test-Path (Join-Path $dshHome 'profiles/web/package.json')
-      Write-Host "Waiting for first packaged startup (log=$($null -ne $log), profile=$profileCreated)."
+      Write-Host "Waiting for first packaged startup (log=$logExists, profile=$profileCreated)."
       $nextStartupProgress = (Get-Date).AddSeconds(30)
     }
   }
   if (-not $ready) {
-    $diagnostic = Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    $tail = if ($null -eq $diagnostic) { 'No harness.log was created.' } else { (Get-Content $diagnostic.FullName -Tail 80) -join "`n" }
+    $tail = if (-not (Test-Path -LiteralPath $harnessLog)) { 'No harness.log was created.' } else { (Get-Content -LiteralPath $harnessLog -Tail 80) -join "`n" }
     throw "Installed application did not reach Harness readiness within 480 seconds.`n$tail"
   }
   $upgradeStart = [System.Diagnostics.ProcessStartInfo]::new()
@@ -153,8 +152,7 @@ try {
   $decoy.Refresh()
   if ($decoy.HasExited) { throw 'Upgrade incorrectly closed an unrelated process from a prefix-similar directory' }
 
-  Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue |
-    Remove-Item -Force
+  Remove-Item -LiteralPath $harnessLog -Force -ErrorAction SilentlyContinue
   $app = [System.Diagnostics.Process]::Start($appStart)
   $deadline = (Get-Date).AddSeconds(300)
   $ready = $false
@@ -162,8 +160,8 @@ try {
     Start-Sleep -Milliseconds 500
     $app.Refresh()
     if ($app.HasExited) { throw "Upgraded application exited before Harness readiness with $($app.ExitCode)" }
-    $log = Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($null -ne $log -and (Get-Content $log.FullName -Raw) -match '(?m)^dsh web: http://127\.0\.0\.1:\d+$') {
+    if ((Test-Path -LiteralPath $harnessLog)
+      -and (Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^dsh web: http://127\.0\.0\.1:\d+$') {
       $ready = $true
       break
     }
@@ -247,11 +245,10 @@ foreach ($plugin in @($bundledPlugins | Where-Object { $_.InstallPolicy -eq 'man
   }
   if (Test-Path $markerPath) { throw "Manual bundled plugin marker exists before user action: $markerPath" }
 }
-$bundledFailure = Get-ChildItem -Path $appData -Filter harness.log -File -Recurse -ErrorAction SilentlyContinue |
-  Where-Object { (Get-Content $_.FullName -Raw) -match '(?m)^\[bundled-plugin\]' } |
-  Select-Object -First 1
-if ($null -ne $bundledFailure) {
-  throw "Bundled plugin failure was written to $($bundledFailure.FullName)"
+$bundledFailure = (Test-Path -LiteralPath $harnessLog) `
+  -and (Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^\[bundled-plugin\]'
+if ($bundledFailure) {
+  throw "Bundled plugin failure was written to $harnessLog"
 }
 
 $uninstaller = Join-Path $installRoot 'Uninstall DeepSeek Harness.exe'
