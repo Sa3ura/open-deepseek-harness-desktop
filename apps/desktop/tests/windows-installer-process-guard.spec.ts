@@ -13,6 +13,14 @@ describe('Windows installer process guard', () => {
     expect(installer).toContain('-ExcludeProcessId $R9')
   })
 
+  it('declares custom translations with LCIDs available before MUI languages load', async () => {
+    const installer = await readFile(`${buildRoot}/installer.nsh`, 'utf8')
+    expect(installer).toContain('LangString CliPageTitle 2052 "命令行工具"')
+    expect(installer).toContain('LangString CliPageTitle 1033 "Command-line tool"')
+    expect(installer).not.toContain('${LANG_SIMPCHINESE}')
+    expect(installer).not.toContain('${LANG_ENGLISH}')
+  })
+
   it('matches only the exact app or the resources directory boundary', async () => {
     const guard = await readFile(`${buildRoot}/installer-process-guard.ps1`, 'utf8')
     expect(guard).toContain('[string]::Equals($path, $appPath, $comparison)')

@@ -14,6 +14,8 @@ The desktop NSIS include replaces the generic check with an installation-owned p
 
 Explicit Windows desktop quit also stops the supervised Harness process tree through `taskkill /T`, with `/F` reserved for the bounded timeout. Closing a window to the tray remains an ordinary running state and is intentionally detected during an upgrade.
 
+The custom installer include is expanded before Electron Builder inserts its `MUI_LANGUAGE` macros. Custom Chinese and English `LangString` declarations therefore use the stable Windows LCIDs 2052 and 1033 directly; referring to `${LANG_SIMPCHINESE}` or `${LANG_ENGLISH}` at that point leaves the constants undefined and makes NSIS fail because warnings are treated as errors.
+
 ## Alternatives considered
 
 **Match only `DeepSeek Harness.exe`.** This avoids false positives but misses embedded Node and native plugin processes that can still lock files replaced by an upgrade.
@@ -25,3 +27,5 @@ Explicit Windows desktop quit also stops the supervised Harness process tree thr
 ## Consequences
 
 An installer or unrelated process in a prefix-similar directory no longer blocks an upgrade or gets terminated. Real application, embedded Node, Harness, and native plugin processes remain protected from in-place replacement. Windows package validation now upgrades a running installation from a prefix-similar sibling, cleans an orphan embedded Node process, keeps an unrelated sibling process alive, and proves post-upgrade Harness readiness.
+
+The Windows installer also keeps reviewed Simplified Chinese and English strings without depending on NSIS macro declaration order, so the native packaging job rejects regressions before an installer is published.
