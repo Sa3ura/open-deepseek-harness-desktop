@@ -11,6 +11,7 @@ import {
   readClientBuildRecord,
   repositoryCommitHash,
   resolveClientBuildEnvironment,
+  resolvePartialClientBuildEnvironment,
   writeClientBuildRecord,
 } from './client-build-environment.ts'
 import { clientBundle } from '../packages/client/tsdown.client.ts'
@@ -176,6 +177,34 @@ describe('client build environment', () => {
 
     write(join(official, 'apps/web/dist/index.html'), '<main>changed</main>')
     expect(() => { readClientBuildRecord(official) }).toThrow(/artifacts differ/)
+  })
+
+  it('preserves a complete build profile across partial client-library builds', () => {
+    const communityEnvironment = {
+      DSH_CLIENT_BUILD_PROFILE: 'community-desktop',
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_TITLE: 'DeepSeek Harness',
+    }
+    const community = buildFixture(communityEnvironment)
+    const unrecorded = mkdtempSync(join(tmpdir(), 'dsh-client-build-unrecorded-'))
+    roots.push(unrecorded)
+
+    expect(resolvePartialClientBuildEnvironment(community, {})).toEqual(communityEnvironment)
+    expect(resolvePartialClientBuildEnvironment(community, communityEnvironment)).toEqual(communityEnvironment)
+    expect(resolvePartialClientBuildEnvironment(community, {
+      DSH_BUILD_CLIENT_PROFILE: 'community-desktop',
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+    })).toEqual({
+      DSH_CLIENT_COMMIT_HASH: COMMIT_HASH.slice(0, 7),
+      DSH_CLIENT_BUILD_PROFILE: 'community-desktop',
+      DSH_CLIENT_TITLE: 'DeepSeek Harness',
+    })
+    expect(resolvePartialClientBuildEnvironment(unrecorded, { DSH_CLIENT_TITLE: 'Local title' })).toEqual({
+      DSH_CLIENT_TITLE: 'Local title',
+    })
+    expect(() => resolvePartialClientBuildEnvironment(community, {
+      DSH_CLIENT_TITLE: 'Conflicting title',
+    })).toThrow(/conflicts with .*client-build-environment\.json/)
   })
 
   it('keeps public client values out of workflow-wide environments', () => {

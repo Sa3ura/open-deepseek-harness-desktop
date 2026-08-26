@@ -234,19 +234,10 @@ export function readClientBuildRecord(
   root: string,
   expected?: Readonly<Record<`DSH_CLIENT_${string}`, string>>,
 ): ClientBuildRecord {
-  const path = resolve(root, CLIENT_BUILD_RECORD_PATH)
-  if (!existsSync(path)) {
+  const record = readPersistedClientBuildRecord(root)
+  if (record === undefined) {
     throw new Error(`client build record ${CLIENT_BUILD_RECORD_PATH} is missing; run a complete pnpm run build first`)
   }
-
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'))
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error)
-    throw new Error(`client build record ${CLIENT_BUILD_RECORD_PATH} is invalid JSON: ${detail}`)
-  }
-  const record = parseClientBuildRecord(parsed)
   if (expected !== undefined) assertClientBuildEnvironment(record.environment, expected)
 
   const current = clientArtifactDigest(root)
@@ -256,6 +247,49 @@ export function readClientBuildRecord(
     )
   }
   return record
+}
+
+/**
+ * Resolve public values for a partial client-library build.
+ *
+ * A complete build record binds dynamic client bundles to one deployment
+ * profile. A later library-only build must preserve that profile instead of
+ * silently replacing branded bundles with the unconfigured local fallback.
+ * An explicit conflicting environment is rejected so mixed-profile artifacts
+ * cannot be produced accidentally.
+ *
+ * @param root - repository root that may contain a complete build record.
+ * @param environment - environment inherited by the partial build.
+ * @returns exact public values to pass to the client bundler.
+ */
+export function resolvePartialClientBuildEnvironment(
+  root: string,
+  environment: NodeJS.ProcessEnv,
+): ClientBuildEnvironment {
+  const requested = resolveClientBuildEnvironment(environment)
+  const recorded = readPersistedClientBuildRecord(root)?.environment
+  if (recorded === undefined) return requested
+  if (Object.keys(requested).length === 0) return recorded
+  const names = new Set([...Object.keys(requested), ...Object.keys(recorded)])
+  if ([...names].every(name => requested[name] === recorded[name])) return requested
+  throw new Error(
+    `partial client build environment conflicts with ${CLIENT_BUILD_RECORD_PATH}; run a complete pnpm run build for the intended profile`,
+  )
+}
+
+/** Read and validate the persisted record without claiming that its artifacts are still current. */
+function readPersistedClientBuildRecord(root: string): ClientBuildRecord | undefined {
+  const path = resolve(root, CLIENT_BUILD_RECORD_PATH)
+  if (!existsSync(path)) return undefined
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(readFileSync(path, 'utf8'))
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`client build record ${CLIENT_BUILD_RECORD_PATH} is invalid JSON: ${detail}`)
+  }
+  return parseClientBuildRecord(parsed)
 }
 
 /** Return the deterministic digest of every artifact affected by the public client environment. */

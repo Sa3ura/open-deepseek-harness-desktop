@@ -22,7 +22,7 @@
     "build:community-desktop": "tsx scripts/build.ts --profile community-desktop && pnpm run build:desktop",
     "build:lib": "pnpm run build:lib:host && pnpm run build:lib:client",
     "build:lib:host": "tsc -b tsconfig.host.json && tsdown --env.DSH_BUILD_FACE host",
-    "build:lib:client": "tsc -b tsconfig.client.json && tsdown --env.DSH_BUILD_FACE client",
+    "build:lib:client": "tsc -b tsconfig.client.json && tsx scripts/build-client-libs.ts",
     "build:web": "pnpm --dir apps/web run build",
     "build:desktop": "pnpm --dir apps/desktop run build",
     "clean": "tsx scripts/clean.ts",
