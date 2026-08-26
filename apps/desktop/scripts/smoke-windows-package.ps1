@@ -149,9 +149,30 @@ try {
   $upgradeStart.ArgumentList.Add('/ADDCLI=1')
   $upgradeStart.ArgumentList.Add("/D=$installRoot")
   $upgrade = [System.Diagnostics.Process]::Start($upgradeStart)
-  if (-not $upgrade.WaitForExit(900000)) {
+  $upgradeDeadline = (Get-Date).AddMinutes(6)
+  $nextUpgradeProgress = (Get-Date).AddSeconds(30)
+  while (-not $upgrade.HasExited -and (Get-Date) -lt $upgradeDeadline) {
+    Start-Sleep -Milliseconds 500
+    $upgrade.Refresh()
+    if ((Get-Date) -ge $nextUpgradeProgress) {
+      $upgradeProcesses = @(
+        Get-CimInstance -ClassName Win32_Process |
+          Where-Object {
+            ($_.ExecutablePath -and (
+              $_.ExecutablePath.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase) -or
+              $_.ExecutablePath.StartsWith($upgradeRoot, [StringComparison]::OrdinalIgnoreCase)
+            )) -or ($_.CommandLine -and $_.CommandLine.Contains('DeepSeek-Harness-windows-x64.exe'))
+          } |
+          Select-Object ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine
+      )
+      Write-Host "Upgrade installer still running:`n$($upgradeProcesses | Format-List | Out-String)"
+      $nextUpgradeProgress = (Get-Date).AddSeconds(30)
+    }
+  }
+  if (-not $upgrade.HasExited) {
     $upgrade.Kill($true)
-    throw 'Windows upgrade installer did not exit within 15 minutes'
+    $upgrade.WaitForExit()
+    throw 'Windows upgrade installer did not exit within 6 minutes'
   }
   if ($upgrade.ExitCode -ne 0) {
     if (Test-Path -LiteralPath $processGuardDiagnostic) {
