@@ -104,8 +104,30 @@
       .brand-copy { display: grid; gap: 2px; }
       .brand-copy strong { font-size: 18px; font-weight: 720; letter-spacing: -.028em; line-height: 1.12; }
       .brand-copy small { color: #747983; font-size: 12px; font-weight: 550; letter-spacing: .01em; line-height: 1.2; }
-      .content { display: grid; grid-template-columns: minmax(340px, 42%) 1fr; min-height: 0; }
-      .choices { border-right: 1px solid #e6e7ea; padding: 48px 38px; }
+      .content { display: grid; grid-template-columns: minmax(390px, 44%) 1fr; min-height: 0; }
+      .choices-pane { border-right: 1px solid #e6e7ea; min-height: 0; overflow: auto; padding: 30px 38px 34px; }
+      .source-panel {
+        background: #f8f9fb;
+        border: 1px solid #e1e3e8;
+        border-radius: 13px;
+        margin-bottom: 14px;
+        padding: 15px 16px;
+      }
+      .source-heading { align-items: center; display: flex; gap: 9px; }
+      .source-dot { background: #9ca1ab; border-radius: 50%; box-shadow: 0 0 0 4px rgb(156 161 171 / 12%); height: 8px; width: 8px; }
+      .source-panel[data-status="valid"] .source-dot { background: #299469; box-shadow: 0 0 0 4px rgb(41 148 105 / 12%); }
+      .source-panel[data-status="unreadable"] .source-dot { background: #c88614; box-shadow: 0 0 0 4px rgb(200 134 20 / 13%); }
+      .source-heading strong { font-size: 13px; font-weight: 650; }
+      .source-path { color: #5f646e; display: block; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; margin: 9px 0 0 17px; overflow-wrap: anywhere; }
+      .source-summary { color: #747983; font-size: 12px; line-height: 1.45; margin: 7px 0 0 17px; }
+      .source-error { color: #bc433d; font-size: 12px; line-height: 1.45; margin: 8px 0 0 17px; }
+      .source-error[hidden], .source-path[hidden] { display: none; }
+      .source-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0 17px; }
+      .source-action { appearance: none; background: #fff; border: 1px solid #cfd3da; border-radius: 8px; color: #2e64ca; cursor: pointer; font-size: 12px; font-weight: 590; padding: 7px 10px; }
+      .source-action:hover { background: #f2f5fb; border-color: #b7c6e4; }
+      .source-action:focus-visible { outline: 2px solid #4176e6; outline-offset: 2px; }
+      .source-action[hidden] { display: none; }
+      .choices { padding-top: 2px; }
       .choice {
         appearance: none;
         background: transparent;
@@ -166,6 +188,8 @@
       .choice-title { align-items: center; display: flex; gap: 10px; font-size: 16px; font-weight: 620; line-height: 1.4; }
       .recommended { background: #e9f0ff; border-radius: 999px; color: #316bd8; font-size: 12px; font-weight: 600; padding: 3px 8px; }
       .choice-description { color: #696d76; font-size: 13px; line-height: 1.6; margin-top: 6px; }
+      .choice-requirement { color: #a66d0c; display: block; font-size: 12px; font-weight: 580; line-height: 1.45; margin-top: 5px; }
+      .choice-requirement[hidden] { display: none; }
       .detail {
         --detail-accent: #376fdc;
         --detail-dot: rgb(65 118 230 / 20%);
@@ -255,7 +279,12 @@
         :root { background: #191a1e; color: #f4f4f5; }
         body { background: #191a1e; }
         .titlebar, .choice, .fact, .footer { border-color: #34363d; }
-        .choices { border-color: #34363d; }
+        .choices-pane { border-color: #34363d; }
+        .source-panel { background: #24262b; border-color: #3f424a; }
+        .source-path, .source-summary { color: #a8abb3; }
+        .source-error { color: #f08a82; }
+        .source-action { background: #292b31; border-color: #494c55; color: #a8c4f7; }
+        .source-action:hover { background: #30333a; border-color: #626670; }
         .brand-copy small, .language-inline-label, .choice-description, .fact dd, .comparison-note { color: #a8abb3; }
         .language-trigger, .help-button, .action.secondary { background: linear-gradient(180deg, #292b31, #24262b); border-color: #494c55; color: #f4f4f5; }
         .language-trigger:hover { background: #2d2f35; border-color: #626670; }
@@ -296,7 +325,7 @@
       }
       @media (max-width: 860px) {
         .content { grid-template-columns: 1fr; overflow: auto; }
-        .choices { border-bottom: 1px solid #e6e7ea; border-right: 0; padding: 26px; }
+        .choices-pane { border-bottom: 1px solid #e6e7ea; border-right: 0; overflow: visible; padding: 26px; }
         .detail { padding: 30px; }
         .footer { padding: 0 30px; }
       }
@@ -315,19 +344,31 @@
         </div>
       </header>
       <section class="content">
-        <div id="choices" class="choices" role="radiogroup" aria-label="数据目录模式">
-          <button class="choice" type="button" role="radio" aria-checked="true" data-mode="imported">
-            <span class="radio" aria-hidden="true"></span>
-            <span><span class="choice-title"><span data-copy="importTitle">导入官方配置（独立环境）</span><span class="recommended" data-copy="recommended">推荐</span></span><span class="choice-description" data-copy="importSummary">复制用户数据和插件清单，进入后可选择恢复插件。</span></span>
-          </button>
-          <button class="choice" type="button" role="radio" aria-checked="false" data-mode="reused">
-            <span class="radio" aria-hidden="true"></span>
-            <span><span class="choice-title" data-copy="reuseTitle">直接复用官方配置</span><span class="choice-description" data-copy="reuseSummary">与官方 dsh 共享设置、凭据、会话和插件。</span></span>
-          </button>
-          <button class="choice" type="button" role="radio" aria-checked="false" data-mode="fresh">
-            <span class="radio" aria-hidden="true"></span>
-            <span><span class="choice-title" data-copy="freshTitle">全新开始</span><span class="choice-description" data-copy="freshSummary">不导入任何现有数据。</span></span>
-          </button>
+        <div class="choices-pane">
+          <section id="source-panel" class="source-panel" data-status="missing" aria-live="polite">
+            <div class="source-heading"><span class="source-dot" aria-hidden="true"></span><strong id="source-status">未在默认位置检测到 DSH 配置</strong></div>
+            <code id="source-path" class="source-path" hidden></code>
+            <p id="source-summary" class="source-summary">如果你使用其他数据目录，可以手动选择。</p>
+            <p id="source-error" class="source-error" hidden></p>
+            <div class="source-actions">
+              <button id="choose-source" class="source-action" type="button">选择已有配置目录</button>
+              <button id="restore-default-source" class="source-action" type="button" hidden>恢复默认目录</button>
+            </div>
+          </section>
+          <div id="choices" class="choices" role="radiogroup" aria-label="数据目录模式">
+            <button class="choice" type="button" role="radio" aria-checked="true" data-mode="imported">
+              <span class="radio" aria-hidden="true"></span>
+              <span><span class="choice-title"><span data-copy="importTitle">导入到独立环境</span><span class="recommended" data-copy="recommended">推荐</span></span><span class="choice-description" data-copy="importSummary">复制用户数据和插件清单，进入后可选择恢复插件。</span><span class="choice-requirement" data-copy="sourceRequired" hidden>需要先选择已有配置目录。</span></span>
+            </button>
+            <button class="choice" type="button" role="radio" aria-checked="false" data-mode="reused">
+              <span class="radio" aria-hidden="true"></span>
+              <span><span class="choice-title" data-copy="reuseTitle">直接使用此配置</span><span class="choice-description" data-copy="reuseSummary">与所选目录共享设置、凭据、会话和插件。</span><span class="choice-requirement" data-copy="sourceRequired" hidden>需要先选择已有配置目录。</span></span>
+            </button>
+            <button class="choice" type="button" role="radio" aria-checked="false" data-mode="fresh">
+              <span class="radio" aria-hidden="true"></span>
+              <span><span class="choice-title" data-copy="freshTitle">全新开始</span><span class="choice-description" data-copy="freshSummary">不导入任何现有数据。</span></span>
+            </button>
+          </div>
         </div>
         <article id="detail" class="detail" data-mode="imported">
           <div class="detail-heading"><h1 id="detail-title"></h1><button id="help" class="help-button" type="button" aria-label="查看三个选项的区别"><img src="question-outline-14.svg" alt=""></button></div>
@@ -350,7 +391,7 @@
         <header class="comparison-header"><h2 id="comparison-title" data-copy="comparisonTitle">这三个选项有什么区别？</h2><button id="close-comparison" class="close" type="button" aria-label="关闭"><img src="close-outline-16.svg" alt=""></button></header>
         <div class="comparison-table-wrap">
           <table>
-            <thead><tr><th></th><th data-mode="imported" data-copy="importTitle">复制到独立目录</th><th data-mode="reused" data-copy="reuseTitle">直接复用官方配置</th><th data-mode="fresh" data-copy="freshTitle">全新开始</th></tr></thead>
+            <thead><tr><th></th><th data-mode="imported" data-copy="importTitle">导入到独立环境</th><th data-mode="reused" data-copy="reuseTitle">直接使用此配置</th><th data-mode="fresh" data-copy="freshTitle">全新开始</th></tr></thead>
             <tbody>
               <tr><th data-copy="locationLabel">数据位置</th><td data-copy="compareImportLocation"></td><td data-copy="compareReuseLocation"></td><td data-copy="compareFreshLocation"></td></tr>
               <tr><th data-copy="sharingLabel">是否共享</th><td data-copy="compareImportSharing"></td><td data-copy="compareReuseSharing"></td><td data-copy="compareFreshSharing"></td></tr>

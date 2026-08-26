@@ -3,7 +3,7 @@
 import {
   chmod, copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile,
 } from 'node:fs/promises'
-import { basename, dirname, join, resolve } from 'node:path'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { parseDocument } from 'yaml'
 import {
   extractImportedPluginRestorePlan,
@@ -27,6 +27,11 @@ const IMPORTABLE_ENTRIES = Object.freeze([
   'skills',
   'storages',
 ])
+const RECOGNIZABLE_ENTRIES = Object.freeze([
+  ...IMPORTABLE_ENTRIES,
+  'profiles/web/package.json',
+  'profiles/web/pnpm-workspace.yaml',
+])
 
 /** Stable paths selected before Electron acquires its single-instance lock. */
 export interface DesktopDataHomeLayout {
@@ -47,6 +52,12 @@ export interface DesktopDataImportResult {
   readonly pluginRestoreIssues: readonly string[]
 }
 
+/** A recognized Harness home selected as a first-run source. */
+export interface DesktopDataHomeSource {
+  readonly path: string
+  readonly entries: readonly string[]
+}
+
 /** Durable first-run decision kept outside the selected Harness home. */
 export interface DesktopDataHomeSetup {
   readonly schema: typeof SETUP_SCHEMA
@@ -63,8 +74,8 @@ export function resolveRecordedDesktopDataHome(
   setup: DesktopDataHomeSetup | undefined,
 ): string | undefined {
   if (setup?.mode === 'reused'
-    && setup.dshHome === layout.officialDshHome
-    && setup.source === layout.officialDshHome) return layout.officialDshHome
+    && setup.source === setup.dshHome
+    && isAbsolute(setup.dshHome)) return setup.dshHome
   if (setup?.dshHome === layout.dshHome) return layout.dshHome
   return undefined
 }
@@ -128,6 +139,36 @@ export async function hasImportableDesktopData(officialDshHome: string): Promise
     if (await pathExists(join(officialDshHome, entry))) return true
   }
   return false
+}
+
+async function recognizedDesktopDataEntries(dshHome: string): Promise<readonly string[]> {
+  let metadata
+  try {
+    metadata = await lstat(dshHome)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw error
+  }
+  if (!metadata.isDirectory()) return []
+  const entries: string[] = []
+  for (const entry of RECOGNIZABLE_ENTRIES) {
+    if (await pathExists(join(dshHome, entry))) entries.push(entry)
+  }
+  return entries
+}
+
+/**
+ * Resolve a selected Harness home or its `.dsh` child when recognized data exists.
+ * @param candidate - Directory selected by the user or the default `~/.dsh` path.
+ * @returns The normalized Harness home and recognized entries, or undefined when neither location is valid.
+ */
+export async function resolveDesktopDataHomeSource(candidate: string): Promise<DesktopDataHomeSource | undefined> {
+  const direct = resolve(candidate)
+  const directEntries = await recognizedDesktopDataEntries(direct)
+  if (directEntries.length > 0) return { path: direct, entries: directEntries }
+  const nested = join(direct, '.dsh')
+  const nestedEntries = await recognizedDesktopDataEntries(nested)
+  return nestedEntries.length > 0 ? { path: nested, entries: nestedEntries } : undefined
 }
 
 /**

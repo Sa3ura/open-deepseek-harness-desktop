@@ -10,6 +10,7 @@ import {
   IMPORTED_ONBOARDING_RESET_VERSION,
   readDesktopDataHomeSetup,
   resetImportedDesktopOnboarding,
+  resolveDesktopDataHomeSource,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
   writeDesktopDataHomeSetup,
@@ -140,5 +141,37 @@ describe('desktop data home', () => {
       ...setup,
       source: join(root, 'unexpected'),
     })).toBeUndefined()
+  })
+
+  it('recognizes direct and parent-selected DSH homes while rejecting unrelated directories', async () => {
+    const root = await fixture()
+    const direct = join(root, 'direct')
+    const parent = join(root, 'parent')
+    const unrelated = join(root, 'unrelated')
+    await mkdir(join(direct, 'profiles', 'web'), { recursive: true })
+    await mkdir(join(parent, '.dsh'), { recursive: true })
+    await mkdir(unrelated)
+    await writeFile(join(direct, 'profiles', 'web', 'package.json'), '{}\n')
+    await writeFile(join(parent, '.dsh', 'settings.yaml'), 'locale: zh\n')
+    await writeFile(join(unrelated, 'notes.txt'), 'not dsh\n')
+
+    await expect(resolveDesktopDataHomeSource(direct)).resolves.toEqual({
+      path: direct,
+      entries: ['profiles/web/package.json'],
+    })
+    await expect(resolveDesktopDataHomeSource(parent)).resolves.toEqual({
+      path: join(parent, '.dsh'),
+      entries: ['settings.yaml'],
+    })
+    await expect(resolveDesktopDataHomeSource(unrelated)).resolves.toBeUndefined()
+  })
+
+  it('restores a persisted custom reused home', async () => {
+    const root = await fixture()
+    const custom = join(root, 'portable-dsh')
+    const layout = resolveDesktopDataHomeLayout(join(root, 'app-data'), root, true, {})
+    const setup = desktopDataHomeSetup('reused', custom, custom)
+
+    expect(resolveRecordedDesktopDataHome(layout, setup)).toBe(custom)
   })
 })

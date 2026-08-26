@@ -51,9 +51,11 @@ import {
   importOfficialDesktopData,
   readDesktopDataHomeSetup,
   resetImportedDesktopOnboarding,
+  resolveDesktopDataHomeSource,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
   writeDesktopDataHomeSetup,
+  type DesktopDataHomeSource,
   type DesktopDataHomeLayout,
 } from './desktop-data-home.ts'
 import { mapBundledPluginProgress, type DesktopStartupProgress } from './startup-progress.ts'
@@ -118,6 +120,15 @@ let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', prog
 let desktopThemeSource: DesktopThemeSource = 'system'
 
 type DataHomeSelection = 'imported' | 'reused' | 'fresh'
+
+type DataHomeChoice =
+  | { readonly mode: 'fresh' }
+  | { readonly mode: 'imported' | 'reused'; readonly source: string }
+
+type DataHomeSourceResult =
+  | { readonly status: 'valid'; readonly path: string; readonly entries: readonly string[] }
+  | { readonly status: 'invalid' | 'unreadable'; readonly path: string }
+  | { readonly status: 'cancelled' }
 
 class DesktopDataHomeSelectionCancelledError extends Error {
   constructor() {
@@ -193,7 +204,18 @@ function isDataHomeSelection(value: unknown): value is DataHomeSelection {
   return value === 'imported' || value === 'reused' || value === 'fresh'
 }
 
-async function showDataHomeChooser(initialSelection: DataHomeSelection = 'imported'): Promise<DataHomeSelection> {
+function isDataHomeChoice(value: unknown): value is DataHomeChoice {
+  if (typeof value !== 'object' || value === null || !('mode' in value)
+    || !isDataHomeSelection(value.mode)) return false
+  if (value.mode === 'fresh') return true
+  return 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
+}
+
+async function showDataHomeChooser(
+  defaultSource: DesktopDataHomeSource | undefined,
+  defaultSourceUnreadable: boolean,
+  defaultSourceCandidate: string,
+): Promise<DataHomeChoice> {
   const chooser = new BrowserWindow({
     title: APP_NAME,
     width: 1080,
@@ -214,17 +236,18 @@ async function showDataHomeChooser(initialSelection: DataHomeSelection = 'import
   chooser.webContents.on('will-navigate', (event) => { event.preventDefault() })
   chooser.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
-  return new Promise<DataHomeSelection>((resolve, reject) => {
+  return new Promise<DataHomeChoice>((resolve, reject) => {
     let settled = false
     const cleanup = (): void => {
       ipcMain.removeListener('dsh:data-home:selected', handleSelection)
       ipcMain.removeListener('dsh:data-home:cancelled', handleCancellation)
+      ipcMain.removeHandler('dsh:data-home:choose-source')
     }
     const closeChooser = (): void => {
       cleanup()
       if (!chooser.isDestroyed()) chooser.destroy()
     }
-    const finish = (selection?: DataHomeSelection): void => {
+    const finish = (selection?: DataHomeChoice): void => {
       if (settled) return
       settled = true
       closeChooser()
@@ -238,20 +261,57 @@ async function showDataHomeChooser(initialSelection: DataHomeSelection = 'import
       reject(error instanceof Error ? error : new Error(String(error)))
     }
     const handleSelection = (event: Electron.IpcMainEvent, value: unknown): void => {
-      if (event.sender !== chooser.webContents || !isDataHomeSelection(value)) return
-      finish(value)
+      if (event.sender !== chooser.webContents || !isDataHomeChoice(value)) return
+      if (value.mode === 'fresh') {
+        finish({ mode: 'fresh' })
+        return
+      }
+      void resolveDesktopDataHomeSource(value.source).then((source) => {
+        if (settled) return
+        if (source === undefined) {
+          event.sender.send('dsh:data-home:source-error', { status: 'invalid', path: value.source })
+          return
+        }
+        finish({ mode: value.mode, source: source.path })
+      }).catch(() => {
+        if (settled) return
+        event.sender.send('dsh:data-home:source-error', { status: 'unreadable', path: value.source })
+      })
     }
     const handleCancellation = (event: Electron.IpcMainEvent): void => {
       if (event.sender === chooser.webContents) finish()
     }
     ipcMain.on('dsh:data-home:selected', handleSelection)
     ipcMain.on('dsh:data-home:cancelled', handleCancellation)
+    ipcMain.handle('dsh:data-home:choose-source', async (event): Promise<DataHomeSourceResult> => {
+      if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home source requester')
+      const result = await dialog.showOpenDialog(chooser, {
+        title: app.getLocale().toLowerCase().startsWith('zh') ? '选择 DSH 配置目录' : 'Choose DSH configuration directory',
+        properties: ['openDirectory'],
+      })
+      const candidate = result.filePaths[0]
+      if (result.canceled || candidate === undefined) return { status: 'cancelled' }
+      try {
+        const source = await resolveDesktopDataHomeSource(candidate)
+        return source === undefined
+          ? { status: 'invalid', path: candidate }
+          : { status: 'valid', path: source.path, entries: source.entries }
+      } catch {
+        return { status: 'unreadable', path: candidate }
+      }
+    })
     chooser.once('closed', () => { finish() })
     chooser.once('ready-to-show', () => {
       chooser.show()
       chooser.focus()
     })
-    void chooser.loadFile(DATA_HOME_PAGE, { query: { selected: initialSelection } }).catch(fail)
+    void chooser.loadFile(DATA_HOME_PAGE, { query: {
+      selected: defaultSource === undefined ? 'fresh' : 'imported',
+      source: defaultSource?.path ?? '',
+      defaultSource: defaultSource?.path ?? '',
+      sourceCandidate: defaultSourceCandidate,
+      sourceStatus: defaultSourceUnreadable ? 'unreadable' : defaultSource === undefined ? 'missing' : 'valid',
+    } }).catch(fail)
   })
 }
 
@@ -271,7 +331,15 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
     return layout.dshHome
   }
   const recordedHome = resolveRecordedDesktopDataHome(layout, previous)
-  if (recordedHome !== undefined) return recordedHome
+  if (recordedHome !== undefined && previous?.mode !== 'reused') return recordedHome
+  if (recordedHome !== undefined) {
+    try {
+      const recordedSource = await resolveDesktopDataHomeSource(recordedHome)
+      if (recordedSource?.path === recordedHome) return recordedHome
+    } catch {
+      // An unreadable reused source returns to the chooser below.
+    }
+  }
   if (await hasDesktopData(layout.dshHome)) {
     await writeDesktopDataHomeSetup(
       layout.setupFile,
@@ -279,22 +347,22 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
     )
     return layout.dshHome
   }
-  if (!await hasDesktopData(layout.officialDshHome)) {
-    await writeDesktopDataHomeSetup(
-      layout.setupFile,
-      desktopDataHomeSetup('fresh', layout.dshHome),
-    )
-    return layout.dshHome
+  let defaultSource: DesktopDataHomeSource | undefined
+  let defaultSourceUnreadable = false
+  try {
+    defaultSource = await resolveDesktopDataHomeSource(layout.officialDshHome)
+  } catch {
+    defaultSourceUnreadable = true
   }
 
   const copy = dataHomeCopy()
-  const selection = await showDataHomeChooser()
-  if (selection === 'imported') {
+  const selection = await showDataHomeChooser(defaultSource, defaultSourceUnreadable, layout.officialDshHome)
+  if (selection.mode === 'imported') {
     try {
-      await importOfficialDesktopData(layout.officialDshHome, layout.dshHome)
+      await importOfficialDesktopData(selection.source, layout.dshHome)
       await writeDesktopDataHomeSetup(
         layout.setupFile,
-        desktopDataHomeSetup('imported', layout.dshHome, layout.officialDshHome),
+        desktopDataHomeSetup('imported', layout.dshHome, selection.source),
       )
       await dialog.showMessageBox({
         type: 'info', title: copy.completeTitle, message: copy.completeMessage,
@@ -306,12 +374,12 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
       throw error
     }
   }
-  if (selection === 'reused') {
+  if (selection.mode === 'reused') {
     await writeDesktopDataHomeSetup(
       layout.setupFile,
-      desktopDataHomeSetup('reused', layout.officialDshHome, layout.officialDshHome),
+      desktopDataHomeSetup('reused', selection.source, selection.source),
     )
-    return layout.officialDshHome
+    return selection.source
   }
   await writeDesktopDataHomeSetup(
     layout.setupFile,
