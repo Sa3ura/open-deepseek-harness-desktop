@@ -61,14 +61,17 @@ describe('bundled plugin seed', () => {
       plugins: BundledPluginManifestEntry[]
     }
     expect(manifest.schema).toBe(2)
-    expect(manifest.plugins.map(entry => [entry.packageName, entry.version, entry.installPolicy])).toEqual([
-      ['dshmarket', '1.19.0', 'startup'],
-      ['@xmanrui/dsh-im', '1.0.2', 'startup'],
-      ['dsh-skill-picker', '0.2.0', 'startup'],
-      ['dsh-font', '1.1.0', 'startup'],
-      ['dsh-better-sidebar', '0.15.2', 'manual'],
-      ['dsh-pocket', '1.12.3', 'startup'],
+    expect(manifest.plugins.map(entry => [entry.packageName, entry.installPolicy])).toEqual([
+      ['dshmarket', 'startup'],
+      ['@xmanrui/dsh-im', 'startup'],
+      ['dsh-skill-picker', 'startup'],
+      ['dsh-font', 'startup'],
+      ['dsh-better-sidebar', 'manual'],
+      ['dsh-pocket', 'startup'],
     ])
+    for (const entry of manifest.plugins.filter(candidate => !candidate.registrySpec?.startsWith('github:'))) {
+      expect(entry.registrySpec).toBe(`${entry.packageName}@${entry.version}`)
+    }
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
       .toEqual(['node-pty'])

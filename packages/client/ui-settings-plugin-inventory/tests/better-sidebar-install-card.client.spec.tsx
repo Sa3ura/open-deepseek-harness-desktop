@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PluginInstallId } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import { BetterSidebarInstallCard, type BetterSidebarInstallCardProps } from '../src/client/BetterSidebarInstallCard.tsx'
 import type { DesktopBundledPluginInstallSnapshot } from '../src/client/bundled-install-bridge.ts'
-import { zh, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
+import { zh } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
@@ -18,9 +18,11 @@ const running: DesktopBundledPluginInstallSnapshot = {
   progress: 46,
 }
 
+const dictionary: Readonly<Record<string, string>> = zh
+
 function props(overrides: Partial<BetterSidebarInstallCardProps> = {}): BetterSidebarInstallCardProps {
   return {
-    t: key => key in zh ? zh[key as PluginInventoryLocaleKey] : String(key),
+    t: key => dictionary[key] ?? key,
     startInstall: vi.fn(async () => running),
     getInstall: vi.fn(async () => running),
     openLog: vi.fn(async () => true),

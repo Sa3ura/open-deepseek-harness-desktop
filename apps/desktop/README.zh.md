@@ -22,11 +22,17 @@ pnpm run dev:desktop
 
 安装版使用平台应用数据根下的 `open-deepseek-harness-desktop/dsh-home`，源码开发版使用其中的 `development/dsh-home`。两者的 Electron 偏好、浏览器会话数据、日志、解压运行时和 Harness 状态彼此独立，也不再与官方 CLI 共用。自动化和高级启动显式设置的 `DSH_HOME` 仍具有最高优先级。
 
-首次普通启动时，如果发现官方 `~/.dsh`，应用会在 Harness 启动前提供三个选择：把受支持的用户数据复制到独立 home、直接复用官方 home，或全新开始。复制模式通过拒绝符号链接的白名单处理设置、凭据、会话、工作区元数据、Agent 预设、Skill 与连接状态，且不修改来源；Profile、`node_modules`、锁文件、预装插件 marker、隔离与健康状态、匿名用户 id 均不会复制。复用模式恢复原先共享 home 的行为，桌面版和官方 dsh 会有意共享 Profile 与插件状态。预装核对会按包名接管任意已有版本或来源，并识别 npm alias 以及相同 GitHub 仓库与子路径，不再安装第二份。经过审核的生命周期构建权限会与已有 `allowBuilds` 映射取并集，不删除其他条目，也不覆盖用户明确设置的 `false`。两种模式都会把选定的 `DSH_HOME` 传给每条插件生命周期命令。开发版还会一次性修复环境透传完善前产生的旧格式伪 marker，同时保持 schema 2 卸载墓碑不会自动重装的约束。
+首次普通启动时，如果发现官方 `~/.dsh`，应用会在 Harness 启动前提供三个选择：把受支持的用户数据导入独立 home、直接复用官方 home，或全新开始。选择页默认跟随操作系统语言，并提供即时中英文切换。导入模式通过拒绝符号链接的白名单处理设置、凭据、会话、工作区元数据、Agent 预设、Skill 与连接状态，且不修改来源；Profile、插件清单、`node_modules`、锁文件、预装插件 marker、构建许可、隔离与健康状态、匿名用户 id 均不会复制。导入和全新 home 会独立安装桌面预置插件，其他所需插件由用户在该环境重新安装。导入只会从复制得到的设置中删除 `ui-onboarding` 完成记录，使独立桌面环境显示自己的 API、IM 与外部工具配置向导；其余受支持设置保持不变。带版本的设置记录会为旧版本已导入的 home 执行一次相同重置，并保留此后真正完成的向导状态。复用模式会有意共享官方 Profile、插件、构建许可与向导状态，任一应用的修改都会作用于同一批文件。每条插件生命周期命令都会收到选定的 `DSH_HOME`。开发版还会修复环境透传完善前产生的旧格式伪 marker，同时保持 schema 2 卸载墓碑不会自动重装的约束。
 
-打包版本只携带经过固定版本和完整性校验的 `dshmarket@1.19.0`、`@xmanrui/dsh-im@1.0.2`、`dsh-skill-picker@0.2.0`、`dsh-font@1.1.0`、`dsh-pocket@1.12.3` 与 `dsh-better-sidebar@0.15.2` 归档。Harness 启动前只预设前五个插件；主界面可用后，右下角非阻塞卡片再校验、解压并配置 Better Sidebar。隐藏卡片不会停止任务，完成后提示重启应用，失败时提供重试与既有 Harness 日志入口。所有平台安装包都不再携带 Codex 和 Claude Code：用户在“外部工具”中点击安装后，客户端才从 npm 下载精确版本的官方 `@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2` 或 `@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2` 及其平台依赖，因此这一步需要联网。开发版使用仓库固定的 pnpm，安装版使用内置 pnpm，两者都不依赖系统 pnpm。联网时优先使用精确 registry 版本或固定 Git 提交，使社区插件保留可更新的依赖身份；内置归档作为离线回退。持久种子标记在用户卸载后继续保留，因此启动与延后安装卡片都不会擅自装回插件，而用户明确点击发现页安装时仍可重新安装。构建只使用这些受控输入，不会复制开发电脑 Web profile 中已经安装或更新过的插件。
+打包版本携带 `bundled-plugins/manifest.json` 中六个经过固定版本和完整性校验的归档。本地打包开始前，pnpm 会通过 registry 条目的 `latest` 稳定 dist-tag 解析版本，从 npm 官方 registry 下载 tarball，核对 registry 提供的 SHA-512，并原子替换整套快照；固定 Git 条目继续保留经过审核的提交和归档。GitHub 打包只解析一次快照，并让所有平台复用同一组文件。Harness 启动前按清单预设五个启动插件，且始终把安装包内的本地归档交给 pnpm，不会从 registry 解析或下载该插件包；普通传递依赖仍由 Profile 的 pnpm store 与解析规则管理。主界面可用后，右下角非阻塞卡片再从同一快照校验、解压并配置 Better Sidebar。隐藏卡片不会停止任务，完成后提示重启应用，失败时提供重试与既有 Harness 日志入口。所有平台安装包都不携带 Codex 和 Claude Code：用户在“外部工具”中点击安装后，客户端才从 npm 下载精确版本的官方 `@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2` 或 `@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2` 及其平台依赖，因此这一步需要联网。开发版使用仓库固定的 pnpm，安装版使用内置 pnpm，两者都不依赖系统 pnpm。持久种子标记在用户卸载后继续保留，因此启动与延后安装卡片都不会擅自装回插件，而用户明确点击发现页安装时仍可重新安装。打包不会复制开发电脑 Web profile 中已经安装或更新过的插件。
 
 开发与打包脚本会从 Desktop 和 Web 各自的应用目录执行。每个 Unix 打包命令都会把明确的平台与架构同时传给运行时和 Codex 准备步骤，使 macOS Apple 芯片、macOS Intel、Linux x64 与 Windows x64 的 staging 相互独立。
+
+## 可选终端命令
+
+Windows 与 macOS 安装版可以注册由桌面客户端管理的 `dsh` 命令，但不会把应用私有的 npm 或 pnpm 暴露到系统环境。Windows 安装向导提供默认不勾选的当前用户 PATH 选项，“通用设置”也提供安装、检查修复和移除；静默安装只有显式传入 `/ADDCLI=1` 才会启用。macOS 由“通用设置”在 `.zprofile` 或 `.bash_profile` 中维护带固定标记的精确区块，首次修改前保留一次备份；无法识别的 Shell 只显示手动说明，不自动修改配置。
+
+启动器始终使用应用内置的 Node、Harness 和 pnpm 路径，并在每次调用时读取 `data-home-setup.json`：导入与全新模式使用客户端独立 `dsh-home`，复用模式跟随官方 `~/.dsh`。首次目录选择尚未完成、设置文件损坏或内置运行时不完整时，命令会明确失败并提示打开客户端修复，不会静默创建另一套环境。发现其他来源的 `dsh` 时会先显示冲突，只有用户明确确认后才让客户端入口优先。卸载仅删除本应用写入的精确 PATH 条目或 Shell 标记区块。
 
 ## 桌面发行包
 
@@ -57,7 +63,7 @@ DEB 与 RPM 文件写入 `.artifacts/desktop-linux/`。与 macOS 相同，它们
 
 ## 进程生命周期
 
-Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web --host 127.0.0.1 --port 0`。所有打包平台都使用内置的目标平台原生 Node，不使用 Electron 或用户安装的 Node 可执行文件。宿主只把 `dsh web: http://127.0.0.1:<port>` 识别为就绪信号，将 stdout 和 stderr 追加到 Electron 的平台日志目录；应用退出时先发送 `SIGTERM`，超过固定期限后再发送 `SIGKILL`。默认关闭窗口只会隐藏到系统托盘；用户可以改为关闭即请求完整退出，所有显式退出都会等待 Harness 清理。Harness 在就绪前连续退出三次后会停止自动重启，并显示重试与日志操作。连接页等待十五秒后也会显示同一个固定日志入口，但不会把缓慢启动判为失败。
+Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web --host 127.0.0.1 --port 0`。所有打包平台都使用内置的目标平台原生 Node，不使用 Electron 或用户安装的 Node 可执行文件。宿主只把 `dsh web: http://127.0.0.1:<port>` 识别为就绪信号，将 stdout 和 stderr 追加到 Electron 的平台日志目录；应用退出时先发送 `SIGTERM`，超过固定期限后再发送 `SIGKILL`。默认关闭窗口只会隐藏到系统托盘；用户可以改为关闭即请求完整退出，所有显式退出都会等待 Harness 清理。启动期间，单向确定进度条只按桌面环境、内置运行时、Profile 兼容性、预设插件与 Harness 的真实里程碑前进，同时显示当前操作和插件名称；Harness 就绪时达到 100%，随后才把窗口交给 Web GUI。Harness 在就绪前连续退出三次后会停止自动重启，并显示重试与日志操作。连接页等待十五秒后也会显示同一个固定日志入口，但不会把缓慢启动判为失败。
 
 托盘可以恢复窗口、定位 Harness 日志、切换通知、启用已打包 macOS 的登录启动或退出。崩溃、最终启动失败和恢复通知均可关闭并按事件节流。桌面偏好以原子方式存入以仓库名命名的 Electron `userData`；非法字段会各自恢复安全默认值。
 

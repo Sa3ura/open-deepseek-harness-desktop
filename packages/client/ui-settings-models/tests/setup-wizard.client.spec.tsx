@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import type { SettingsOnboardingSectionRequest } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SetupWizard } from '../src/client/SetupWizard.tsx'
 import type { SetupWizardProps } from '../src/client/SetupWizard.tsx'
 import { ModelsSettingsStore } from '../src/client/store.ts'
@@ -50,7 +51,7 @@ function mount({ modelReady = false, acknowledge = true }: {
   const acknowledgeSpy = vi.spyOn(welcomeController, 'acknowledge')
     .mockImplementation(async () => acknowledge)
   const complete = vi.fn()
-  const openSection = vi.fn()
+  const openSection = vi.fn<(request: SettingsOnboardingSectionRequest) => void>()
   const localeStore = createSnapshotStore({
     active: 'zh',
     locales: [{ id: 'zh', label: '中文' }, { id: 'en', label: 'English' }],

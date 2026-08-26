@@ -33,9 +33,39 @@ env:
   DSH_TELEMETRY_DISABLED: '1'
 
 jobs:
+  bundled-plugins:
+    name: Resolve bundled plugins
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Resolve latest stable plugin archives
+        run: pnpm run refresh:desktop:bundled-plugins
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bundled-plugin-snapshot
+          path: apps/desktop/bundled-plugins
+          if-no-files-found: error
+          retention-days: 14
+
   macos:
     name: macOS ${{ matrix.arch }}
     if: ${{ github.event_name == 'push' || inputs.target == 'all' }}
+    needs: bundled-plugins
+    env:
+      DSH_BUNDLED_PLUGINS_REFRESH: '0'
     strategy:
       fail-fast: false
       matrix:
@@ -59,6 +89,15 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Use resolved bundled plugin snapshot
+        run: |
+          node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundled-plugin-snapshot
+          path: apps/desktop/bundled-plugins
+
       - name: Build macOS package
         run: pnpm run package:desktop:macos:${{ matrix.arch }}
 
@@ -74,6 +113,9 @@ jobs:
   windows:
     name: Windows x64
     if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'windows-x64' }}
+    needs: bundled-plugins
+    env:
+      DSH_BUNDLED_PLUGINS_REFRESH: '0'
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v6
@@ -88,6 +130,15 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Use resolved bundled plugin snapshot
+        run: |
+          node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundled-plugin-snapshot
+          path: apps/desktop/bundled-plugins
 
       - name: Build Windows installer
         run: pnpm run package:desktop:win:x64
@@ -106,6 +157,9 @@ jobs:
   linux:
     name: Linux x64
     if: ${{ github.event_name == 'push' || inputs.target == 'all' }}
+    needs: bundled-plugins
+    env:
+      DSH_BUNDLED_PLUGINS_REFRESH: '0'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -125,6 +179,15 @@ jobs:
           sudo apt-get install -yq rpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Use resolved bundled plugin snapshot
+        run: |
+          node -e "require('node:fs').rmSync('apps/desktop/bundled-plugins', { recursive: true, force: true })"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: bundled-plugin-snapshot
+          path: apps/desktop/bundled-plugins
 
       - name: Build Linux packages
         run: pnpm run package:desktop:linux:x64
