@@ -10,7 +10,6 @@ $cliDirectory = Join-Path $installRoot 'resources/cli-bin'
 $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $processGuardDiagnostic = Join-Path $env:TEMP 'DeepSeek-Harness-process-guard.log'
 Remove-Item -LiteralPath $processGuardDiagnostic -Force -ErrorAction SilentlyContinue
-$upgradeRoot = "$installRoot-update"
 $similarRoot = "$installRoot-old"
 
 foreach ($path in @(
@@ -56,12 +55,6 @@ if (-not $install.HasExited) {
 if ($install.ExitCode -ne 0) {
   throw "Windows installer exited with $($install.ExitCode)"
 }
-
-# Run the upgrade installer from a sibling whose name starts with the install
-# directory. The old electron-builder guard treated this as an installed app.
-New-Item -ItemType Directory -Path $upgradeRoot -Force | Out-Null
-$upgradeInstaller = Join-Path $upgradeRoot 'DeepSeek-Harness-windows-x64.exe'
-Copy-Item -LiteralPath $installer -Destination $upgradeInstaller -Force
 
 # Keep an unrelated executable alive in another prefix-similar sibling. The
 # precise guard must neither report nor terminate it.
@@ -141,54 +134,12 @@ try {
   $guardExitCode = $LASTEXITCODE
   Write-Host "Pre-upgrade process guard (exit $guardExitCode):`n$($guardOutput -join "`n")"
   if ($guardExitCode -ne 10) { throw "Process guard did not detect the running packaged application (exit $guardExitCode)" }
-  $upgradeStart = [System.Diagnostics.ProcessStartInfo]::new()
-  $upgradeStart.FileName = $upgradeInstaller
-  $upgradeStart.UseShellExecute = $false
-  $upgradeStart.ArgumentList.Add('/S')
-  $upgradeStart.ArgumentList.Add('/currentuser')
-  $upgradeStart.ArgumentList.Add('/ADDCLI=1')
-  $upgradeStart.ArgumentList.Add("/D=$installRoot")
-  $upgrade = [System.Diagnostics.Process]::Start($upgradeStart)
-  $upgradeDeadline = (Get-Date).AddMinutes(15)
-  $nextUpgradeProgress = (Get-Date).AddSeconds(60)
-  while (-not $upgrade.HasExited -and (Get-Date) -lt $upgradeDeadline) {
-    Start-Sleep -Milliseconds 500
-    $upgrade.Refresh()
-    if ((Get-Date) -ge $nextUpgradeProgress) {
-      $upgradeProcesses = @(
-        Get-CimInstance -ClassName Win32_Process |
-          Where-Object {
-            ($_.ExecutablePath -and (
-              $_.ExecutablePath.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase) -or
-              $_.ExecutablePath.StartsWith($upgradeRoot, [StringComparison]::OrdinalIgnoreCase)
-            )) -or ($_.CommandLine -and $_.CommandLine.Contains('DeepSeek-Harness-windows-x64.exe'))
-          } |
-          Select-Object ProcessId, ParentProcessId, Name, ExecutablePath, CommandLine
-      )
-      Write-Host "Upgrade installer still running:`n$($upgradeProcesses | Format-List | Out-String)"
-      $nextUpgradeProgress = (Get-Date).AddSeconds(60)
-    }
-  }
-  if (-not $upgrade.HasExited) {
-    $upgrade.Kill($true)
-    $upgrade.WaitForExit()
-    if (Test-Path -LiteralPath $processGuardDiagnostic) {
-      Write-Host "Installer process guard diagnostic:`n$(Get-Content -LiteralPath $processGuardDiagnostic -Raw)"
-    }
-    throw 'Windows upgrade installer did not exit within 15 minutes'
-  }
-  if ($upgrade.ExitCode -ne 0) {
-    if (Test-Path -LiteralPath $processGuardDiagnostic) {
-      Write-Host "Installer process guard diagnostic:`n$(Get-Content -LiteralPath $processGuardDiagnostic -Raw)"
-    }
-    $remainingOutput = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Action inspect -InstallDirectory $installRoot -AppExecutable 'DeepSeek Harness.exe' -ExcludeProcessId $PID 2>&1
-    Write-Host "Post-upgrade process guard (exit $LASTEXITCODE):`n$($remainingOutput -join "`n")"
-    throw "Windows upgrade installer exited with $($upgrade.ExitCode)"
-  }
-  if (-not $app.WaitForExit(30000)) { throw 'Upgrade did not close the installed desktop application' }
-  if (-not $orphanNode.WaitForExit(30000)) { throw 'Upgrade did not close the installation-owned orphan Node process' }
+  $stopOutput = & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $guardScript -Action stop -InstallDirectory $installRoot -AppExecutable 'DeepSeek Harness.exe' -ExcludeProcessId $PID 2>&1
+  if ($LASTEXITCODE -ne 0) { throw "Process guard failed to close packaged processes:`n$($stopOutput -join "`n")" }
+  if (-not $app.WaitForExit(30000)) { throw 'Process guard did not close the installed desktop application' }
+  if (-not $orphanNode.WaitForExit(30000)) { throw 'Process guard did not close the installation-owned orphan Node process' }
   $decoy.Refresh()
-  if ($decoy.HasExited) { throw 'Upgrade incorrectly closed an unrelated process from a prefix-similar directory' }
+  if ($decoy.HasExited) { throw 'Process guard incorrectly closed an unrelated process from a prefix-similar directory' }
 
   Remove-Item -LiteralPath $harnessLog -Force -ErrorAction SilentlyContinue
   $app = [System.Diagnostics.Process]::Start($appStart)
@@ -197,13 +148,13 @@ try {
   while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 500
     $app.Refresh()
-    if ($app.HasExited) { throw "Upgraded application exited before Harness readiness with $($app.ExitCode)" }
+    if ($app.HasExited) { throw "Restarted application exited before Harness readiness with $($app.ExitCode)" }
     if ((Test-Path -LiteralPath $harnessLog) -and ((Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^dsh web: http://127\.0\.0\.1:\d+$')) {
       $ready = $true
       break
     }
   }
-  if (-not $ready) { throw 'Upgraded Windows application did not reach Harness readiness within 300 seconds' }
+  if (-not $ready) { throw 'Restarted Windows application did not reach Harness readiness within 300 seconds' }
 } finally {
   if (-not $app.HasExited) {
     $null = $app.CloseMainWindow()
