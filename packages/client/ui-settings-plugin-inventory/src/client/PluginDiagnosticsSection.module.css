@@ -234,9 +234,9 @@
 .fixtureDialog {
   width: min(420px, 100%);
   padding: 0;
-  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 26%, #e7e9ec);
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 26%, var(--dsw-alias-border-l2));
   border-radius: 16px;
-  background: #fff;
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .fixtureDialogContent {
@@ -257,14 +257,14 @@
 }
 
 .fixtureDialogCopy strong {
-  color: #1f2329;
+  color: var(--dsw-alias-label-primary);
   font-size: 16px;
   line-height: 24px;
 }
 
 .fixtureDialogCopy p {
   margin: 0;
-  color: #646a73;
+  color: var(--dsw-alias-label-secondary);
   font-size: 13px;
   line-height: 20px;
 }
@@ -272,8 +272,8 @@
 .buildKey {
   border-radius: 6px;
   padding: 7px 8px;
-  background: #f5f6f7;
-  color: #25282d;
+  background: var(--dsw-alias-markdown-inline-code);
+  color: var(--dsw-alias-label-primary);
   font-family: var(--ds-font-family-code);
   font-size: 11px;
   line-height: 17px;
@@ -299,23 +299,24 @@
 }
 
 .fixtureCancel {
-  border: 1px solid #dfe1e5;
-  background: #fff;
-  color: #25282d;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
 }
 
 .fixtureCancel:hover {
-  background: #f5f6f7;
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .fixtureConfirm {
-  border: 1px solid #17181a;
-  background: #17181a;
-  color: #fff;
+  border: 1px solid var(--dsw-alias-button-primary-fill);
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
 }
 
 .fixtureConfirm:hover {
-  filter: brightness(0.96);
+  border-color: var(--dsw-alias-button-primary-hover);
+  background: var(--dsw-alias-button-primary-hover);
 }
 
 .inlineError button {
