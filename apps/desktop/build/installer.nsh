@@ -82,15 +82,11 @@ Var ProcessGuardOutput
     ${If} $0 == 1
       StrCpy $CliPathRequested "1"
     ${EndIf}
-    ${StdUtils.GetAllParameters} $0 "0"
-    ClearErrors
-    ${GetOptions} $0 "/ADDCLI=" $1
-    ${IfNot} ${Errors}
-      ${If} $1 == "1"
-        StrCpy $CliPathRequested "1"
-      ${ElseIf} $1 == "0"
-        StrCpy $CliPathRequested "0"
-      ${EndIf}
+    ${StdUtils.GetParameter} $1 "ADDCLI" ""
+    ${If} $1 == "1"
+      StrCpy $CliPathRequested "1"
+    ${ElseIf} $1 == "0"
+      StrCpy $CliPathRequested "0"
     ${EndIf}
   !macroend
 
@@ -140,20 +136,13 @@ Var ProcessGuardOutput
     # Re-read the opt-in in the instance that executes the install section.
     # Assisted installers can cross an outer/inner boundary after .onInit, so a
     # Var populated only by customInit is not a reliable silent-install input.
-    ${StdUtils.GetAllParameters} $0 "0"
-    ClearErrors
-    ${GetOptions} $0 "/ADDCLI=" $1
-    ${IfNot} ${Errors}
-      ${If} $1 == "1"
-        StrCpy $CliPathRequested "1"
-      ${ElseIf} $1 == "0"
-        StrCpy $CliPathRequested "0"
-      ${EndIf}
+    ${StdUtils.GetParameter} $1 "ADDCLI" ""
+    ${If} $1 == "1"
+      StrCpy $CliPathRequested "1"
+    ${ElseIf} $1 == "0"
+      StrCpy $CliPathRequested "0"
     ${EndIf}
     DetailPrint "Desktop CLI PATH requested: $CliPathRequested"
-    FileOpen $3 "$TEMP\DeepSeek-Harness-installer-diagnostic.txt" w
-    FileWrite $3 "parameters=$0$\r$\nrequested=$CliPathRequested$\r$\n"
-    FileClose $3
     ${If} $CliPathRequested == "1"
       ReadRegStr $2 HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}"
       ${If} $2 != ""
@@ -163,9 +152,6 @@ Var ProcessGuardOutput
       nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\cli-bin\manage-path.ps1" -Action add -Directory "$INSTDIR\resources\cli-bin"'
       Pop $0
       Pop $1
-      FileOpen $3 "$TEMP\DeepSeek-Harness-installer-diagnostic.txt" a
-      FileWrite $3 "path-exit=$0$\r$\npath-output=$1$\r$\n"
-      FileClose $3
       ${If} $0 == 0
         WriteRegDWORD HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_REGISTRY_VALUE}" 1
         WriteRegStr HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}" "$INSTDIR\resources\cli-bin"

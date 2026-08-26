@@ -7,8 +7,6 @@ $dshHome = Join-Path $env:RUNNER_TEMP 'DeepSeek Harness Home'
 $unpackedResources = Join-Path $PSScriptRoot '../../../.artifacts/desktop-windows/win-unpacked/resources'
 $cliDirectory = Join-Path $installRoot 'resources/cli-bin'
 $originalUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-$installerDiagnostic = Join-Path $env:TEMP 'DeepSeek-Harness-installer-diagnostic.txt'
-Remove-Item -LiteralPath $installerDiagnostic -Force -ErrorAction SilentlyContinue
 $upgradeRoot = "$installRoot-update"
 $similarRoot = "$installRoot-old"
 
@@ -92,13 +90,6 @@ foreach ($path in $required) {
 $registeredUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 $registeredEntries = @($registeredUserPath.Split(';') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 if (-not ($registeredEntries | Where-Object { [string]::Equals($_.TrimEnd('\', '/'), $cliDirectory.TrimEnd('\', '/'), [StringComparison]::OrdinalIgnoreCase) })) {
-  if (Test-Path $installerDiagnostic) {
-    Write-Host 'Installer CLI diagnostic:'
-    Get-Content -LiteralPath $installerDiagnostic | Write-Host
-  } else {
-    Write-Host "Installer CLI diagnostic was not created at $installerDiagnostic"
-  }
-  Write-Host "Current-user PATH after install: $registeredUserPath"
   throw "Silent installer did not register the exact desktop CLI directory: $cliDirectory"
 }
 $cliRegistration = Get-ItemProperty -Path 'HKCU:\Software\FLAQ.AI\DeepSeek Harness' -ErrorAction Stop
