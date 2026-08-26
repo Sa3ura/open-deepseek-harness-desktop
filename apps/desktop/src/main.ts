@@ -167,7 +167,10 @@ function desktopCapabilities(): DesktopCapabilities {
     packaged: app.isPackaged,
     launchAtLoginAvailable: app.isPackaged && process.platform === 'darwin',
     sourceUpdateAvailable: !app.isPackaged,
-    commandLineAvailable: app.isPackaged && (process.platform === 'win32' || process.platform === 'darwin'),
+    // Keep the row discoverable in source builds as well. DesktopCliManager
+    // reports `unsupported` there, while packaged macOS/Windows builds expose
+    // the real install, repair, and remove actions.
+    commandLineAvailable: process.platform === 'win32' || process.platform === 'darwin',
   }
 }
 

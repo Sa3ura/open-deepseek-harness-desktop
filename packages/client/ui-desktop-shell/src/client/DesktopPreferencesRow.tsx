@@ -51,6 +51,9 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
   const release = state.release
   const releaseDownload = state.releaseDownload
   const commandLine = state.commandLine
+  const commandLineActionUnavailable = commandLine?.phase === 'unsupported'
+    || commandLine?.phase === 'unsupported-shell'
+    || commandLine?.phase === 'setup-required'
   const releaseText = release.phase === 'unsupported'
     ? developmentUpdateAvailable
       ? t('release.developmentAvailable', { version: '0.1.1-rc.3' })
@@ -145,7 +148,7 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
                   {t('cli.remove')}
                 </Button>
               </>
-            ) : commandLine.phase === 'unsupported-shell' || commandLine.phase === 'setup-required' ? null : (
+            ) : commandLineActionUnavailable ? null : (
               <Button
                 variant="outline"
                 disabled={state.busy}

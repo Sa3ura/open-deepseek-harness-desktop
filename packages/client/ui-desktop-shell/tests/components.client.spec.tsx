@@ -144,6 +144,19 @@ describe('desktop shell components', () => {
     b.controller.dispose()
   })
 
+  it('shows the dsh setting in development mode without offering a non-functional install action', async () => {
+    const b = setup(undefined, {
+      phase: 'unsupported', commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/development/dsh-home',
+    })
+    render(<DesktopPreferencesRow {...({ controller: b.controller, t } as DesktopPreferencesRowProps)} />)
+
+    expect(await screen.findByText('dsh terminal command')).toBeTruthy()
+    expect(screen.getByText('Development mode does not modify PATH. Install or remove dsh from a packaged app.')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Install dsh' })).toBeNull()
+    expect(b.installCommandLine).not.toHaveBeenCalled()
+    b.controller.dispose()
+  })
+
   it('requires explicit confirmation before shadowing another dsh command', async () => {
     const b = setup(undefined, {
       phase: 'conflict', commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
