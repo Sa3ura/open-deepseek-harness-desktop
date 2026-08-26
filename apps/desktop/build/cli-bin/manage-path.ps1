@@ -48,7 +48,17 @@ if ($updated.Length -gt 32767) {
   throw 'The current-user PATH would exceed the Windows environment-variable limit.'
 }
 
-[Environment]::SetEnvironmentVariable('Path', $updated, 'User')
+$environmentKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+try {
+  $pathKind = try {
+    $environmentKey.GetValueKind('Path')
+  } catch {
+    [Microsoft.Win32.RegistryValueKind]::ExpandString
+  }
+  $environmentKey.SetValue('Path', $updated, $pathKind)
+} finally {
+  $environmentKey.Dispose()
+}
 
 if ($Action -eq 'add') {
   $null = New-Item -Path $registrationKey -Force
@@ -66,24 +76,17 @@ if ($Action -eq 'add') {
 if (-not ('Native.EnvironmentBroadcast' -as [type])) {
   Add-Type -Namespace Native -Name EnvironmentBroadcast -MemberDefinition @'
     [System.Runtime.InteropServices.DllImport("user32.dll", SetLastError = true, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
-    public static extern System.IntPtr SendMessageTimeout(
+    public static extern bool SendNotifyMessage(
       System.IntPtr hWnd,
       uint Msg,
       System.UIntPtr wParam,
-      string lParam,
-      uint fuFlags,
-      uint uTimeout,
-      out System.UIntPtr lpdwResult);
+      string lParam);
 '@
 }
 
-$result = [UIntPtr]::Zero
-[void][Native.EnvironmentBroadcast]::SendMessageTimeout(
+[void][Native.EnvironmentBroadcast]::SendNotifyMessage(
   [IntPtr]0xffff,
   0x001A,
   [UIntPtr]::Zero,
-  'Environment',
-  0x0002,
-  5000,
-  [ref]$result
+  'Environment'
 )
