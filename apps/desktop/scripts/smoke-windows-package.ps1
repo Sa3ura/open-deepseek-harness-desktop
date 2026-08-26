@@ -160,8 +160,7 @@ try {
     Start-Sleep -Milliseconds 500
     $app.Refresh()
     if ($app.HasExited) { throw "Upgraded application exited before Harness readiness with $($app.ExitCode)" }
-    if ((Test-Path -LiteralPath $harnessLog)
-      -and (Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^dsh web: http://127\.0\.0\.1:\d+$') {
+    if ((Test-Path -LiteralPath $harnessLog) -and ((Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^dsh web: http://127\.0\.0\.1:\d+$')) {
       $ready = $true
       break
     }
@@ -245,8 +244,7 @@ foreach ($plugin in @($bundledPlugins | Where-Object { $_.InstallPolicy -eq 'man
   }
   if (Test-Path $markerPath) { throw "Manual bundled plugin marker exists before user action: $markerPath" }
 }
-$bundledFailure = (Test-Path -LiteralPath $harnessLog) `
-  -and (Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^\[bundled-plugin\]'
+$bundledFailure = (Test-Path -LiteralPath $harnessLog) -and ((Get-Content -LiteralPath $harnessLog -Raw) -match '(?m)^\[bundled-plugin\]')
 if ($bundledFailure) {
   throw "Bundled plugin failure was written to $harnessLog"
 }
