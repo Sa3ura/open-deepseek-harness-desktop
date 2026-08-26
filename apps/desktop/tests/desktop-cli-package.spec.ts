@@ -20,6 +20,7 @@ describe('packaged desktop CLI inputs', () => {
     expect(installer).not.toContain('${GetOptions} $CMDLINE "/ADDCLI=" $1')
     expect(installer).toContain('${If} $1 == "1"')
     expect(installer).toContain('DetailPrint "Desktop CLI PATH requested: $CliPathRequested"')
+    expect(installer).toContain('DeepSeek-Harness-installer-diagnostic.txt')
     expect(installer).toContain('/SD IDOK')
     expect(pathManager).toContain("[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')")
     expect(pathManager).toContain("$environmentKey.SetValue('Path', $updated, $pathKind)")
