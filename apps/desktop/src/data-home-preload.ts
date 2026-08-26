@@ -43,6 +43,7 @@ const zh = {
   chooseSource: '选择已有配置目录', changeSource: '选择其他目录', restoreDefaultSource: '恢复默认目录',
   sourceRequired: '需要先选择已有配置目录。', sourceInvalid: '这里不像有效的 DSH 配置目录，请重新选择。',
   sourceReadFailed: '无法读取此目录，请检查权限后重试。',
+  simulateMissingSource: '开发：模拟未找到配置', restoreDetectedSource: '开发：恢复真实检测',
 }
 
 const en: typeof zh = {
@@ -66,6 +67,7 @@ const en: typeof zh = {
   chooseSource: 'Choose existing configuration', changeSource: 'Choose another directory', restoreDefaultSource: 'Restore default directory',
   sourceRequired: 'Choose an existing configuration directory first.', sourceInvalid: 'This does not look like a valid DSH configuration directory. Choose another directory.',
   sourceReadFailed: 'This directory cannot be read. Check its permissions and try again.',
+  simulateMissingSource: 'Dev: simulate missing config', restoreDetectedSource: 'Dev: restore detected config',
 }
 
 const details: Record<'zh' | 'en', Record<DataHomeMode, DetailCopy>> = {
@@ -143,6 +145,8 @@ window.addEventListener('DOMContentLoaded', () => {
   const languageMenu = required('#language-menu')
   const languageCurrent = required('#language-current')
   const languageOptions = [...document.querySelectorAll<HTMLButtonElement>('.language-option')]
+  const developmentTools = required('#development-tools')
+  const simulateMissingSourceButton = required('#simulate-missing-source') as HTMLButtonElement
 
   const choices = [...document.querySelectorAll<HTMLButtonElement>('.choice')]
   const overlay = required('#overlay')
@@ -154,6 +158,7 @@ window.addEventListener('DOMContentLoaded', () => {
   const plugins = required('#plugins-value')
   const builds = required('#builds-value')
   const parameters = new URLSearchParams(window.location.search)
+  const development = parameters.get('development') === 'true'
   const requestedMode = parameters.get('selected')
   const defaultSource = parameters.get('defaultSource')?.trim() || undefined
   const sourceCandidate = parameters.get('sourceCandidate')?.trim() || undefined
@@ -163,28 +168,40 @@ window.addEventListener('DOMContentLoaded', () => {
     : source === undefined ? 'missing' : 'valid'
   let sourceErrorKind: 'invalid' | 'unreadable' | undefined
   let selected: DataHomeMode = isDataHomeMode(requestedMode) ? requestedMode : 'imported'
+  let simulateMissingSource = false
+  let selectionBeforeSimulation: DataHomeMode | undefined
+
+  developmentTools.hidden = !development
+
+  const displayedSource = (): string | undefined => simulateMissingSource ? undefined : source
+  const displayedSourceState = (): 'valid' | 'missing' | 'unreadable' => simulateMissingSource ? 'missing' : sourceState
 
   const renderSource = (): void => {
     const copy = language === 'zh' ? zh : en
-    sourcePanel.dataset.status = sourceState
-    const usingCustomSource = source !== undefined && source !== defaultSource
-    sourceStatusText.textContent = sourceState === 'unreadable'
+    const visibleSource = displayedSource()
+    const visibleSourceState = displayedSourceState()
+    sourcePanel.dataset.status = visibleSourceState
+    const usingCustomSource = visibleSource !== undefined && visibleSource !== defaultSource
+    sourceStatusText.textContent = visibleSourceState === 'unreadable'
       ? copy.sourceUnreadable
-      : source === undefined ? copy.sourceMissing : usingCustomSource ? copy.sourceCustom : copy.sourceDetected
-    const displayedPath = source ?? (sourceState === 'unreadable' ? sourceCandidate : undefined)
+      : visibleSource === undefined ? copy.sourceMissing : usingCustomSource ? copy.sourceCustom : copy.sourceDetected
+    const displayedPath = visibleSource ?? (visibleSourceState === 'unreadable' ? sourceCandidate : undefined)
     sourcePath.textContent = displayedPath ?? ''
     sourcePath.hidden = displayedPath === undefined
-    sourceSummary.textContent = sourceState === 'unreadable'
+    sourceSummary.textContent = visibleSourceState === 'unreadable'
       ? copy.sourceUnreadableSummary
-      : source === undefined ? copy.sourceMissingSummary : copy.sourceReadySummary
-    sourceError.textContent = sourceErrorKind === 'invalid'
+      : visibleSource === undefined ? copy.sourceMissingSummary : copy.sourceReadySummary
+    const visibleErrorKind = simulateMissingSource ? undefined : sourceErrorKind
+    sourceError.textContent = visibleErrorKind === 'invalid'
       ? copy.sourceInvalid
-      : sourceErrorKind === 'unreadable' ? copy.sourceReadFailed : ''
-    sourceError.hidden = sourceErrorKind === undefined
-    chooseSourceButton.textContent = source === undefined ? copy.chooseSource : copy.changeSource
+      : visibleErrorKind === 'unreadable' ? copy.sourceReadFailed : ''
+    sourceError.hidden = visibleErrorKind === undefined
+    chooseSourceButton.textContent = visibleSource === undefined ? copy.chooseSource : copy.changeSource
     restoreDefaultSourceButton.textContent = copy.restoreDefaultSource
-    restoreDefaultSourceButton.hidden = defaultSource === undefined || source === defaultSource
-    for (const requirement of sourceRequirements) requirement.hidden = source !== undefined
+    restoreDefaultSourceButton.hidden = simulateMissingSource || defaultSource === undefined || source === defaultSource
+    for (const requirement of sourceRequirements) requirement.hidden = visibleSource !== undefined
+    simulateMissingSourceButton.textContent = simulateMissingSource ? copy.restoreDetectedSource : copy.simulateMissingSource
+    simulateMissingSourceButton.ariaPressed = String(simulateMissingSource)
   }
 
   const renderCopy = (): void => {
@@ -226,10 +243,14 @@ window.addEventListener('DOMContentLoaded', () => {
       const result = await ipcRenderer.invoke('dsh:data-home:choose-source') as DataHomeSourceResult
       if (result.status === 'cancelled') return
       if (result.status !== 'valid') {
+        simulateMissingSource = false
+        selectionBeforeSimulation = undefined
         sourceErrorKind = result.status
         renderSource()
         return
       }
+      simulateMissingSource = false
+      selectionBeforeSimulation = undefined
       source = result.path
       sourceState = 'valid'
       sourceErrorKind = undefined
@@ -245,7 +266,7 @@ window.addEventListener('DOMContentLoaded', () => {
   for (const choice of choices) {
     choice.addEventListener('click', () => {
       const mode = choice.dataset.mode as DataHomeMode
-      if (mode !== 'fresh' && source === undefined) {
+      if (mode !== 'fresh' && displayedSource() === undefined) {
         void chooseSource(mode)
         return
       }
@@ -253,6 +274,19 @@ window.addEventListener('DOMContentLoaded', () => {
     })
   }
   chooseSourceButton.addEventListener('click', () => { void chooseSource() })
+  simulateMissingSourceButton.addEventListener('click', () => {
+    if (!development) return
+    simulateMissingSource = !simulateMissingSource
+    if (simulateMissingSource) {
+      selectionBeforeSimulation = selected
+      select('fresh')
+    } else if (selectionBeforeSimulation !== undefined) {
+      const restoredSelection = selectionBeforeSimulation
+      selectionBeforeSimulation = undefined
+      select(restoredSelection)
+    }
+    renderSource()
+  })
   restoreDefaultSourceButton.addEventListener('click', () => {
     if (defaultSource === undefined) return
     source = defaultSource
@@ -313,7 +347,7 @@ window.addEventListener('DOMContentLoaded', () => {
   required('#acknowledge').addEventListener('click', hideComparison)
   overlay.addEventListener('click', (event) => { if (event.target === overlay) hideComparison() })
   required('#continue').addEventListener('click', () => {
-    if (selected !== 'fresh' && source === undefined) {
+    if (selected !== 'fresh' && displayedSource() === undefined) {
       void chooseSource(selected)
       return
     }
@@ -339,7 +373,7 @@ window.addEventListener('DOMContentLoaded', () => {
     if (event.key === 'Escape' && !overlay.hidden) hideComparison()
     else if (event.key === 'Escape') ipcRenderer.send('dsh:data-home:cancelled')
     else if (event.key === 'Enter' && overlay.hidden && !(event.target instanceof HTMLButtonElement)) {
-      if (selected !== 'fresh' && source === undefined) void chooseSource(selected)
+      if (selected !== 'fresh' && displayedSource() === undefined) void chooseSource(selected)
       else ipcRenderer.send('dsh:data-home:selected', selected === 'fresh' ? { mode: selected } : { mode: selected, source })
     }
   })

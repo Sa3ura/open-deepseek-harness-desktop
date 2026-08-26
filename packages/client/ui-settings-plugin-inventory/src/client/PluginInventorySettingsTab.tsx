@@ -13,13 +13,9 @@ import {
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import css from './PluginInventorySettingsTab.module.css'
-import {
-  ImportedPluginRestoreCard,
-  type ImportedPluginRestoreInjected,
-} from './ImportedPluginRestore.tsx'
 
 /** Registration-side Remote face used by the section. */
-export interface PluginInventorySettingsTabInjected extends Partial<ImportedPluginRestoreInjected> {
+export interface PluginInventorySettingsTabInjected {
   /** Read a current Host inventory snapshot. */
   list: () => Promise<PluginInventorySnapshot>
   /** Start an exact profile-plugin removal. */
@@ -79,14 +75,6 @@ export function PluginInventorySettingsTab({
   list,
   startUninstall,
   getInstall,
-  getRestore,
-  checkSources,
-  startRestore,
-  chooseLocalDirectory,
-  chooseLocalArchive,
-  dismissRestore,
-  ignoreRestore,
-  restart,
   t,
 }: PluginInventorySettingsTabProps): ReactNode {
   const catalogId = useId()
@@ -156,21 +144,6 @@ export function PluginInventorySettingsTab({
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
-      {getRestore !== undefined && checkSources !== undefined && startRestore !== undefined
-        && chooseLocalDirectory !== undefined && chooseLocalArchive !== undefined && dismissRestore !== undefined
-        && ignoreRestore !== undefined && restart !== undefined ? (
-          <ImportedPluginRestoreCard
-            getRestore={getRestore}
-            checkSources={checkSources}
-            startRestore={startRestore}
-            chooseLocalDirectory={chooseLocalDirectory}
-            chooseLocalArchive={chooseLocalArchive}
-            dismissRestore={dismissRestore}
-            ignoreRestore={ignoreRestore}
-            restart={restart}
-            t={t}
-          />
-        ) : null}
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'error' ? (
         <div className={css.failure}>

@@ -11,9 +11,10 @@ import { PluginDiscovery } from './PluginDiscovery.tsx'
 import type { PluginDiscoveryInjected } from './PluginDiscovery.tsx'
 import { ExternalToolsSection, type ExternalToolsSectionInjected } from './ExternalToolsSection.tsx'
 import {
-  ImportedPluginRestoreDialog,
+  ImportedPluginRestoreSection,
   importedPluginRestoreInjected,
 } from './ImportedPluginRestore.tsx'
+import { readImportedPluginRestoreBridge } from './imported-restore-bridge.ts'
 import { en, zh, type PluginInventoryLocaleKey } from './locales.ts'
 import {
   getPluginInstall,
@@ -50,6 +51,7 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-plugin-inventory: dictionaries')
 
   const t = ctx.locale.bind(NS)
+  const importedPluginRestoreAvailable = readImportedPluginRestoreBridge() !== undefined
   const list: PluginInventorySettingsTabInjected['list'] = async () => {
     const result = await ctx.remote.pluginInventory.list()
     if (!result.ok) {
@@ -74,7 +76,6 @@ export function apply(ctx: ClientContext): void {
     list,
     getInstall,
     startUninstall,
-    ...importedPluginRestoreInjected(),
   })
   const diagnosticsInjected = (): PluginDiagnosticsSectionInjected => ({
     list,
@@ -163,6 +164,16 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: externalToolsInjected,
   }, ExternalToolsSection))
+  if (importedPluginRestoreAvailable) {
+    ctx.slots.inject('settings.section', () => ctx.slots.register({
+      name: 'settings.section',
+      id: 'plugin-restore',
+      order: 22,
+      label: () => t('restore.nav'),
+      locale: NS,
+      inject: importedPluginRestoreInjected,
+    }, ImportedPluginRestoreSection))
+  }
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
     id: 'diagnostics',
@@ -176,11 +187,4 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: discoveryInjected,
   }, PluginDiscovery))
-  ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-    name: 'shell.overlay',
-    id: 'imported-plugin-restore',
-    order: 10,
-    locale: NS,
-    inject: importedPluginRestoreInjected,
-  }, ImportedPluginRestoreDialog))
 }

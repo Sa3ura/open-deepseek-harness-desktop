@@ -192,22 +192,37 @@ describe('ImportedPluginRestore', () => {
     ],
   }
 
+  it('renders a durable empty state on the dedicated Settings page', async () => {
+    render(<ImportedPluginRestore
+      t={t}
+      getRestore={async () => undefined}
+      checkSources={vi.fn()}
+      startRestore={vi.fn()}
+      chooseLocalDirectory={vi.fn()}
+      chooseLocalArchive={vi.fn()}
+      ignoreRestore={vi.fn()}
+      restart={vi.fn()}
+    />)
+
+    expect(screen.getByText(en['restore.loading'])).toBeTruthy()
+    expect(await screen.findByText(en['restore.empty'])).toBeTruthy()
+  })
+
   it('defaults ordinary plugins on, keeps disconnected tools off, and submits opaque ids only', async () => {
     const startRestore = vi.fn(async () => ({ ...snapshot, active: true, firstPromptDismissed: true }))
     const chooseLocalDirectory = vi.fn(async () => snapshot)
     render(<ImportedPluginRestore
-      mode="dialog"
       t={t}
       getRestore={async () => snapshot}
       checkSources={async () => snapshot}
       startRestore={startRestore}
       chooseLocalDirectory={chooseLocalDirectory}
       chooseLocalArchive={vi.fn()}
-      dismissRestore={vi.fn()}
       ignoreRestore={vi.fn()}
       restart={vi.fn()}
     />)
     const plugin = await screen.findByRole('checkbox', { name: /community-plugin/u })
+    expect(screen.queryByRole('region', { name: en['restore.development.title'] })).toBeNull()
     const codex = screen.getByRole('checkbox', { name: /dsh-subagent-codex/u })
     const local = screen.getByRole('checkbox', { name: /local-plugin/u })
     expect((plugin as HTMLInputElement).checked).toBe(true)
@@ -222,23 +237,60 @@ describe('ImportedPluginRestore', () => {
     await waitFor(() => { expect(startRestore).toHaveBeenCalledWith(['plugin']) })
   })
 
-  it('dismisses the first prompt without deleting the reopenable restore list', async () => {
-    const dismissRestore = vi.fn(async () => ({ ...snapshot, firstPromptDismissed: true }))
+  it('keeps ignored entries visible on the dedicated recovery page', async () => {
+    const ignoreRestore = vi.fn(async () => ({
+      ...snapshot,
+      ignored: true,
+      entries: snapshot.entries.map(entry => ({ ...entry, state: 'ignored' as const })),
+    }))
     render(<ImportedPluginRestore
-      mode="dialog"
       t={t}
       getRestore={async () => snapshot}
       checkSources={async () => snapshot}
       startRestore={vi.fn()}
       chooseLocalDirectory={vi.fn()}
       chooseLocalArchive={vi.fn()}
-      dismissRestore={dismissRestore}
+      ignoreRestore={ignoreRestore}
+      restart={vi.fn()}
+    />)
+    fireEvent.click(await screen.findByRole('button', { name: en['restore.ignore'] }))
+    await waitFor(() => { expect(ignoreRestore).toHaveBeenCalledOnce() })
+    expect(screen.getByRole('heading', { name: en['restore.title'] })).toBeTruthy()
+    expect(screen.getAllByText(en['restore.state.ignored'])).toHaveLength(3)
+  })
+
+  it('simulates source failures in development without invoking network or install operations', async () => {
+    const checkSources = vi.fn(async () => snapshot)
+    const startRestore = vi.fn(async () => snapshot)
+    render(<ImportedPluginRestore
+      development
+      t={t}
+      getRestore={async () => snapshot}
+      checkSources={checkSources}
+      startRestore={startRestore}
+      chooseLocalDirectory={vi.fn()}
+      chooseLocalArchive={vi.fn()}
       ignoreRestore={vi.fn()}
       restart={vi.fn()}
     />)
-    fireEvent.click(await screen.findByRole('button', { name: en['restore.later'] }))
-    await waitFor(() => { expect(dismissRestore).toHaveBeenCalledOnce() })
-    expect(screen.queryByRole('heading', { name: en['restore.title'] })).toBeNull()
+
+    await screen.findByRole('region', { name: en['restore.development.title'] })
+    await waitFor(() => { expect(checkSources).toHaveBeenCalledOnce() })
+    fireEvent.click(screen.getByRole('button', { name: en['restore.development.offline'] }))
+    expect(screen.getAllByText(en['restore.availability.unknown']).length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: en['restore.install'] }).hasAttribute('disabled')).toBe(true)
+    expect(checkSources).toHaveBeenCalledOnce()
+    expect(startRestore).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: en['restore.development.not-found'] }))
+    expect(screen.getAllByText(en['restore.availability.unavailable']).length).toBeGreaterThan(0)
+    expect((screen.getByRole('checkbox', { name: /community-plugin/u }) as HTMLInputElement).disabled).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: en['restore.development.real'] }))
+    await waitFor(() => {
+      expect((screen.getByRole('checkbox', { name: /community-plugin/u }) as HTMLInputElement).checked).toBe(true)
+    })
+    expect(screen.getByRole('button', { name: en['restore.install'] }).hasAttribute('disabled')).toBe(false)
   })
 })
 

@@ -14,7 +14,7 @@ Status: implemented
 
 **只有用户在首次启动明确选择后，才使用现有官方 `~/.dsh`。** Harness 启动前由原生对话框提供安全复制到独立 home、直接复用官方 home 或全新开始。复制模式使用白名单处理设置、不透明凭据文档、会话、工作区元数据、Agent 预设、Skill 与连接状态；拒绝符号链接，并以 staging 目录原子改名完成。直接复用则有意恢复原先共享配置和插件状态的行为。持久选择记录位于 Harness home 之外，因此可以在 Harness 启动前读取。
 
-**插件执行状态依据可迁移且由用户选择的恢复清单重新建立。** Profile、`node_modules`、锁文件、预装 seed marker、依赖健康与隔离记录、匿名用户 id 均排除。导入会把官方 Web Profile 的有序 bundle 与直接依赖取交集，只把包身份、原始说明符、分类、默认选择和有界诊断保存到 `imported-plugin-restore.v1.json`。registry 范围、npm alias 与不含凭据的 Git 来源可供选择；本地来源和带凭据 URL 会显示原因但不能执行。渲染层只提交不透明恢复 id，Electron 解析持久清单中的说明符并串行调用现有插件 CLI。打包预置插件先完成核对，同名恢复项显示为“客户端已提供”，不会重复安装。失败项保留在“插件”页面重试，不阻止 Harness 启动。
+**插件执行状态依据可迁移且由用户选择的恢复清单重新建立。** Profile、`node_modules`、锁文件、预装 seed marker、依赖健康与隔离记录、匿名用户 id 均排除。导入会把官方 Web Profile 的有序 bundle 与直接依赖取交集，只把包身份、原始说明符、分类、默认选择和有界诊断保存到 `imported-plugin-restore.v1.json`。registry 范围、npm alias 与不含凭据的 Git 来源可供选择；本地来源和带凭据 URL 会显示原因但不能执行。渲染层只提交不透明恢复 id，Electron 解析持久清单中的说明符并串行调用现有插件 CLI。打包预置插件先完成核对，同名恢复项显示为“客户端已提供”，不会重复安装。失败项保留在独立的“插件恢复”设置页面重试，不阻止 Harness 启动。
 
 **导入的构建策略经过收窄后合并。** 导入只读取官方 Web Profile `allowBuilds` 映射中的布尔项。独立 Profile 保留注释与其他 pnpm 配置；任一侧明确设置的 `false` 优先，同时绝不导入 `dangerouslyAllowAllBuilds` 等全局降级策略。官方 Profile 元数据损坏时只记录有界来源问题，不取消用户数据导入。
 

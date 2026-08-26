@@ -11,18 +11,37 @@ import { PluginInventorySettingsTab } from '../src/client/PluginInventorySetting
 import { PluginDiagnosticsSection } from '../src/client/PluginDiagnosticsSection.tsx'
 import { ExternalToolsSection } from '../src/client/ExternalToolsSection.tsx'
 import { PluginDiscovery } from '../src/client/PluginDiscovery.tsx'
-import { ImportedPluginRestoreDialog } from '../src/client/ImportedPluginRestore.tsx'
+import { ImportedPluginRestoreSection } from '../src/client/ImportedPluginRestore.tsx'
 import type { PluginInventorySettingsTabInjected } from '../src/client/PluginInventorySettingsTab.tsx'
 
 usePinnedBrowserLanguages('zh-CN')
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  delete (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop
+})
 
 const EMPTY = { entries: [], dependencyHealth: { lastRepair: null, quarantined: [] } }
 type ListResult =
   | { readonly ok: true; readonly value: typeof EMPTY }
   | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
 
-async function bench() {
+const restoreBridge = {
+  development: true,
+  get: vi.fn(),
+  checkSources: vi.fn(),
+  start: vi.fn(),
+  chooseLocalDirectory: vi.fn(),
+  chooseLocalArchive: vi.fn(),
+  dismiss: vi.fn(),
+  ignore: vi.fn(),
+}
+
+async function bench(options: { desktopRestore?: boolean } = {}) {
+  if (options.desktopRestore !== false) {
+    ;(globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop = {
+      importedPlugins: restoreBridge,
+    }
+  }
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
@@ -99,14 +118,16 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(external.component).toBe(ExternalToolsSection)
     expect(external.options).toMatchObject({ id: 'external-tools', order: 18 })
     expect(resolveSlotLabel(external.options.label)).toBe('外部工具')
+    const restore = sections.find(section => section.options.id === 'plugin-restore')!
+    expect(restore.component).toBe(ImportedPluginRestoreSection)
+    expect(restore.options).toMatchObject({ id: 'plugin-restore', order: 22 })
+    expect(resolveSlotLabel(restore.options.label)).toBe('插件恢复')
     const diagnostics = sections.find(section => section.options.id === 'diagnostics')!
     expect(diagnostics.component).toBe(PluginDiagnosticsSection)
     expect(diagnostics.options).toMatchObject({ id: 'diagnostics', order: 25 })
     expect(resolveSlotLabel(diagnostics.options.label)).toBe('诊断')
     expect(b.slots.entries('conversation.hero.pluginDiscovery')[0]?.component).toBe(PluginDiscovery)
-    const overlays = b.slots.entries('shell.overlay')
-    expect(overlays.find(entry => entry.options.id === 'imported-plugin-restore')?.component).toBe(ImportedPluginRestoreDialog)
-    expect(overlays).toHaveLength(1)
+    expect(b.slots.entries('shell.overlay')).toHaveLength(0)
     expect(b.list).not.toHaveBeenCalled()
 
     const injected = (entry.inject as unknown as () => PluginInventorySettingsTabInjected)()
@@ -114,6 +135,15 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(b.list).toHaveBeenCalledOnce()
     b.list.mockResolvedValueOnce({ ok: false, error: { code: 'REMOTE_ERROR', message: 'unavailable' } })
     await expect(injected.list()).rejects.toThrow('pluginInventory.list failed: REMOTE_ERROR: unavailable')
+    await b.ctx.fiber.dispose()
+  })
+
+  it('does not expose desktop-only plugin recovery in an ordinary Web client', async () => {
+    const b = await bench({ desktopRestore: false })
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+
+    expect(b.slots.entries('settings.section').some(section => section.options.id === 'plugin-restore')).toBe(false)
     await b.ctx.fiber.dispose()
   })
 
@@ -133,6 +163,8 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     const englishSections = b.slots.entries('settings.section')
     expect(resolveSlotLabel(englishSections.find(section => section.options.id === 'external-tools')!.options.label))
       .toBe('External tools')
+    expect(resolveSlotLabel(englishSections.find(section => section.options.id === 'plugin-restore')!.options.label))
+      .toBe('Plugin recovery')
     expect(resolveSlotLabel(englishSections.find(section => section.options.id === 'diagnostics')!.options.label))
       .toBe('Diagnostics')
 
@@ -145,11 +177,10 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
       expect(b.slots.entries('settings.plugins.tab')[0]?.component).toBe(PluginInventorySettingsTab)
       const sections = b.slots.entries('settings.section')
       expect(sections.find(section => section.options.id === 'external-tools')?.component).toBe(ExternalToolsSection)
+      expect(sections.find(section => section.options.id === 'plugin-restore')?.component).toBe(ImportedPluginRestoreSection)
       expect(sections.find(section => section.options.id === 'diagnostics')?.component).toBe(PluginDiagnosticsSection)
       expect(b.slots.entries('conversation.hero.pluginDiscovery')[0]?.component).toBe(PluginDiscovery)
-      const overlays = b.slots.entries('shell.overlay')
-      expect(overlays.find(entry => entry.options.id === 'imported-plugin-restore')?.component).toBe(ImportedPluginRestoreDialog)
-      expect(overlays).toHaveLength(1)
+      expect(b.slots.entries('shell.overlay')).toHaveLength(0)
     })
 
     await fiber.dispose()

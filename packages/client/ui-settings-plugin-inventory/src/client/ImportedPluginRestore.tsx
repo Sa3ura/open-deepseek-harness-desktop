@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import {
   readImportedPluginRestoreBridge,
@@ -10,27 +11,27 @@ import { restartDesktopApplication } from './bundled-install-bridge.ts'
 import css from './ImportedPluginRestore.module.css'
 
 export interface ImportedPluginRestoreInjected {
+  readonly development?: boolean
   readonly getRestore: () => Promise<ImportedPluginRestoreSnapshot | undefined>
   readonly checkSources: () => Promise<ImportedPluginRestoreSnapshot | undefined>
   readonly startRestore: (restoreIds: readonly string[]) => Promise<ImportedPluginRestoreSnapshot>
   readonly chooseLocalDirectory: (restoreId: string) => Promise<ImportedPluginRestoreSnapshot | undefined>
   readonly chooseLocalArchive: (restoreId: string) => Promise<ImportedPluginRestoreSnapshot | undefined>
-  readonly dismissRestore: () => Promise<ImportedPluginRestoreSnapshot | undefined>
   readonly ignoreRestore: () => Promise<ImportedPluginRestoreSnapshot | undefined>
   readonly restart: () => Promise<boolean>
 }
 
 export interface ImportedPluginRestoreProps extends ImportedPluginRestoreInjected {
-  readonly mode: 'dialog' | 'card'
   readonly t: (key: PluginInventoryLocaleKey, params?: Record<string, string | number>) => string
 }
 
-export type ImportedPluginRestoreDialogProps = Omit<ImportedPluginRestoreProps, 'mode'>
+export type ImportedPluginRestoreSectionProps = ImportedPluginRestoreProps & PropsRuntime<'settings.section'>
 
 /** Desktop bridge methods injected into both restore presentations. */
 export function importedPluginRestoreInjected(): ImportedPluginRestoreInjected {
   const bridge = readImportedPluginRestoreBridge()
   return {
+    development: bridge?.development === true,
     getRestore: () => bridge?.get() ?? Promise.resolve(undefined),
     checkSources: () => bridge?.checkSources() ?? Promise.resolve(undefined),
     startRestore: ids => bridge === undefined
@@ -38,7 +39,6 @@ export function importedPluginRestoreInjected(): ImportedPluginRestoreInjected {
       : bridge.start(ids),
     chooseLocalDirectory: id => bridge?.chooseLocalDirectory(id) ?? Promise.resolve(undefined),
     chooseLocalArchive: id => bridge?.chooseLocalArchive(id) ?? Promise.resolve(undefined),
-    dismissRestore: () => bridge?.dismiss() ?? Promise.resolve(undefined),
     ignoreRestore: () => bridge?.ignore() ?? Promise.resolve(undefined),
     restart: restartDesktopApplication,
   }
@@ -58,28 +58,72 @@ function availabilityKey(entry: ImportedPluginRestoreEntry): PluginInventoryLoca
   return `restore.availability.${entry.availability}`
 }
 
-/** Render the first-run modal or the persistent Plugins-page recovery card. */
+export type ImportedPluginSourceSimulation =
+  | 'checking'
+  | 'offline'
+  | 'timeout'
+  | 'authentication'
+  | 'rate-limit'
+  | 'not-found'
+
+const SOURCE_SIMULATIONS: readonly ImportedPluginSourceSimulation[] = [
+  'checking',
+  'offline',
+  'timeout',
+  'authentication',
+  'rate-limit',
+  'not-found',
+]
+
+/** Produce a renderer-only source-check fixture without mutating the persisted restore snapshot. */
+export function simulateImportedPluginSources(
+  snapshot: ImportedPluginRestoreSnapshot,
+  simulation: ImportedPluginSourceSimulation,
+  diagnostic: string,
+): ImportedPluginRestoreSnapshot {
+  const availability = simulation === 'checking'
+    ? 'checking'
+    : simulation === 'not-found' ? 'unavailable' : 'unknown'
+  return {
+    ...snapshot,
+    sourceCheckActive: simulation === 'checking',
+    entries: snapshot.entries.map((entry) => {
+      if (!entry.recoverable
+        || entry.unsupportedReason !== undefined
+        || entry.availability === 'provided'
+        || (entry.state !== 'pending' && entry.state !== 'failed')) return entry
+      const { availabilityDiagnostic: _previousDiagnostic, ...base } = entry
+      return simulation === 'checking'
+        ? { ...base, availability }
+        : { ...base, availability, availabilityDiagnostic: diagnostic }
+    }),
+  }
+}
+
+/** Render the dedicated imported-plugin recovery Settings page. */
 export function ImportedPluginRestore({
-  mode,
+  development = false,
   getRestore,
   checkSources,
   startRestore,
   chooseLocalDirectory,
   chooseLocalArchive,
-  dismissRestore,
   ignoreRestore,
   restart,
   t,
 }: ImportedPluginRestoreProps): ReactNode {
   const titleId = useId()
   const [snapshot, setSnapshot] = useState<ImportedPluginRestoreSnapshot>()
+  const [loaded, setLoaded] = useState(false)
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set())
   const [failed, setFailed] = useState(false)
+  const [sourceSimulation, setSourceSimulation] = useState<ImportedPluginSourceSimulation>()
+  const sourceSimulationRef = useRef<ImportedPluginSourceSimulation>()
   const previousAvailability = useRef(new Map<string, ImportedPluginRestoreEntry['availability']>())
 
   const applySnapshot = useCallback((next: ImportedPluginRestoreSnapshot | undefined) => {
     setSnapshot(next)
-    if (next === undefined) return
+    if (next === undefined || sourceSimulationRef.current !== undefined) return
     setSelected((current) => {
       const selectedNext = new Set(current)
       for (const entry of next.entries) {
@@ -105,12 +149,18 @@ export function ImportedPluginRestore({
   useEffect(() => {
     let current = true
     void getRestore().then((next) => {
-      if (!current || next === undefined) return
+      if (!current) return
+      setLoaded(true)
+      if (next === undefined) return
       applySnapshot(next)
       void checkSources().then((checked) => {
         if (current) applySnapshot(checked)
       }, () => { if (current) setFailed(true) })
-    }, () => { if (current) setFailed(true) })
+    }, () => {
+      if (!current) return
+      setLoaded(true)
+      setFailed(true)
+    })
     return () => { current = false }
   }, [applySnapshot, checkSources, getRestore])
 
@@ -120,18 +170,52 @@ export function ImportedPluginRestore({
     return () => { window.clearInterval(timer) }
   }, [refresh, snapshot?.active, snapshot?.sourceCheckActive])
 
-  const visible = snapshot !== undefined
-    && snapshot.entries.length > 0
-    && (mode === 'dialog'
-      ? !snapshot.firstPromptDismissed
-      : snapshot.restartRequired || snapshot.entries.some(entry => (
-        entry.state === 'pending' || entry.state === 'failed' || entry.state === 'installing'
-      )))
-  const selectable = useMemo(() => snapshot?.entries.filter(entry => (
+  const displayedSnapshot = useMemo(() => {
+    if (snapshot === undefined || sourceSimulation === undefined) return snapshot
+    return simulateImportedPluginSources(
+      snapshot,
+      sourceSimulation,
+      t(`restore.development.diagnostic.${sourceSimulation}`),
+    )
+  }, [snapshot, sourceSimulation, t])
+  const selectable = useMemo(() => displayedSnapshot?.entries.filter(entry => (
     entry.recoverable && (entry.state === 'pending' || entry.state === 'failed')
       && (entry.availability === 'available' || entry.availability === 'unknown')
-  )) ?? [], [snapshot])
-  if (!visible) return null
+  )) ?? [], [displayedSnapshot])
+  if (displayedSnapshot === undefined || displayedSnapshot.entries.length === 0) {
+    return (
+      <section className={css.surface} data-mode="section" aria-labelledby={titleId}>
+        <div className={css.heading}>
+          <div>
+            <span className={css.eyebrow}>{t('restore.eyebrow')}</span>
+            <h3 id={titleId}>{t('restore.title')}</h3>
+            <p>{t('restore.description')}</p>
+          </div>
+        </div>
+        <p className={failed ? css.error : css.notice} role={failed ? 'alert' : 'status'}>
+          {failed ? t('restore.operationFailed') : loaded ? t('restore.empty') : t('restore.loading')}
+        </p>
+      </section>
+    )
+  }
+
+  const interactionBlocked = displayedSnapshot.active || sourceSimulation !== undefined
+  const hasRemainingEntries = displayedSnapshot.entries.some(entry => (
+    entry.state === 'pending' || entry.state === 'failed'
+  ))
+
+  const changeSourceSimulation = (next: ImportedPluginSourceSimulation | undefined): void => {
+    if (sourceSimulationRef.current === next) return
+    sourceSimulationRef.current = next
+    setSourceSimulation(next)
+    if (next === undefined) {
+      previousAvailability.current.clear()
+      applySnapshot(snapshot)
+    } else {
+      setSelected(new Set())
+      setFailed(false)
+    }
+  }
 
   const toggle = (id: string): void => {
     setSelected((current) => {
@@ -153,10 +237,9 @@ export function ImportedPluginRestore({
   const body = (
     <section
       className={css.surface}
-      data-mode={mode}
-      aria-busy={snapshot.active}
+      data-mode="section"
+      aria-busy={displayedSnapshot.active || displayedSnapshot.sourceCheckActive}
       aria-labelledby={titleId}
-      {...(mode === 'dialog' ? { role: 'dialog', 'aria-modal': true } : {})}
     >
       <div className={css.heading}>
         <div>
@@ -164,21 +247,44 @@ export function ImportedPluginRestore({
           <h3 id={titleId}>{t('restore.title')}</h3>
           <p>{t('restore.description')}</p>
         </div>
-        <span className={css.count}>{snapshot.entries.length}</span>
+        <span className={css.count}>{displayedSnapshot.entries.length}</span>
       </div>
-      {snapshot.sourceIssues.length > 0 ? (
+      {displayedSnapshot.sourceIssues.length > 0 ? (
         <p className={css.notice} role="status">{t('restore.sourceIssue')}</p>
       ) : null}
       <div className={css.sourceCheck}>
-        <span>{snapshot.sourceCheckActive ? t('restore.checkingSources') : t('restore.sourcesChecked')}</span>
-        <button type="button" disabled={snapshot.active || snapshot.sourceCheckActive} onClick={() => {
+        <span>{displayedSnapshot.sourceCheckActive ? t('restore.checkingSources') : t('restore.sourcesChecked')}</span>
+        <button type="button" disabled={interactionBlocked || displayedSnapshot.sourceCheckActive} onClick={() => {
           setFailed(false)
           void checkSources().then(applySnapshot, () => { setFailed(true) })
         }}>{t('restore.recheckSources')}</button>
       </div>
+      {development ? (
+        <section className={css.developmentFixtures} aria-label={t('restore.development.title')}>
+          <div>
+            <strong>{t('restore.development.title')}</strong>
+            <span>{t('restore.development.description')}</span>
+          </div>
+          <div className={css.developmentButtons}>
+            <button
+              type="button"
+              aria-pressed={sourceSimulation === undefined}
+              onClick={() => { changeSourceSimulation(undefined) }}
+            >{t('restore.development.real')}</button>
+            {SOURCE_SIMULATIONS.map(simulation => (
+              <button
+                key={simulation}
+                type="button"
+                aria-pressed={sourceSimulation === simulation}
+                onClick={() => { changeSourceSimulation(simulation) }}
+              >{t(`restore.development.${simulation}`)}</button>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <div className={css.groups}>
         {(['plugin', 'external-tool'] as const).map((category) => {
-          const entries = snapshot.entries.filter(entry => entry.category === category)
+          const entries = displayedSnapshot.entries.filter(entry => entry.category === category)
           if (entries.length === 0) return null
           return (
             <div className={css.group} key={category}>
@@ -215,7 +321,7 @@ export function ImportedPluginRestore({
                         <input
                           type="checkbox"
                           checked={selected.has(entry.restoreId)}
-                          disabled={!selectableEntry || snapshot.active}
+                          disabled={!selectableEntry || displayedSnapshot.active}
                           onChange={() => { toggle(entry.restoreId) }}
                         />
                         <span>
@@ -234,10 +340,10 @@ export function ImportedPluginRestore({
                       ) : null}
                       {canUseLocal ? (
                         <div className={css.localActions}>
-                          <button type="button" disabled={snapshot.active} onClick={() => { chooseLocal(entry, 'directory') }}>
+                          <button type="button" disabled={interactionBlocked} onClick={() => { chooseLocal(entry, 'directory') }}>
                             {t('restore.localDirectory')}
                           </button>
-                          <button type="button" disabled={snapshot.active} onClick={() => { chooseLocal(entry, 'archive') }}>
+                          <button type="button" disabled={interactionBlocked} onClick={() => { chooseLocal(entry, 'archive') }}>
                             {t('restore.localArchive')}
                           </button>
                         </div>
@@ -252,34 +358,25 @@ export function ImportedPluginRestore({
       </div>
       {failed ? <p className={css.error} role="alert">{t('restore.operationFailed')}</p> : null}
       <div className={css.actions}>
-        {snapshot.restartRequired ? (
-          <Button variant="primary" onClick={() => { void restart() }}>{t('restore.restart')}</Button>
+        {displayedSnapshot.restartRequired ? (
+          <Button variant="primary" disabled={sourceSimulation !== undefined} onClick={() => { void restart() }}>{t('restore.restart')}</Button>
         ) : (
-          <Button variant="primary" disabled={selected.size === 0 || snapshot.active} onClick={start}>
-            {snapshot.active ? t('restore.installing') : t('restore.install')}
+          <Button variant="primary" disabled={selected.size === 0 || interactionBlocked} onClick={start}>
+            {displayedSnapshot.active ? t('restore.installing') : t('restore.install')}
           </Button>
         )}
-        {mode === 'dialog' ? (
-          <Button variant="outline" disabled={snapshot.active} onClick={() => {
-            void dismissRestore().then(applySnapshot)
-          }}>{t('restore.later')}</Button>
-        ) : (
-          <Button variant="outline" disabled={snapshot.active} onClick={() => {
+        {hasRemainingEntries ? (
+          <Button variant="outline" disabled={interactionBlocked} onClick={() => {
             void ignoreRestore().then(applySnapshot)
           }}>{t('restore.ignore')}</Button>
-        )}
+        ) : null}
       </div>
     </section>
   )
-  return mode === 'dialog' ? <div className={css.mask} role="presentation">{body}</div> : body
+  return body
 }
 
-/** First-entry presentation registered in the shell overlay slot. */
-export function ImportedPluginRestoreDialog(props: ImportedPluginRestoreDialogProps): ReactNode {
-  return <ImportedPluginRestore {...props} mode="dialog" />
-}
-
-/** Reopenable presentation embedded in the existing Plugins settings page. */
-export function ImportedPluginRestoreCard(props: ImportedPluginRestoreDialogProps): ReactNode {
-  return <ImportedPluginRestore {...props} mode="card" />
+/** Dedicated Settings page for imported plugin recovery. */
+export function ImportedPluginRestoreSection(props: ImportedPluginRestoreSectionProps): ReactNode {
+  return <ImportedPluginRestore {...props} />
 }

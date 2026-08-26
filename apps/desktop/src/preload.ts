@@ -78,6 +78,7 @@ export interface DesktopBundledPluginsBridge {
 
 /** Opaque-id restore operations; package specs never cross from renderer to main. */
 export interface DesktopImportedPluginsBridge {
+  readonly development?: true
   get(): Promise<ImportedPluginRestoreSnapshot | undefined>
   checkSources(): Promise<ImportedPluginRestoreSnapshot | undefined>
   start(restoreIds: readonly string[]): Promise<ImportedPluginRestoreSnapshot>
@@ -186,7 +187,9 @@ contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   shell: Object.freeze(shellBridge),
   releases: Object.freeze(releasesBridge),
   bundledPlugins: Object.freeze(bundledPluginsBridge),
-  importedPlugins: Object.freeze(importedPluginsBridge),
+  importedPlugins: Object.freeze(sourceMode
+    ? { ...importedPluginsBridge, development: true as const }
+    : importedPluginsBridge),
   chatBackground: Object.freeze(chatBackgroundBridge),
   ...(sourceMode ? {
     updater: Object.freeze(bridge),

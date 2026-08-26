@@ -1,13 +1,3 @@
-.mask {
-  position: fixed;
-  z-index: 80;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: var(--dsw-alias-bg-mask-1);
-}
-
 .surface {
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
@@ -22,12 +12,6 @@
   background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
   box-shadow: var(--dsw-shadow-lv2);
-}
-
-.surface[data-mode='dialog'] {
-  max-width: 680px;
-  max-height: min(720px, calc(100vh - 48px));
-  overflow: auto;
 }
 
 .heading,
@@ -104,7 +88,8 @@
 }
 
 .sourceCheck button,
-.localActions button {
+.localActions button,
+.developmentButtons button {
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 7px;
   padding: 5px 9px;
@@ -118,6 +103,51 @@
 .localActions button:disabled {
   cursor: default;
   opacity: 0.5;
+}
+
+.developmentFixtures {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px dashed var(--dsw-alias-state-business-primary);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: var(--dsw-alias-bg-layer-2);
+}
+
+.developmentFixtures > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.developmentFixtures strong {
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.developmentFixtures span {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.developmentButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.developmentButtons button {
+  padding: 4px 8px;
+  font-size: 11px;
+}
+
+.developmentButtons button[aria-pressed='true'] {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-state-business-primary);
 }
 
 .groupHeading strong {
@@ -213,10 +243,6 @@
 }
 
 @media (max-width: 640px) {
-  .mask {
-    padding: 12px;
-  }
-
   .entries > li {
     grid-template-columns: 1fr;
   }

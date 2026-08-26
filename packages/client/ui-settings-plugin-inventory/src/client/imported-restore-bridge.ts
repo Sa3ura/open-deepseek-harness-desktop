@@ -37,6 +37,7 @@ export interface ImportedPluginRestoreSnapshot {
 
 /** Narrow desktop capability for restoring entries by opaque identifier only. */
 export interface ImportedPluginRestoreBridge {
+  readonly development?: true
   get(): Promise<ImportedPluginRestoreSnapshot | undefined>
   checkSources(): Promise<ImportedPluginRestoreSnapshot | undefined>
   start(restoreIds: readonly string[]): Promise<ImportedPluginRestoreSnapshot>

@@ -14,6 +14,8 @@ The chooser always opens when the desktop-owned Harness home has no prior select
 
 Electron owns directory selection and validation. A directory is recognized when it or its `.dsh` child contains supported user state or a Profile. The renderer receives only the normalized result and submits a selected mode plus source; Electron resolves and validates that source again before importing or reusing it. Empty, unrelated, and unreadable directories remain on the chooser with a bounded correction message.
 
+Source development runs expose a bilingual toggle that temporarily renders the genuine “default source missing” state. The toggle preserves the detected source and current selection in memory, restores both when disabled, and never changes a saved setup. Packaged applications do not receive the development capability flag, so the control stays hidden there.
+
 Independent import copies from either the detected default or the selected custom source into the desktop-owned home. Direct use records the normalized custom source as the active `DSH_HOME`; startup validates that recorded source before reuse so a removed or unreadable directory returns to the chooser. Fresh setup does not require a source. The existing language picker and three data strategies remain available in every first-run state.
 
 ## Alternatives considered

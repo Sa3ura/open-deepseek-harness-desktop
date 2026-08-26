@@ -318,6 +318,7 @@ async function showDataHomeChooser(
       defaultSource: defaultSource?.path ?? '',
       sourceCandidate: defaultSourceCandidate,
       sourceStatus: defaultSourceUnreadable ? 'unreadable' : defaultSource === undefined ? 'missing' : 'valid',
+      development: app.isPackaged ? 'false' : 'true',
     } }).catch(fail)
   })
 }

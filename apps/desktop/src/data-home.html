@@ -31,6 +31,33 @@
         position: absolute;
         right: 28px;
       }
+      .development-tools {
+        align-items: center;
+        display: flex;
+        position: absolute;
+        right: 204px;
+      }
+      .development-tools[hidden] { display: none; }
+      .development-toggle {
+        appearance: none;
+        background: #eef4ff;
+        border: 1px solid #c7d7f8;
+        border-radius: 999px;
+        color: #315aab;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 620;
+        padding: 8px 12px;
+        transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+      }
+      .development-toggle:hover { background: #e3edff; border-color: #a9c1f2; }
+      .development-toggle:focus-visible { outline: 2px solid #4176e6; outline-offset: 2px; }
+      .development-toggle[aria-pressed="true"] {
+        background: #315aab;
+        border-color: #315aab;
+        box-shadow: 0 0 0 3px rgb(49 90 171 / 12%);
+        color: #fff;
+      }
       .language-trigger {
         align-items: center;
         appearance: none;
@@ -289,6 +316,9 @@
         .language-trigger, .help-button, .action.secondary { background: linear-gradient(180deg, #292b31, #24262b); border-color: #494c55; color: #f4f4f5; }
         .language-trigger:hover { background: #2d2f35; border-color: #626670; }
         .language-trigger[aria-expanded="true"] { border-color: #657ba7; box-shadow: 0 0 0 3px rgb(120 163 243 / 10%); }
+        .development-toggle { background: #25304a; border-color: #40557c; color: #a8c4f7; }
+        .development-toggle:hover { background: #2b3857; border-color: #526b9b; }
+        .development-toggle[aria-pressed="true"] { background: #789ee8; border-color: #789ee8; color: #171b25; }
         .language-chevron { border-color: #b8bbc3; }
         .language-divider { background: #494c55; }
         .language-menu { background: rgb(38 40 46 / 98%); border-color: #464951; box-shadow: 0 18px 42px rgb(0 0 0 / 42%); }
@@ -321,7 +351,7 @@
         .action.primary { background: #f4f4f5; border-color: #f4f4f5; color: #191a1e; }
       }
       @media (prefers-reduced-motion: reduce) {
-        .choice, .detail, .detail-heading h1, .language-trigger, .language-chevron { transition: none; }
+        .choice, .detail, .detail-heading h1, .development-toggle, .language-trigger, .language-chevron { transition: none; }
       }
       @media (max-width: 860px) {
         .content { grid-template-columns: 1fr; overflow: auto; }
@@ -335,6 +365,9 @@
     <main class="shell">
       <header class="titlebar">
         <div class="brand"><img src="icon.png" alt=""><span class="brand-copy"><strong>DeepSeek Harness</strong><small data-copy="windowTitle">选择数据目录</small></span></div>
+        <div id="development-tools" class="development-tools" hidden>
+          <button id="simulate-missing-source" class="development-toggle" type="button" aria-pressed="false">开发：模拟未找到配置</button>
+        </div>
         <div id="language-picker" class="language-picker">
           <button id="language-trigger" class="language-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"><span class="language-inline-label" data-copy="languageLabel">语言</span><span class="language-divider" aria-hidden="true"></span><span id="language-current">中文</span><span class="language-chevron" aria-hidden="true"></span></button>
           <div id="language-menu" class="language-menu" role="listbox" aria-label="语言" hidden>
