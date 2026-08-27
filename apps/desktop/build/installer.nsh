@@ -180,7 +180,21 @@ Var ProcessGuardOutput
 !endif
 
 !macro customUnInit
-  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\resources\cli-bin\manage-path.ps1" -Action remove -Directory "$INSTDIR\resources\cli-bin"'
-  DeleteRegValue HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_REGISTRY_VALUE}"
-  DeleteRegValue HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}"
+  # The uninstaller owns its PATH cleanup helper. Extracting it from the
+  # uninstaller avoids depending on installed resources during the NSIS
+  # self-copy and upgrade lifecycle.
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\manage-path.ps1 "${BUILD_RESOURCES_DIR}\cli-bin\manage-path.ps1"
+  ReadRegStr $2 HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}"
+  ${If} $2 == ""
+    StrCpy $2 "$INSTDIR\resources\cli-bin"
+  ${EndIf}
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\manage-path.ps1" -Action remove -Directory "$2"'
+  Pop $0
+  Pop $1
+  DetailPrint "Desktop CLI PATH cleanup exit $0: $1"
+  ${If} $0 == 0
+    DeleteRegValue HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_REGISTRY_VALUE}"
+    DeleteRegValue HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}"
+  ${EndIf}
 !macroend

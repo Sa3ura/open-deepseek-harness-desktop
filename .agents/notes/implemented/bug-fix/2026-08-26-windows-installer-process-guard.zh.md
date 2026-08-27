@@ -18,6 +18,8 @@ Windows 桌面端显式退出也会通过 `taskkill /T` 停止受监管 Harness 
 
 自定义安装器 include 的展开早于 Electron Builder 插入 MUI2 与 `MUI_LANGUAGE` 宏。因此自定义的中英文 `LangString` 直接使用稳定的 Windows LCID 2052 与 1033；如果在此处引用 `${LANG_SIMPCHINESE}` 或 `${LANG_ENGLISH}`，常量尚未定义，而 NSIS 会因警告按错误处理而终止构建。命令行选项页面的函数通过 Electron Builder 的 `customHeader` 钩子生成；该钩子位于 MUI2 和语言载入之后，因此 NSIS 展开 `MUI_HEADER_TEXT` 时宏已经可用。
 
+卸载器会内嵌 PATH 管理辅助脚本，并在 `customUnInit` 阶段把它释放到 NSIS 插件目录。卸载器读取安装时记录的准确 CLI 目录，并在已安装资源被移动或删除前移除该条目。因此，无论升级或卸载期间 `resources/cli-bin/manage-path.ps1` 是否仍然可用，PATH 清理都可以完成。
+
 ## 曾考虑的替代方案
 
 **只匹配 `DeepSeek Harness.exe`。** 这能避免误报，却会遗漏内置 Node 与原生插件进程；这些进程仍可能占用升级时需要替换的文件。
@@ -30,4 +32,4 @@ Windows 桌面端显式退出也会通过 `taskkill /T` 停止受监管 Harness 
 
 安装器或无关程序位于名称前缀相似的目录时，不再阻止升级或被错误结束。真实的应用、内置 Node、Harness 与原生插件进程仍受到保护，不会在运行期间被原地替换。Windows 包验证现在会从前缀相似的相邻目录升级一个运行中的安装，清理孤立的内置 Node，保持无关相邻进程存活，并验证升级后的 Harness 能够再次就绪。
 
-Windows 安装器也能在不依赖 NSIS 宏声明顺序的前提下保留经过审核的简体中文与英文文案，原生打包任务会在安装器发布前拦截相关回归。
+Windows 安装器也能在不依赖 NSIS 宏声明顺序的前提下保留经过审核的简体中文与英文文案。原生包验证要求卸载后恢复原有的当前用户 PATH，并移除桌面 CLI 所有权标记，因此任一生命周期回归都会在安装器发布前被拦截。

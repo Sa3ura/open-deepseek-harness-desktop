@@ -18,6 +18,8 @@ Explicit Windows desktop quit also stops the supervised Harness process tree thr
 
 The custom installer include is expanded before Electron Builder inserts MUI2 and its `MUI_LANGUAGE` macros. Custom Chinese and English `LangString` declarations therefore use the stable Windows LCIDs 2052 and 1033 directly; referring to `${LANG_SIMPCHINESE}` or `${LANG_ENGLISH}` at that point leaves the constants undefined and makes NSIS fail because warnings are treated as errors. The command-line option page functions are emitted through Electron Builder's `customHeader` hook, after MUI2 and languages load, so `MUI_HEADER_TEXT` is available when NSIS expands it.
 
+The uninstaller embeds its PATH-management helper and extracts it into the NSIS plugin directory during `customUnInit`. It reads the exact CLI directory recorded at installation and removes that entry before installed resources are moved or deleted. PATH cleanup therefore does not depend on `resources/cli-bin/manage-path.ps1` remaining available during an upgrade or uninstall.
+
 ## Alternatives considered
 
 **Match only `DeepSeek Harness.exe`.** This avoids false positives but misses embedded Node and native plugin processes that can still lock files replaced by an upgrade.
@@ -30,4 +32,4 @@ The custom installer include is expanded before Electron Builder inserts MUI2 an
 
 An installer or unrelated process in a prefix-similar directory no longer blocks an upgrade or gets terminated. Real application, embedded Node, Harness, and native plugin processes remain protected from in-place replacement. Windows package validation now upgrades a running installation from a prefix-similar sibling, cleans an orphan embedded Node process, keeps an unrelated sibling process alive, and proves post-upgrade Harness readiness.
 
-The Windows installer also keeps reviewed Simplified Chinese and English strings without depending on NSIS macro declaration order, so the native packaging job rejects regressions before an installer is published.
+The Windows installer also keeps reviewed Simplified Chinese and English strings without depending on NSIS macro declaration order. Native package validation requires uninstall to restore the original current-user PATH and remove the desktop CLI ownership markers, so packaging rejects either lifecycle regression before an installer is published.
