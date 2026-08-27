@@ -2,7 +2,7 @@
   <img src="./apps/desktop/src/icon.png" width="112" alt="Open DeepSeek Harness Desktop icon">
 </p>
 
-# Open DSH Desktop
+# Open DeepSeek Harness Desktop
 
 <p align="center">
   <strong>A ready-to-use, dependency-safe desktop edition of DeepSeek Harness</strong>
@@ -10,7 +10,9 @@
 
 Languages: [简体中文](README.md) · English · [日本語](README.ja.md) · [한국어](README.ko.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Português](README.pt-BR.md)
 
-> We are addressing user-reported bugs. A new release combining upstream updates, bug fixes, and experience improvements is on the way…
+> [!IMPORTANT]
+>
+> **[v0.1.1-rc.2 is available now — download it and give it a try](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/dsh-v0.1.1-rc.2).** This release adds independent data environments, safe plugin restoration after import, much stronger plugin diagnostics, text-selection actions, and a more complete desktop host.
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="Downloads"></a>
@@ -18,13 +20,141 @@ Languages: [简体中文](README.md) · English · [日本語](README.ja.md) · 
   <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://img.shields.io/badge/upstream-DeepSeek%20Harness-4d6bfe?style=flat" alt="DeepSeek Harness upstream"></a>
 </p>
 
-Open DeepSeek Harness Desktop is an independent, community-maintained desktop distribution of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It combines the upstream plugin-based agent runtime with a visual workspace for configuring models, running coding sessions, inspecting execution, and managing extensions.
+Open DeepSeek Harness Desktop is an independent, community-maintained desktop distribution of [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). It combines the upstream plugin-based agent runtime, Web workspace, and native desktop integration into an installable app for configuring models, running coding sessions, inspecting execution, managing plugins and Skills, and connecting external coding tools or IM bots.
 
-The project is maintained by the FLAQ AI team from hands-on work integrating models, packaging desktop clients, and operating plugin- and Agent-based product workflows. We publish the reusable engineering layer so startup supervision, dependency safety, cross-platform packaging, and practical integrations can be inspected and improved in the open.
+Installers include Node.js, pnpm, and the Harness runtime, so users do not need to prepare a development environment. Electron does not become a second agent runtime: configuration, credentials, sessions, plugins, and Skills remain owned by the local Harness service, while Electron exposes only capability-scoped desktop integration.
 
-This repository is not an official DeepSeek product. It is released under the [MIT License](LICENSE) and keeps the Harness architecture intact: capabilities remain plugins, while the Electron application acts as a secure local host for the existing Web client.
+> [!NOTE]
+>
+> This repository is not an official DeepSeek product. It is an open-source community project built on DeepSeek Harness and remains in preview; local data formats, plugin compatibility policies, and installation details may continue to evolve.
 
-**Development notice:** Open DeepSeek Harness Desktop is under active development. Features, packaging, and the local data schema may change. This is an independent community project, not an official DeepSeek product.
+## Highlights in this release
+
+- [First launch and independent data environments](#first-launch-and-independent-data-environments): import an official configuration, share a directory directly, or start fresh.
+- [Plugin selection and restoration after import](#plugin-selection-and-restoration-after-import): online source checks plus safe restoration from source directories or `.tgz` archives.
+- [Supercharged diagnostics](#supercharged-diagnostics): turn difficult pnpm and Cordis failures into actionable diagnoses and guarded repair.
+- [Text selection and context-menu actions](#text-selection-and-context-menu-actions): copy, ask in a new conversation, or append to the current draft.
+- [Desktop enhancements](#desktop-enhancements-to-the-upstream-web-experience): tray operation, quick restart, notifications, logs, in-app updates, and CLI registration.
+- [Download and install](#installation): native Windows, macOS, and Linux packages are available.
+
+## First launch and independent data environments
+
+At first launch, the client checks the default official DSH data directory at `~/.dsh`. If it is absent or unsupported, users can choose another directory manually or create a clean desktop-owned environment. The chooser provides Chinese and English controls before the main Settings page is available.
+
+### Import into an independent environment
+
+Supported data is copied into a desktop-owned directory while the source remains unchanged. Settings, credentials, sessions, workspace information, Agent presets, Skills, and connection state can be imported.
+
+Profiles, `node_modules`, lockfiles, plugin runtimes, bundled-plugin markers, quarantine and health records, and anonymous identifiers are not copied. Plugin configuration and a restoration list are retained, but plugin packages are installed again into the desktop Profile. After import, later changes in Desktop and the official DSH CLI/Web environment remain independent.
+
+<p align="center">
+  <img src="./assets/readme/data-home-import-en.png" width="900" alt="Import an official DSH configuration into an independent desktop environment">
+  <br>
+  <sub>Import into an independent environment: copy supported data and leave the source unchanged</sub>
+</p>
+
+### Use this configuration directly
+
+Desktop can use the official `~/.dsh` directory, or another supported directory selected manually, without making a second copy. Settings, credentials, sessions, Agent presets, Skills, Profiles, and plugins are shared; later changes from Desktop or the official CLI/Web environment affect the same data.
+
+<p align="center">
+  <img src="./assets/readme/data-home-reuse-en.png" width="900" alt="Use an existing DSH configuration directly from Desktop">
+  <br>
+  <sub>Use this configuration directly: Desktop and the selected directory share data</sub>
+</p>
+
+### Start fresh
+
+Create an empty, desktop-owned data directory without importing existing settings, sessions, or plugins. This is suitable for first-time DSH users and for testing a clean environment.
+
+<p align="center">
+  <img src="./assets/readme/data-home-fresh-en.png" width="900" alt="Create a clean independent data environment for Desktop">
+  <br>
+  <sub>Start fresh: do not read or modify an existing DSH configuration</sub>
+</p>
+
+After entry, the setup wizard can configure a model API key, WeChat or Feishu and other IM bots, and an optional Codex connection. Every task can be skipped and completed later from Settings.
+
+## Plugin selection and restoration after import
+
+Importing into an independent environment copies plugin configuration and a restoration list, not the old Profile's `node_modules`. Reusing that dependency tree could carry platform-specific packages, a mismatched pnpm Store, lifecycle-script permissions, or shared Host conflicts into the new environment, so plugins are installed again in the desktop Profile.
+
+Each entry receives a source status:
+
+- **Provided by the client:** a bundled preset already satisfies the entry.
+- **Checking:** the source is being resolved in a temporary directory without changing the active Profile.
+- **Available online:** the source is valid and can be installed with the bundled pnpm.
+- **Online source unavailable:** the package, repository, or Git reference does not exist; ordinary online installation is not selected by default.
+- **Temporarily unknown:** the check encountered offline state, timeout, authentication failure, or rate limiting; users can retry later or explicitly attempt installation.
+
+If an online source is unavailable, users may select a local source directory or `.tgz` archive. The client validates the package name, archive paths, manifest size, and total size. Source directories are repacked with lifecycle scripts disabled before entering the existing plugin installation flow, and a version mismatch requires a second confirmation.
+
+Online and local restoration both continue through build approval, shared-dependency diagnostics, and quarantine when necessary. The client never scans, copies, or adopts the old `node_modules`, and it does not directly execute credential-bearing, local-path, or unrecognized dependency specifications. External tools such as Codex and Claude Code cannot be replaced with local plugin packages and remain available through **Settings → External tools**.
+
+<p align="center">
+  <img src="./assets/readme/imported-plugin-restore-zh.png" width="900" alt="Plugin source status and safe local restoration after importing a DSH configuration">
+  <br>
+  <sub>Plugin source checks, online restoration, and guarded local restoration</sub>
+</p>
+
+## Supercharged diagnostics
+
+Third-party plugins share the Host's Node.js process and Cordis service graph. Even code without an obvious defect can destabilize the runtime through a transitive dependency, pnpm linking behavior, or a stale Loader entry. These failures often happen before Settings or an ordinary diagnostic plugin can start, leaving users with an empty tool call, `Cannot read properties of undefined (reading 'prepare')`, a missing plugin list, or a pnpm stack that never identifies the responsible plugin.
+
+Diagnostics therefore live in the Profile composition and boot layer rather than another ordinary plugin. Before third-party code executes, the client reads the Profile manifest, `pnpm-lock.yaml`, Workspace settings, Bundle order, installed dependency graph, and the shared runtime supplied by the current installation. It decides whether the Profile can safely enter one process before loading, repairing, or quarantining anything.
+
+### Why identical version numbers can still conflict
+
+Cordis Contexts, Service registrations, and parts of the tool runtime depend on object and `Symbol` identity, not only package name and version. If a plugin declares identity-sensitive Host packages such as `@deepseek-ai/cordis` or `@deepseek-ai/dsh-tools` in ordinary `dependencies`, pnpm can install another physical copy inside the Profile. Even when both copies report exactly the same version, their classes, Contexts, Services, and Symbols belong to different JavaScript module instances; a service registered through one can be `undefined` when read through the other.
+
+The inspection therefore does not stop at `package.json`. Starting from each direct Profile plugin, it traverses the actual installed graph, records the root plugin, direct and transitive chains, declared ranges, and resolved locations, then compares the real filesystem paths of shared Host packages. Valid `peerDependencies` are not reported, while equal versions at different real paths are still recognized as an identity conflict.
+
+### What is checked before startup
+
+- **Shared Host singletons:** Cordis, tool runtime, attachments, LLM, system prompt, and scope-label packages must resolve to the canonical copies owned by the current Harness installation.
+- **Profile and lockfile consistency:** direct dependencies, root importers, Bundle entries, and physical package directories are reconciled, including roots disabled in the manifest but retained by stale lockfiles or interrupted installs.
+- **Loader and Bundle state:** orphaned Bundles, duplicates, bad order, enabled-but-unmounted entries, and ghost plugins left after uninstall are identified.
+- **pnpm runtime:** Store-version mismatch, incomplete installation, blocked build scripts, missing `allowBuilds`, and peer-deduplication settings that can break linked Host-provider graphs are distinguished.
+- **Lifecycle approval:** when a Git-hosted plugin genuinely requires `prepare`, only the exact dependency path reported by pnpm may be approved. Existing `false` rules win, and vague diagnostics never broaden permission automatically.
+- **Version and source boundaries:** ordinary range mismatch, physical-instance conflict, temporarily unavailable sources, and truly non-convergent runtime identity failures are kept separate from network or normal plugin business errors.
+
+### Why repair does not simply reinstall everything
+
+The fixed order is **read-only inspection → lossless convergence → install only necessary dependencies → real-path recheck → quarantine if required**. A healthy Profile does not run pnpm just because diagnostics exist and is not reinstalled at every launch.
+
+- Orphaned shared singletons can be relinked to the canonical Host packages owned by the currently running installation.
+- When a plugin's declared range is compatible, managed `link:` overrides converge only reserved shared packages while preserving user Workspace configuration, comments, and unrelated overrides.
+- Repair never lowers `minimumReleaseAge`, overrides an explicit `allowBuilds: false`, or grants arbitrary lifecycle scripts after an installation failure.
+- A successful pnpm command is not sufficient. Startup continues only after shared packages resolve to one real path and Loader and dependency state agree.
+
+### Quarantine when safe convergence is impossible
+
+If a declared range is incompatible, repair fails, or a second shared instance remains after reinspection, only the root plugin that introduced the conflict is removed from active dependencies and Bundle order. Its original specification, version, Bundle location, complete chain, reason, and timestamp are retained; unrelated plugins and user data do not need to be reset.
+
+Quarantine is not merely a disabled badge in the UI. It completes only after the root package is physically absent from the active Profile, shared Host packages point to canonical copies, and reinspection succeeds. Users can retry recovery or confirm uninstall from Diagnostics. Crash recovery and interrupted pnpm operations are also handled: only recorded and disabled roots are cleaned, and startup fails closed while the manifest, package tree, or shared identity remains inconsistent.
+
+The boundary is deliberate: **inspect before plugin execution, decide from the real dependency graph and physical module identity, preserve plugins through lossless convergence where possible, quarantine only when safety cannot be demonstrated, and verify every repair before startup.** In short, pnpm and Cordis errors no longer have to read like passwords; the client tries to explain who failed, why, which protection was applied, whether it can be repaired, and what to do next.
+
+## Text selection and context-menu actions
+
+Selecting text in read-only conversation messages, tool output, details, or file previews opens a horizontal action bar near the selection. Right-clicking selected text opens a vertical rounded menu with icons and labels.
+
+- **Copy:** write the selected text to the system clipboard with success or failure feedback.
+- **Ask in a new conversation:** create a conversation in the current workspace and fill a localized question plus the selected text without sending it.
+- **Add to the current conversation:** append the selection as a Markdown quote after the existing draft without overwriting it.
+
+When the current session is waiting for a choice, confirmation, or answer, or when the composer cannot be edited, **Add to the current conversation** disappears. Copy and Ask in a new conversation remain available. Selections inside inputs, code editors, Settings, the sidebar, buttons, and existing menus do not trigger these actions.
+
+<table>
+  <tr>
+    <th width="50%">Selection action bar</th>
+    <th width="50%">Rounded context menu</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="./assets/readme/selection-toolbar-zh.png" alt="Horizontal action bar shown after selecting text"></td>
+    <td align="center"><img src="./assets/readme/selection-context-menu-zh.png" alt="Vertical rounded menu shown after right-clicking selected text"></td>
+  </tr>
+</table>
 
 ## Desktop enhancements to the upstream Web experience
 
@@ -111,9 +241,9 @@ Switch between system, light, dark, and eight product themes; pair them with eig
 
 The current desktop baseline incorporates upstream `dsh-v0.1.1-rc.2`. It adds the unified image and DeepSeek Files pipeline, deterministic image admission, credential records and human-driven provider authorization, stable session projections, multiline questions, refined subagent navigation, and standalone pnpm support on Windows. The earlier file and session references, concurrent `web_search`, reasoning passback, persistent PowerShell PTY, dynamic client packages, build Profiles, and branding slots remain available. Electron always passes `--no-open` to `dsh web`, so launching the desktop app does not also open a system browser.
 
-## Release status
+## Known issue
 
-The project is in developer preview and may introduce breaking changes. We are preparing the same five desktop release variants listed below. macOS Apple Silicon is the first locally packaged and validated target; the other rows describe the committed release matrix and will become downloadable as their native build and validation work is completed.
+- In installed builds, the **Install diagnostic test plugin** entry may still be visible but produce no visible response. This does not affect preflight inspection, production diagnostics, repair, or quarantine. A later release will remove the entry or replace it with a safe diagnostic demonstration.
 
 ## What you can do
 
@@ -126,17 +256,17 @@ The project is in developer preview and may introduce breaking changes. We are p
 
 ## Installation
 
-Download builds only from the official [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) page. Release assets will follow this matrix:
+Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) page. `v0.1.1-rc.2` provides the following artifacts:
 
-| Platform | Architecture | Release package |
-| --- | --- | --- |
-| macOS | Apple Silicon (`arm64`) | `DeepSeek-Harness-macos-arm64.dmg` |
-| macOS | Intel (`x64`) | `DeepSeek-Harness-macos-x64.dmg` |
-| Windows | `x64` | `DeepSeek-Harness-windows-x64.exe` |
-| Linux | Debian / Ubuntu (`x64`) | `DeepSeek-Harness-linux-x64.deb` |
-| Linux | Fedora / RHEL (`x64`) | `DeepSeek-Harness-linux-x64.rpm` |
+| Platform | Architecture | Release package | Status |
+| --- | --- | --- | --- |
+| macOS | Apple Silicon (`arm64`) | `DeepSeek-Harness-macos-arm64.dmg` | Available |
+| macOS | Intel (`x64`) | `DeepSeek-Harness-macos-x64.dmg` | Available |
+| Windows | `x64` | `DeepSeek-Harness-windows-x64.exe` | Available |
+| Linux | Debian / Ubuntu (`x64`) | `DeepSeek-Harness-linux-x64.deb` | Available |
+| Linux | Fedora / RHEL (`x64`) | `DeepSeek-Harness-linux-x64.rpm` | Available |
 
-Published releases will also include a `SHA256SUMS` file so downloaded artifacts can be verified before installation. An asset is supported only after it appears on the Releases page; the table itself is not an availability claim.
+The Release also includes `SHA256SUMS`. Verify downloads before installation; only files actually present on this project's Releases page are public release artifacts.
 
 ### macOS
 
@@ -154,7 +284,7 @@ Published releases will also include a `SHA256SUMS` file so downloaded artifacts
 
 ### Windows
 
-Download and run the Windows x64 installer. Windows may display a reputation-based warning for an unsigned or newly published build; continue only after checking the publisher repository and the release checksum.
+Download and run the Windows x64 installer. Windows may display a reputation-based warning for an unsigned or newly published build; continue only after checking the repository and release checksum. During an upgrade, the installer detects only the real client executable and bundled runtime processes, avoiding false matches against similarly named directories or unrelated Node processes.
 
 ### Linux
 
@@ -188,19 +318,11 @@ The desktop host starts a local Harness process and opens its loopback Web UI in
 pnpm dsh web
 ```
 
+Source Web uses the current `DSH_HOME`, normally the official `~/.dsh` when unset. Installed Desktop uses the data directory selected at first launch, so whether Web and Desktop share data depends on that choice rather than the interface itself.
+
 See the [desktop application reference](apps/desktop/README.md) for environment overrides, process supervision, update behavior, and current limitations. The [Web UI guide](docs/user/guide/index.md) covers the browser workflow.
 
 `pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding. The Web command starts at `http://127.0.0.1:3080` and opens the default browser for a local launch. Pass `--no-open` to keep it server-only; the Electron host always uses this mode.
-
-## Platform status
-
-| Platform | Current status | Next release work |
-| --- | --- | --- |
-| macOS Apple Silicon | Ad-hoc DMG/ZIP packaging exercised locally | Publish and validate the arm64 release assets |
-| macOS Intel | Dedicated x64 Node runtime and DMG/ZIP targets configured | Complete native installation validation on an Intel-compatible runner |
-| Windows x64 | Official Node runtime, NSIS target, and final-install smoke test configured | Continue validating real Windows 10/11, PTY, sandboxing, and paths with spaces or Chinese characters |
-| Linux x64 | Dedicated x64 Node runtime and DEB/RPM targets configured | Complete native installation validation on target distributions |
-| Web | Available from source through `pnpm dsh web` | Continue sharing the same Harness services and configuration |
 
 ## Architecture
 
@@ -221,7 +343,7 @@ DeepSeek Harness follows an **everything is a plugin** architecture powered by [
 
 The home and Settings surfaces expose plugin discovery and supported installation actions. Registry installation uses validated package specifications, explicit confirmation, streamed command output, and a restart-required result; it is not a generic shell prompt. Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to a compatible plugin repository so users can find it.
 
-Skills remain managed through Harness providers and are invoked in the same session context as the rest of the agent. Plugin authors should use documented service definitions, providers, consumers, effects, and configuration instead of Electron-only state.
+Skills remain managed through Harness providers and are invoked in the same session context as the rest of the agent. Plugin authors should use documented service definitions, providers, consumers, effects, and configuration instead of Electron-only state. Shared Host packages must be declared as `peerDependencies` to avoid installing a second Cordis or DSH runtime instance inside the Profile.
 
 ## Security and privacy
 
@@ -240,11 +362,11 @@ Create keys only on the providers' official sites and save them through Harness 
 
 ## Project direction
 
-- Produce reproducible macOS arm64/x64 DMG, Windows x64 EXE, and Linux x64 DEB/RPM releases with checksums and generated third-party notices.
 - Improve plugin and Skill discovery, compatibility metadata, lifecycle management, and update visibility.
 - Build on the existing tray, notifications, and startup diagnostics with native approvals, richer task status, deep links, and an authenticated local control endpoint.
 - Improve interactive approval, progress, change summaries, and resumable sessions for external coding tools while keeping the Harness and product context boundaries explicit.
 - Continue strengthening identity mapping, authorization, audit events, rate limits, and revocation for the preset IM bot connections.
+- Pursue macOS Developer ID signing and notarization while continuing real Windows 10/11 and mainstream Linux validation.
 
 These items describe direction, not completed support. See the [desktop release matrix](apps/desktop/README.md#cross-platform-release-matrix) for the current implementation boundary.
 
@@ -279,3 +401,7 @@ FLAQ.AI remains an optional compatible provider or companion platform. It is not
 ## License
 
 Open DeepSeek Harness Desktop is available under the [MIT License](LICENSE). Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Friends
+
+- [DSHFind](https://dshfind.com/zh) — a Chinese DeepSeek Harness learning and sharing community with tutorials, plugins, and community resources.
