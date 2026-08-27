@@ -14,6 +14,7 @@ describe('packaged desktop CLI inputs', () => {
 
     const installer = await readFile(`${desktopRoot}/build/installer.nsh`, 'utf8')
     const pathManager = await readFile(`${desktopRoot}/build/cli-bin/manage-path.ps1`, 'utf8')
+    const windowsSmoke = await readFile(`${desktopRoot}/scripts/smoke-windows-package.ps1`, 'utf8')
     expect(installer).toContain('StrCpy $CliPathRequested "0"')
     expect(installer.match(/\$\{StdUtils\.GetParameter\} \$1 "ADDCLI" ""/g)).toHaveLength(2)
     expect(installer).not.toContain('${GetOptions}')
@@ -33,6 +34,8 @@ describe('packaged desktop CLI inputs', () => {
     expect(installer).toContain('File /oname=$PLUGINSDIR\\manage-path.ps1')
     expect(installer).toContain('-File "$PLUGINSDIR\\manage-path.ps1" -Action remove -Directory "$2"')
     expect(installer).toContain('ReadRegStr $2 HKCU "${CLI_PATH_REGISTRY_KEY}" "${CLI_PATH_DIRECTORY_VALUE}"')
+    expect(windowsSmoke).toContain('$uninstallDeadline = (Get-Date).AddMinutes(2)')
+    expect(windowsSmoke).toContain('$pathRestored -and $registrationRemoved -and $installationRemoved')
     expect(installer).not.toContain('dangerouslyAllowAllBuilds')
   })
 

@@ -250,13 +250,28 @@ if (-not $uninstall.WaitForExit(180000)) {
   throw 'Windows uninstaller did not exit within 3 minutes'
 }
 if ($uninstall.ExitCode -ne 0) { throw "Windows uninstaller exited with $($uninstall.ExitCode)" }
-$restoredUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
-if ($restoredUserPath -ne $originalUserPath) {
-  throw "Windows uninstaller did not restore the original current-user PATH.`nBefore: $originalUserPath`nAfter: $restoredUserPath"
-}
-$remainingRegistration = Get-ItemProperty -Path 'HKCU:\Software\FLAQ.AI\DeepSeek Harness' -ErrorAction SilentlyContinue
-if ($null -ne $remainingRegistration.CliPathRegistered -or $null -ne $remainingRegistration.CliPathDirectory) {
-  throw 'Windows uninstaller left the desktop CLI registration marker behind.'
+
+# Electron Builder's installed uninstaller copies itself to a temporary Un_A
+# process. The launcher can exit before that child finishes removing files and
+# running customUnInit, so validate observable uninstall state instead of the
+# launcher PID alone.
+$uninstallDeadline = (Get-Date).AddMinutes(2)
+do {
+  $restoredUserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+  $remainingRegistration = Get-ItemProperty -Path 'HKCU:\Software\FLAQ.AI\DeepSeek Harness' -ErrorAction SilentlyContinue
+  $pathRestored = $restoredUserPath -eq $originalUserPath
+  $registrationRemoved = $null -eq $remainingRegistration.CliPathRegistered -and $null -eq $remainingRegistration.CliPathDirectory
+  $installationRemoved = -not (Test-Path -LiteralPath $installRoot)
+  if ($pathRestored -and $registrationRemoved -and $installationRemoved) { break }
+  Start-Sleep -Milliseconds 250
+} while ((Get-Date) -lt $uninstallDeadline)
+
+if (-not $pathRestored -or -not $registrationRemoved -or -not $installationRemoved) {
+  $uninstallProcesses = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -like 'Un_*.exe' -or
+    (-not [string]::IsNullOrEmpty($_.ExecutablePath) -and $_.ExecutablePath.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase))
+  } | ForEach-Object { "PID $($_.ProcessId) $($_.Name) $($_.ExecutablePath)" })
+  throw "Windows uninstaller did not finish restoring owned state within 2 minutes.`nBefore PATH: $originalUserPath`nAfter PATH: $restoredUserPath`nRegistration removed: $registrationRemoved`nInstallation removed: $installationRemoved`nRemaining processes:`n$($uninstallProcesses -join "`n")"
 }
 
 Write-Host 'Installed and upgraded the Windows package, precisely cleaned owned processes without touching a prefix-similar decoy, reached Harness readiness, seeded startup plugins, ran desktop dsh, kept external tools online-only, and restored PATH on uninstall.'
