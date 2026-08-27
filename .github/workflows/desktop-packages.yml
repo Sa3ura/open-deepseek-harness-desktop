@@ -14,7 +14,9 @@ on:
         default: all
         options:
           - all
+          - macos
           - windows-x64
+          - linux-x64
       publish:
         description: Create or update the GitHub Release; requires a dsh-v* tag
         required: true
@@ -62,7 +64,7 @@ jobs:
 
   macos:
     name: macOS ${{ matrix.arch }}
-    if: ${{ github.event_name == 'push' || inputs.target == 'all' }}
+    if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'macos' }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -156,7 +158,7 @@ jobs:
 
   linux:
     name: Linux x64
-    if: ${{ github.event_name == 'push' || inputs.target == 'all' }}
+    if: ${{ github.event_name == 'push' || inputs.target == 'all' || inputs.target == 'linux-x64' }}
     needs: bundled-plugins
     env:
       DSH_BUNDLED_PLUGINS_REFRESH: '0'
@@ -204,7 +206,14 @@ jobs:
   checksums:
     name: SHA-256 checksums
     needs: [macos, windows, linux]
-    if: ${{ always() && needs.windows.result == 'success' && (inputs.target == 'windows-x64' || (needs.macos.result == 'success' && needs.linux.result == 'success')) }}
+    if: >-
+      ${{ always() && (
+        (github.event_name == 'push' && needs.macos.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.target == 'all' && needs.macos.result == 'success' && needs.windows.result == 'success' && needs.linux.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.target == 'macos' && needs.macos.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.target == 'windows-x64' && needs.windows.result == 'success') ||
+        (github.event_name == 'workflow_dispatch' && inputs.target == 'linux-x64' && needs.linux.result == 'success')
+      ) }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/download-artifact@v4
