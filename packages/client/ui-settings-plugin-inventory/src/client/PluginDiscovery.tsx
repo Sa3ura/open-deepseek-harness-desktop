@@ -264,6 +264,7 @@ export function PluginDiscovery({ t, startInstall, getInstall }: PluginDiscovery
       </Modal>
       <RiskConfirmation
         open={confirmation !== null}
+        closeLabel={t('discovery.confirm.cancel')}
         title={t('discovery.confirm.title')}
         description={t('discovery.confirm.description', { name: confirmation?.name ?? '' })}
         acknowledgeLabel={t('discovery.confirm.acknowledge')}

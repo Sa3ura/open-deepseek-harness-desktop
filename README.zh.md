@@ -205,7 +205,7 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ### 六个本地预设插件
 
-安装包携带六个经过完整性校验的插件归档：插件市场、`dsh-im`、`dsh-skill-picker`、`dsh-font`、Better Sidebar 和 `dsh-pocket`。安装时使用包内本地归档，不会临时联网下载这些插件本体；普通传递依赖仍由 Profile 的 pnpm 解析规则管理。
+安装包携带五个经过完整性校验的插件归档：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar 和 `dsh-pocket`。安装时使用包内本地归档，不会临时联网下载这些插件本体；普通传递依赖仍由 Profile 的 pnpm 解析规则管理。
 
 这些插件仍是可卸载的普通 Harness 依赖。用户卸载后，客户端通过持久标记尊重该选择，不会在每次重启时擅自装回；需要时可以从插件市场或恢复流程重新安装。
 
@@ -368,7 +368,6 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 - [`dsh-im`](https://github.com/xmanrui/dsh-im)，由 [xmanrui](https://github.com/xmanrui) 维护：连接微信、飞书等九种 IM 机器人。
 - [`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker)，由 [a735624258](https://github.com/a735624258) 维护：在输入区选择 Skill，并插入 Harness 的 Skill 调用指令。
 - [`dsh-market`](https://github.com/dsh-market/dsh-market)，由 [dsh-market](https://github.com/dsh-market) 社区维护：在 Harness 内浏览、搜索、安装和管理插件。
-- [`dsh-font`](https://github.com/tianyhjg-lab/dsh-font)：提供客户端字体定制。
 - [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket)：提供 Pocket 扩展。
 - [`DSH Better Sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar)：提供增强侧边栏。
 

@@ -256,6 +256,7 @@ export function PluginInventorySettingsTab({
       ) : null}
       <RiskConfirmation
         open={confirmationOpen}
+        closeLabel={t('uninstall.confirm.cancel')}
         title={t('uninstall.confirm.title')}
         description={t('uninstall.confirm.description')}
         acknowledgeLabel={t('uninstall.confirm.acknowledge')}

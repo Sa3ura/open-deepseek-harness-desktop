@@ -126,6 +126,7 @@ let desktopCliManager: DesktopCliManager | undefined
 let chatBackgroundStore: DesktopChatBackgroundStore | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
+const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
 
 async function appendDesktopStartupLog(message: string): Promise<void> {
   if (harnessLogPath === '') return
@@ -881,6 +882,23 @@ async function startApplication(): Promise<void> {
     if (!isDesktopThemeSource(source)) throw new TypeError('desktop: invalid theme source')
     applyDesktopThemeSource(source)
   })
+  ipcMain.on('dsh:desktop:readiness', (event, phase: unknown) => {
+    assertMainRenderer(event.sender)
+    if (phase !== 'client' && phase !== 'event-dispatch') {
+      throw new TypeError('desktop: invalid readiness phase')
+    }
+    if (harnessOrigin === undefined) return
+    if (event.senderFrame === null) return
+    let rendererOrigin: string
+    try {
+      rendererOrigin = new URL(event.senderFrame.url).origin
+    } catch {
+      return
+    }
+    if (rendererOrigin !== harnessOrigin || reportedDesktopReadiness.has(phase)) return
+    reportedDesktopReadiness.add(phase)
+    void appendDesktopStartupLog(phase === 'client' ? 'client ready' : 'event-dispatch is ready')
+  })
   ipcMain.handle('dsh:desktop:releases:get', (): DesktopReleaseStatus => (
     releaseChecker?.status ?? { phase: 'unsupported' }
   ))
@@ -1277,6 +1295,7 @@ async function startApplication(): Promise<void> {
     ...(process.platform === 'win32' ? { terminateProcessTree: terminateWindowsProcessTree } : {}),
     onReady: (url) => {
       harnessOrigin = new URL(url).origin
+      reportedDesktopReadiness.clear()
       publishStartupProgress({ stage: 'ready', progress: 100 })
       const readyOrigin = harnessOrigin
       setTimeout(() => {

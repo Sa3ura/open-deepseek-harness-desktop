@@ -1,7 +1,9 @@
 /** Electron-only desktop shell settings and Release notification plugin. */
 
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DesktopPreferencesRow } from './DesktopPreferencesRow.tsx'
 import { readDesktopBridge } from './bridge.ts'
@@ -18,11 +20,22 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 const NS = 'desktop-shell'
-export const inject = ['slots', 'locale']
+export const inject = ['slots', 'locale', 'connection']
 
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   const bridge = readDesktopBridge()
   if (bridge === null) return
+  const connection = ctx.get('connection') as ConnectionHandle
+  bridge.shell.reportReadiness('client')
+  ctx.effect(() => {
+    const reportGeneration = (): void => {
+      if (connection.generation.getSnapshot() !== undefined) {
+        bridge.shell.reportReadiness('event-dispatch')
+      }
+    }
+    reportGeneration()
+    return connection.generation.subscribe(reportGeneration)
+  }, 'ui-desktop-shell: readiness reporting')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-desktop-shell: dictionaries')
   const controller = new DesktopShellController(bridge)
   ctx.effect(() => {

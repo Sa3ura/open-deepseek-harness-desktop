@@ -2,7 +2,7 @@
 /** First-run checklist routing, completion, skip, and acknowledgement behavior. */
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SettingsOnboardingSectionRequest } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SetupWizard } from '../src/client/SetupWizard.tsx'
@@ -67,6 +67,7 @@ function mount({ modelReady = false, acknowledge = true }: {
     complete,
     openSection,
     useSessions: unusedHook,
+    useSessionPendingInteraction: (() => new Map()) as never,
     useWorkspaces: unusedHook,
     modelsController,
     welcomeController,

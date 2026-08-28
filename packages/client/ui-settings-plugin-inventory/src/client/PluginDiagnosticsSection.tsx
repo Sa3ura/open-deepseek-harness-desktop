@@ -563,7 +563,7 @@ export function PluginDiagnosticsSection({
               <article className={css.finding} key={`${conflict.dependencyChain.join('>')}:${conflict.declaredIn}`}>
                 <div><strong>{conflict.rootPackage}</strong><span>{conflict.compatible ? t('diagnostics.compatible') : t('diagnostics.incompatible')}</span></div>
                 <code>{conflict.dependencyChain.join(' → ')}</code>
-                <p>{conflict.dependency}@{conflict.declaredRange} · Host {conflict.hostVersion} · {conflict.declaredIn}</p>
+                <p>{conflict.dependency}@{conflict.declaredRange} · {t('diagnostics.host')} {conflict.hostVersion} · {conflict.declaredIn}</p>
                 {firstForPackage ? (
                   <div className={css.actions}>
                     <Button
@@ -726,6 +726,7 @@ export function PluginDiagnosticsSection({
       </Modal>
       <RiskConfirmation
         open={uninstallTarget !== null}
+        closeLabel={t('diagnostics.uninstall.confirm.cancel')}
         title={t(uninstallTarget?.kind === 'quarantine' ? 'health.uninstall.confirm.title' : 'diagnostics.uninstall.confirm.title')}
         description={t(uninstallTarget?.kind === 'quarantine' ? 'health.uninstall.confirm.description' : 'diagnostics.uninstall.confirm.description')}
         acknowledgeLabel={t(uninstallTarget?.kind === 'quarantine' ? 'health.uninstall.confirm.acknowledge' : 'diagnostics.uninstall.confirm.acknowledge')}

@@ -65,7 +65,6 @@ describe('bundled plugin seed', () => {
       ['dshmarket', 'startup'],
       ['@xmanrui/dsh-im', 'startup'],
       ['dsh-skill-picker', 'startup'],
-      ['dsh-font', 'startup'],
       ['dsh-better-sidebar', 'startup'],
       ['dsh-pocket', 'startup'],
     ])

@@ -1,18 +1,42 @@
+---
+description: "Contextual copy and conversation-draft actions for selected read-only conversation text."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-selection-actions
 
 English | [中文](README.zh.md)
 
-Contextual selected-text actions for the Web and Electron conversation surface. A primary-button selection inside the conversation or details columns opens a compact horizontal toolbar; right-clicking the same eligible selection opens a vertical rounded menu. Both surfaces provide Copy, Ask in new conversation, and Add to current conversation.
+## Summary
 
-The package listens at the document boundary but accepts only a range wholly contained by an explicit `data-selection-actions-scope` region. Inputs, editors, buttons, links, dialogs, menus, settings portals, and the sidebar remain outside the feature. The immutable text and range rectangle are captured before the popup takes interaction, and pointer-down on an action preserves the browser selection until the command has read it.
+This package adds desktop-oriented Copy, Ask in new conversation, and Add to current conversation actions for text selected inside explicit conversation scopes. It captures immutable text before the popup takes focus and never sends a draft automatically.
 
-Ask in new conversation resolves the selected session's Workspace, connects its provisional blank session, writes a localized Markdown-quoted draft, and opens it without sending. Add to current conversation appends a Markdown quote after the existing draft. It is omitted whenever the current composer is unavailable, busy, blocked, removed, waiting for a DSH interaction, or attached to an unavailable continuable parent. Copy remains available without a Workspace.
+## Table of Contents
 
-Both popup forms use shared semantic theme tokens and therefore follow every light and dark theme. Escape, an outside pointer press, a collapsed selection, navigation, scrolling, and resizing dismiss the surface.
+- [Use the selection actions](#use-the-selection-actions)
+- [Understand the safety boundary](#understand-the-safety-boundary)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
+-----
+
+<a id="use-the-selection-actions"></a>
+## Use the selection actions
+
+A primary-button selection opens a compact toolbar, while right-clicking an eligible selection opens a rounded menu. New-conversation and current-conversation actions write localized Markdown-quoted drafts without submitting them.
+
+-----
+
+<a id="understand-the-safety-boundary"></a>
+## Understand the safety boundary
+
+Only ranges wholly contained by `data-selection-actions-scope` are accepted. Inputs, editors, controls, dialogs, menus, settings portals, and the sidebar remain outside the feature. Actions disappear when the target composer or session cannot safely accept a draft.
+
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as browser-side draft controls keep selected text out of model context until the human submits the resulting draft.
+None, as Browser-side draft controls; no selected text reaches model context until the human submits the resulting draft.
 
 #### KV Cache effect
 
@@ -20,5 +44,17 @@ None; the package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- Touch long-press selection is not handled; the first version targets mouse and trackpad interaction on desktop Web and Electron surfaces.
-- The action list is fixed. A third-party action registry is deferred until there is a concrete extension consumer and permission model.
+<a id="known-limitations-and-deferred-work"></a>
+
+- Touch long-press selection is not handled; the first version targets mouse and trackpad interaction.
+- The action list is fixed until a concrete extension consumer and permission model exist.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+Preserve the immutable selection snapshot and explicit scope boundary; do not let popup focus or navigation change the text an action consumes.
+
+</details>

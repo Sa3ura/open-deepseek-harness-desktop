@@ -1,26 +1,78 @@
+---
+description: "Read-only Cordis Loader inventory tab in Web Plugins settings for the dsh web client: searchable plugin catalog with enablement state and configuration."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-plugin-inventory
 
 English | [中文](README.zh.md)
 
-When inventory contains `dshmarket`, its expanded card exposes a risk-confirmed uninstall action backed by the core Host Remote. Packaged launches honor a successful removal instead of reinstalling the market.
+## Summary
 
-Web plugin inventory, diagnostics, external-tool connections, and discovery UI. The browser plugin registers the localized `settings.plugins.tab` contribution with id `all`, plus root `settings.section` contributions for `external-tools` and `diagnostics`; the Plugins section continues to own only its inventory tab chrome. It also contributes the root-scoped `conversation.hero.pluginDiscovery` entry to the new-session home screen. The entry opens a curated guide to community projects that explicitly document the official `dsh plugin --profile ... add ...` flow. Each card identifies the third-party source and license, shows a dated Star band, links to its repository, copies the documented command, and offers guarded installation through the structured Host Remote. Installation requires an explicit risk acknowledgement, reports background progress and bounded diagnostics, and explains that restart activates the new bundle. The UI never forwards arbitrary shell text or fetches GitHub data at runtime. The footer links to the complete GitHub `dsh-plugin` topic for broader discovery; topic membership and Star counts are not security review or DeepSeek endorsement.
+`dsh-client-ui-settings-plugin-inventory` contributes the read-only **Plugin list** tab to the Web Settings Plugins section. The tab lazily calls `ctx.remote.pluginInventory.list()` the first time it is selected and renders a searchable two-column catalog of compact disclosure cards: each collapsed card shows the short module name, an effective-enablement tag, and (for enabled entries) a colored root-fiber status dot; expanding a card reveals the Loader-tree entry id, effective configuration, and Cordis status. Loading, empty, no-match, and generic failure states stay local to the mounted component, and a failed read can be retried without exposing transport details.
 
-The packaged desktop bridge retains exact allowlisted deferred-install jobs, coarse verify/extract/configure progress, retry, fixed-log, and restart capabilities for explicit restore flows. Better Sidebar itself is now installed with the startup presets and no longer registers an automatic `shell.overlay` job after entry. The reusable card implementation remains available for a future imported-plugin restore surface without exposing an arbitrary renderer-side installer.
+## Table of Contents
 
-An imported independent data home contributes a one-time restore dialog and a persistent card in the existing Plugins page. The desktop host supplies an ordered, prevalidated list; the browser can select only opaque restore ids and cannot provide package specs or paths. Ordinary portable plugins are selected by default, external tools follow their imported connection state, client-provided presets are marked without duplicate installation, and unsupported local or credential-bearing sources remain visible with a reason. The host installs selected entries serially through the normal plugin CLI, so dependency repair, supply-chain waiting periods, build approval, bundle reconciliation, quarantine, and diagnostics retain one owner. “Later” preserves the list; explicit ignore settles only remaining entries.
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
-The External tools section gives Codex and Claude Code one discoverable connection flow: install the exact official provider bundle, restart to mount it, then connect or disconnect the product for complete modes. The Host stores this state independently from Agent Presets and projects each enabled tool into an Agent's own scope at publication, idle, or the synchronous idle-to-running boundary. Existing historical sessions therefore receive a new connection on their next turn; an in-flight turn keeps its current tools until it returns to idle, and `minimal` stays lean. Hermes and Trae remain disabled placeholders because this Harness release has no official provider bundle for them.
+-----
 
-The inventory tab performs no Remote read during plugin activation. Selecting the tab for the first time mounts it and lazily calls `ctx.remote.pluginInventory.list()` through [`api-remotes`](../../api/remotes/README.md).
+<a id="use-this-package"></a>
+## Use this package
 
-The dedicated Diagnostics section runs the core profile doctor rather than deriving dependency health from market-plugin output. “Run check” is read-only; “Check and repair” invokes the guarded convergence and quarantine policy. The page renders only current `dsh/profile-diagnostic/v2` issues and separately counts problems, dependency conflicts, load failures, configuration errors, and quarantines, so an isolation count never replaces root-cause analysis. Each issue shows its source, stage, attributed root or Loader entry, redacted evidence, permitted actions, and risk without exposing filesystem paths. An exact pnpm build-key approval opens a white modal with a red warning icon and black confirmation button; cancellation changes no policy. Safe-mode startup names skipped bundles and user layers. Redacted export downloads runtime facts, current issues, quarantine records, and the Loader summary. An active root plugin named by a conflict can be removed after explicit risk confirmation through the same structured `startUninstall` job used by the inventory surface; progress is polled and the next-boot inventory is refreshed after settlement. Orphaned Loader entries are not presented as package-manager removals because they are no longer profile dependencies. Retained startup repair notices remain dismissible without deleting quarantine history. Each quarantined plugin supports retry through the recorded specifier or risk-confirmed physical removal of its inactive residual package and durable record. The implementation is owned by this package and does not modify or depend on `dshmarket`'s diagnostics tab. The complete policy lives in [the Profile diagnostics rule catalog](../../../docs/profile-diagnostics.md).
+Open the Plugins section in Settings and select the **Plugin list** tab to inspect the Host's plugin inventory. The tab reads no Remote during plugin activation — selecting it for the first time mounts the component and lazily calls `ctx.remote.pluginInventory.list()` through `api-remotes`.
 
-Each collapsed inventory card uses the short module name as its title and a small effective-enablement tag; enabled entries also show a colored root-fiber status dot. Expanding one card reveals its Loader-tree entry id without a redundant field label, followed by the effective configuration and, for enabled entries, Cordis status. Disabled entries omit the redundant unmounted runtime state. The entry id remains the React key, disclosure identity, detail value, and an additional search target; it is never classified by string shape. Loading, empty, no-match, and generic failure states stay local to the mounted component, and a failed read can be retried without exposing transport details. The registration uses `ctx.slots.inject()`, so it follows late tab declaration, redeclaration, locale changes, and teardown without importing the section owner.
+### Reading a card
 
+Each collapsed card uses the short module name as its title and a small effective-enablement tag; enabled entries also show a colored root-fiber status dot. Expanding one card reveals its Loader-tree entry id, followed by the effective configuration and, for enabled entries, Cordis status; disabled entries omit the redundant unmounted runtime state. Search filters the catalog by name and entry id.
+
+### Retrying a failed read
+
+A failed read renders a generic failure state inside the tab; retrying re-runs the lazy `list()` call without exposing transport details.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+The tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection.
+
+### Registration
+
+The browser plugin registers one localized `settings.plugins.tab` contribution with id `all`; the Plugins section owns the navigation entry and tab chrome. Registration uses `ctx.slots.inject()`, so it follows late tab declaration, redeclaration, locale changes, and teardown without importing the section owner.
+
+### Rendering
+
+The entry id remains the React key, disclosure identity, detail value, and an additional search target; it is never classified by string shape.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+These pages cover the settings section, the remote call, and the Host-side projection.
+
+- [ui-settings-plugins](../ui-settings-plugins/README.md) — the Plugins section this tab registers into.
+- [ui-settings](../ui-settings/README.md) — the domain base declaring `settings.plugins.tab`.
+- [api-remotes](../../api/remotes/README.md) — the Remote BFF surface behind `pluginInventory.list()`.
+- [plugin-inventory](../../host/plugin-inventory/README.md) — the Host-side read-only Loader projection this tab renders.
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as this package visualizes Host-owned deployment state and starts user-confirmed profile installation in browser UI; it registers nothing model-facing.
+None, as the package is a browser-side inventory projection that registers nothing model-facing.
 
 #### KV Cache effect
 
@@ -28,8 +80,20 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits define the freshness and reach of the inventory view; they are current package constraints.
+
 - **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
-- **Read-only Loader view** — local search does not add provenance, current-browser activation diagnosis, grouping by source, or live Loader mutation controls.
-- **Dated discovery metadata** — the curated cards are a source-reviewed guide captured on 2026-08-16, not a live ranking. The linked GitHub topic is the source for a broader and changing catalog.
-- **Curated discovery uses registry sources** — discovery actions accept reviewed npm registry package specs. The desktop import restore path additionally accepts the official Profile's prevalidated npm aliases and credential-free Git sources; tarball and local-path sources remain unavailable through browser UI.
-- **Official providers only** — Codex and Claude Code are actionable because their reviewed official Bundles can be installed from npm on demand; neither Bundle is carried in the desktop installer. Hermes and Trae remain informational until an official provider contract exists.
+- **Read-only Loader view** — local search does not add provenance, current-browser activation diagnosis, grouping by source, or plugin mutation controls.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

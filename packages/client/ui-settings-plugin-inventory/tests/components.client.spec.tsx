@@ -384,13 +384,13 @@ describe('ExternalToolsSection', () => {
     fireEvent.click(codexCard.querySelector('button')!)
     await waitFor(() => {
       expect(startInstall).toHaveBeenCalledWith({
-        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2',
+        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.2-alpha.1',
       })
     })
     fireEvent.click(claudeCard.querySelector('button')!)
     await waitFor(() => {
       expect(startInstall).toHaveBeenCalledWith({
-        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2',
+        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.2-alpha.1',
       })
     })
   })

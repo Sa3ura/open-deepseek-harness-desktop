@@ -1,6 +1,6 @@
 /** Shared repository file discovery and line-oriented reference scanning. */
 
-import { globSync, readFileSync, realpathSync } from 'node:fs'
+import { existsSync, globSync, readFileSync, realpathSync } from 'node:fs'
 import { relative, resolve, sep } from 'node:path'
 
 /** One authored path plus its canonical target for symlink deduplication. */
@@ -45,6 +45,10 @@ export function uniqueRepoFiles(
       const repoPath = match.split(sep).join('/')
       if (isExcluded(repoPath)) continue
       const abs = resolve(root, repoPath)
+      // Node's glob can synthesize a nested match when a symlinked snapshot
+      // filename itself satisfies a recursive directory segment. Keep the
+      // real symlink match, but discard the impossible child path.
+      if (!existsSync(abs)) continue
       const real = realpathSync(abs)
       if (seen.has(real)) continue
       seen.add(real)

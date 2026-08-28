@@ -21,6 +21,9 @@ export interface ExternalToolsState {
 /** Official complete presets that accept the Host external-tool projection. */
 export const EXTERNAL_TOOL_PRESETS: ReadonlySet<string> = new Set([
   'standard',
+  'ptc',
+  // Legacy desktop sessions recorded the former official preset id. The
+  // roster resolves it to `ptc`, while the event keeps its historical id.
   'code',
   'cordis',
   // Compatibility with the desktop-managed preset used before connections

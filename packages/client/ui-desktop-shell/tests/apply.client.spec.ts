@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '../src/client/index.ts'
 import { DesktopPreferencesRow } from '../src/client/DesktopPreferencesRow.tsx'
@@ -10,7 +10,8 @@ afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop
 })
 
-function installBridge(): void {
+function installBridge(): ReturnType<typeof vi.fn> {
+  const reportReadiness = vi.fn()
   ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = {
     shell: {
       getCapabilities: vi.fn(() => Promise.resolve({
@@ -25,6 +26,7 @@ function installBridge(): void {
         phase: 'uninstalled', commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
       })),
       installCommandLine: vi.fn(), removeCommandLine: vi.fn(),
+      reportReadiness,
     },
     releases: {
       getStatus: vi.fn(() => Promise.resolve({ phase: 'current', currentVersion: '0.1.0' })),
@@ -34,10 +36,23 @@ function installBridge(): void {
       onDownloadStatus: vi.fn(() => () => {}),
     },
   }
+  return reportReadiness
 }
 
 async function bench() {
   const ctx = new Context()
+  let generation: { id: number; host: { home: string } } | undefined
+  const generationListeners = new Set<() => void>()
+  ctx.provide('connection', {
+    isLoopback: true,
+    generation: {
+      getSnapshot: () => generation,
+      subscribe: (listener: () => void) => {
+        generationListeners.add(listener)
+        return () => { generationListeners.delete(listener) }
+      },
+    },
+  } as never)
   await ctx.plugin(SlotRegistry).await()
   const locale = new LocaleRuntime(ctx)
   ctx.provide('locale', locale)
@@ -48,7 +63,14 @@ async function bench() {
       'settings.general.item': { kind: 'list', scope: 'root' },
     },
   } as never, () => null)
-  return { ctx, slots }
+  return {
+    ctx,
+    slots,
+    connect: () => {
+      generation = { id: 1, host: { home: '/desktop/dsh-home' } }
+      for (const listener of generationListeners) listener()
+    },
+  }
 }
 
 describe('ui-desktop-shell apply', () => {
@@ -61,10 +83,14 @@ describe('ui-desktop-shell apply', () => {
   })
 
   it('registers desktop preferences and Release checks when the bridge exists', async () => {
-    installBridge()
+    const reportReadiness = installBridge()
     const b = await bench()
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
+    expect(reportReadiness).toHaveBeenCalledWith('client')
+    expect(reportReadiness).not.toHaveBeenCalledWith('event-dispatch')
+    b.connect()
+    expect(reportReadiness).toHaveBeenCalledWith('event-dispatch')
     expect(b.slots.entries('settings.general.item')[0]?.component).toBe(DesktopPreferencesRow)
     await fiber.dispose()
     expect(b.slots.entries('settings.general.item')).toEqual([])

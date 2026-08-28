@@ -22,10 +22,14 @@ const PATTERNS = [
   'docs/**/*.md',
   'packages/*/*.md',
   'packages/*/*/*.md',
-  'examples/**/system-prompt.expected.md',
+  // Node 24's glob currently descends through a symlink when the final
+  // filename is embedded in the recursive pattern. Match Markdown broadly
+  // and narrow it in the predicate below instead.
+  'snapshots/**/*.md',
   'packages/**/system-prompt.expected.md',
   'AGENTS.md',
   'packages/AGENTS.md',
+  'snapshots/AGENTS.md',
 ]
 
 /** A located hard-wrap: a prose paragraph spanning more than one source line. */
@@ -69,7 +73,13 @@ function findViolations(absPath: string): Violation[] {
   return out
 }
 
-const files = uniqueRepoFiles(root, PATTERNS, isArchivedAgentNotePath)
+function isExcluded(path: string): boolean {
+  if (isArchivedAgentNotePath(path)) return true
+  if (!path.startsWith('snapshots/')) return false
+  return path !== 'snapshots/AGENTS.md' && !path.endsWith('/system-prompt.expected.md')
+}
+
+const files = uniqueRepoFiles(root, PATTERNS, isExcluded)
 const all = files.flatMap(file => findViolations(file.abs))
 const checked = files.length
 

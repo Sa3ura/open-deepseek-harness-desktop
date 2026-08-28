@@ -54,6 +54,7 @@ export interface DesktopShellBridge {
   getCommandLine(): Promise<DesktopCliStatus>
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
   removeCommandLine(): Promise<DesktopCliStatus>
+  reportReadiness(phase: 'client' | 'event-dispatch'): void
 }
 
 /** Release discovery and verified system-assisted installer download bridge. */
@@ -113,6 +114,7 @@ const shellBridge: DesktopShellBridge = {
   getCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:get') as Promise<DesktopCliStatus>,
   installCommandLine: force => ipcRenderer.invoke('dsh:desktop:cli:install', force) as Promise<DesktopCliStatus>,
   removeCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:remove') as Promise<DesktopCliStatus>,
+  reportReadiness: (phase) => { ipcRenderer.send('dsh:desktop:readiness', phase) },
 }
 
 const releasesBridge: DesktopReleasesBridge = {

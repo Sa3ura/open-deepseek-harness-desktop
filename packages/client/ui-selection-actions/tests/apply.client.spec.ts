@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { apply, inject } from '../src/client/index.ts'
 import { SelectionActions, type SelectionActionsInjected } from '../src/client/SelectionActions.tsx'
 
@@ -23,12 +23,13 @@ async function bench() {
   ctx.provide('locale', locale)
   const list = observable({
     current: 'session-1',
-    byId: { 'session-1': { pendingInteraction: undefined } },
+    byId: { 'session-1': {} },
   })
+  const pendingInteractions = observable(new Map())
   const session = observable({
     removed: false,
     openState: 'open',
-    pending: [],
+    pendingSubmissions: [],
     subagent: null,
   })
   const input = observable({ draft: 'existing', phase: 'plain' })
@@ -43,7 +44,8 @@ async function bench() {
     sessionOf: () => session,
     open,
   } as never)
-  ctx.provide('workspaces', { connectWorkspace } as never)
+  ctx.provide('uiSession', { pendingInteractions } as never)
+  ctx.provide('uiWorkspace', { connectWorkspace } as never)
   ctx.provide('conversation', {
     input: { for: () => ({ state: input, setDraft }) },
     blocks: { storeFor: () => block },
@@ -56,12 +58,12 @@ async function bench() {
   await ctx.plugin({ inject: [...inject], apply }).await()
   const entry = slots.entries('shell.overlay')[0]!
   const injected = (entry.inject as unknown as () => SelectionActionsInjected)()
-  return { ctx, slots, entry, injected, list, input, setDraft, open, connectWorkspace }
+  return { ctx, slots, entry, injected, list, pendingInteractions, input, setDraft, open, connectWorkspace }
 }
 
 describe('ui-selection-actions apply', () => {
   it('declares and registers the root overlay contribution', async () => {
-    expect(inject).toEqual(['slots', 'sessions', 'workspaces', 'conversation', 'locale'])
+    expect(inject).toEqual(['slots', 'sessions', 'uiSession', 'uiWorkspace', 'conversation', 'locale'])
     const b = await bench()
     expect(b.entry.component).toBe(SelectionActions)
     expect(b.entry.options).toMatchObject({ id: 'selection-actions', order: 10 })
@@ -86,10 +88,7 @@ describe('ui-selection-actions apply', () => {
     const notified = vi.fn()
     const stop = b.injected.hooks.appendAvailable.subscribe(notified)
     expect(b.injected.hooks.appendAvailable.getSnapshot()).toBe(true)
-    b.list.set({
-      current: 'session-1',
-      byId: { 'session-1': { pendingInteraction: { kind: 'approval' } } },
-    } as never)
+    b.pendingInteractions.set(new Map([['session-1', { kind: 'approval' }]]) as never)
     expect(b.injected.hooks.appendAvailable.getSnapshot()).toBe(false)
     expect(notified).toHaveBeenCalled()
     expect(() => { b.injected.appendToCurrent('session-1' as never, 'blocked') }).toThrow('not editable')

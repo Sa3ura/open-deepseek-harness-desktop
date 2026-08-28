@@ -198,6 +198,12 @@ function packageDirFromAnchor(anchor: string, packageName: string): string | und
   return undefined
 }
 
+/** Resolve only a package physically owned by one package.json directory. */
+function directPackageDir(anchor: string, packageName: string): string | undefined {
+  const candidate = join(dirname(anchor), 'node_modules', packageName)
+  return existsSync(join(candidate, 'package.json')) ? candidate : undefined
+}
+
 function readPackageManifest(path: string): PackageManifest {
   return JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
 }
@@ -337,11 +343,12 @@ export function inspectOrphanedProfileBundles(options: ProfileDependencyOptions)
   const manifest = readProfileManifest(options.binName, profileDir)
   const dependencies = manifest.dependencies ?? {}
   const bundles = manifest.dsh?.profile?.bundles ?? []
-  const installationOwned = new Set(PROFILE_TEMPLATES[options.profile] ?? DEFAULT_PROFILE_BUNDLES)
+  const installationOwned = new Set(PROFILE_TEMPLATES[options.profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
   const issues: OrphanedProfileBundle[] = []
   for (const [bundleIndex, packageName] of bundles.entries()) {
     if (installationOwned.has(packageName) || dependencies[packageName] !== undefined) continue
-    const packageDir = packageDirFromAnchor(join(profileDir, 'package.json'), packageName)
+    const packageDir = directPackageDir(join(profileDir, 'package.json'), packageName)
+      ?? directPackageDir(options.installAnchor, packageName)
     if (packageDir === undefined) {
       issues.push({ profile: options.profile, packageName, bundleIndex })
       continue
@@ -564,7 +571,7 @@ function persistQuarantines(home: string, records: readonly QuarantinedProfilePl
 }
 
 function installedVersion(profileDir: string, packageName: string): string | undefined {
-  const packageDir = packageDirFromAnchor(join(profileDir, 'package.json'), packageName)
+  const packageDir = directPackageDir(join(profileDir, 'package.json'), packageName)
   if (packageDir === undefined) return undefined
   return readPackageManifest(join(packageDir, 'package.json')).version
 }

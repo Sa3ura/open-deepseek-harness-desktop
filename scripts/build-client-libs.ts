@@ -13,7 +13,10 @@ function main(): void {
   const root = resolve(import.meta.dirname, '..')
   const clientEnvironment = resolvePartialClientBuildEnvironment(root, process.env)
   const environment = clientBuildProcessEnvironment(process.env, clientEnvironment)
-  const invocation = pnpmInvocation(['exec', 'tsdown', '--env.DSH_BUILD_FACE', 'client'], environment)
+  // Keep the dotted option and its value in one argv element. tsdown otherwise
+  // also treats the separate `client` token as an explicit entry module when
+  // invoked through pnpm's JavaScript entrypoint.
+  const invocation = pnpmInvocation(['exec', 'tsdown', '--env.DSH_BUILD_FACE=client'], environment)
   const result = spawnSync(invocation.command, invocation.args, {
     cwd: root,
     env: environment,

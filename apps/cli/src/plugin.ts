@@ -18,7 +18,6 @@ import {
   classifyProfileDiagnostic,
   createProfileDiagnosticReport,
   DEFAULT_PROFILE_BUNDLES,
-  healProfilesModuleFallback,
   initProfile,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
@@ -44,6 +43,16 @@ export { resolvePnpmCommand } from './profile-package-manager.ts'
 
 const NAME = 'dsh'
 const REGISTRY_ADD_SPEC = /^(?<name>(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*))(?:@[a-z0-9][a-z0-9._+~-]*)?$/iu
+
+/** Initialize one named profile with the official template shape. */
+function initializeProfile(dir: string, profile: string): void {
+  const template = PROFILE_TEMPLATES[profile]
+  initProfile(
+    dir,
+    template?.bundles ?? DEFAULT_PROFILE_BUNDLES,
+    template?.patchReload,
+  )
+}
 
 /**
  * Whether a resolved dependency exports a profile patch, i.e. is a bundle.
@@ -186,7 +195,7 @@ export function runPlugin(profile: string, args: readonly string[]): number {
       process.stderr.write(`${NAME}: usage: dsh plugin --profile ${profile} approve-build-key <exact-package-key>\n`)
       return 1
     }
-    initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
+    initializeProfile(dir, profile)
     try {
       const result = allowProfilePackageBuild(dir, args[1])
       if (result === 'denied') {
@@ -205,7 +214,7 @@ export function runPlugin(profile: string, args: readonly string[]): number {
       process.stderr.write(`${NAME}: usage: dsh plugin --profile ${profile} approve-build <package-name>\n`)
       return 1
     }
-    initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
+    initializeProfile(dir, profile)
     try {
       const result = allowProfileRegistryPackageBuild(dir, args[1])
       if (result === 'denied') {
@@ -232,10 +241,9 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         process.stderr.write(`${NAME}: profile ${profile} is not initialized at ${dir}\n`)
         return 1
       }
-      initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
+      initializeProfile(dir, profile)
       process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`)
     }
-    if (mutatesProfile) healProfilesModuleFallback(INSTALL_ANCHOR)
     let outcome: ProfileRepairReport
     if (retryId !== undefined) {
       outcome = retryQuarantinedProfilePlugin({
@@ -286,9 +294,8 @@ export function runPlugin(profile: string, args: readonly string[]): number {
     return normalized.status === 'healthy' ? 0 : 1
   }
   const initialized = !existsSync(join(dir, 'package.json'))
-  initProfile(dir, PROFILE_TEMPLATES[profile] ?? DEFAULT_PROFILE_BUNDLES)
+  initializeProfile(dir, profile)
   if (initialized) process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`)
-  healProfilesModuleFallback(INSTALL_ANCHOR)
   const preflight = repairProfileDependencies({
     binName: NAME,
     profile,

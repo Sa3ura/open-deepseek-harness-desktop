@@ -27,7 +27,7 @@ export type ImportedPluginRestoreState =
   | 'failed'
   | 'ignored'
 
-export type ImportedPluginSourceAvailability =
+type ImportedPluginSourceAvailability =
   | 'checking'
   | 'available'
   | 'unavailable'
@@ -77,7 +77,7 @@ export interface ImportedPluginRestoreSnapshot extends ImportedPluginRestorePlan
   readonly restartRequired: boolean
 }
 
-export interface ImportedPluginRestoreRuntimeEntry extends ImportedPluginRestoreEntry {
+interface ImportedPluginRestoreRuntimeEntry extends ImportedPluginRestoreEntry {
   readonly availability: ImportedPluginSourceAvailability
   readonly availabilityDiagnostic?: string
 }
