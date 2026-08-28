@@ -1,7 +1,7 @@
 /** Resolve the local Harness process used by the Electron host. */
 
 import { existsSync } from 'node:fs'
-import { delimiter, join } from 'node:path'
+import { join, win32 } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 /** Executable and arguments for one Harness child process. */
@@ -13,10 +13,88 @@ export interface HarnessLaunch {
 
 /** Environment variables accepted by {@link resolveHarnessLaunch}. */
 export interface DesktopLaunchEnvironment {
+  [key: string]: string | undefined
   DSH_HOME?: string
   DSH_DESKTOP_DSH_BIN?: string
   DSH_DESKTOP_NODE_BIN?: string
   PATH?: string
+}
+
+function environmentEntries(
+  environment: DesktopLaunchEnvironment,
+  name: string,
+  platform: NodeJS.Platform,
+): Array<[string, string]> {
+  const matches: Array<[string, string]> = []
+  for (const [key, value] of Object.entries(environment)) {
+    if (value === undefined) continue
+    const matchesName = platform === 'win32'
+      ? key.toUpperCase() === name.toUpperCase()
+      : key === name
+    if (matchesName) matches.push([key, value])
+  }
+  return matches
+}
+
+function windowsPathIdentity(entry: string): string {
+  const unquoted = entry.trim().replace(/^"|"$/gu, '')
+  return win32.normalize(unquoted).replace(/[\\/]+$/u, '').toLowerCase()
+}
+
+function uniqueWindowsPathEntries(entries: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const entry of entries) {
+    if (entry.trim() === '') continue
+    const identity = windowsPathIdentity(entry)
+    if (seen.has(identity)) continue
+    seen.add(identity)
+    result.push(entry)
+  }
+  return result
+}
+
+/**
+ * Build the PATH override used by packaged runtime and plugin child processes.
+ * @param environment - Environment inherited by the Electron host.
+ * @param runtimeBinPath - Embedded runtime directory that must take precedence.
+ * @param platform - Target process platform whose environment rules apply.
+ * @returns PATH entries keyed to overwrite every inherited spelling of PATH.
+ */
+export function resolveRuntimePathEnvironment(
+  environment: DesktopLaunchEnvironment,
+  runtimeBinPath: string,
+  platform: NodeJS.Platform,
+): NodeJS.ProcessEnv {
+  const pathEntries = environmentEntries(environment, 'PATH', platform)
+  if (platform !== 'win32') {
+    const inheritedPath = pathEntries[0]?.[1]
+    return {
+      PATH: inheritedPath === undefined || inheritedPath.length === 0
+        ? runtimeBinPath
+        : `${runtimeBinPath}:${inheritedPath}`,
+    }
+  }
+
+  const systemRoot = environmentEntries(environment, 'SystemRoot', platform)[0]?.[1]
+    ?? environmentEntries(environment, 'WINDIR', platform)[0]?.[1]
+  const normalizedSystemRoot = systemRoot?.trim().replace(/[\\/]+$/u, '')
+  const systemEntries = normalizedSystemRoot === undefined || normalizedSystemRoot === ''
+    ? []
+    : [
+      win32.join(normalizedSystemRoot, 'System32'),
+      normalizedSystemRoot,
+      win32.join(normalizedSystemRoot, 'System32', 'Wbem'),
+      win32.join(normalizedSystemRoot, 'System32', 'WindowsPowerShell', 'v1.0'),
+    ]
+  const inheritedEntries = pathEntries.flatMap(([, value]) => value.split(';'))
+  const value = uniqueWindowsPathEntries([
+    runtimeBinPath,
+    ...systemEntries,
+    ...inheritedEntries,
+  ]).join(';')
+  const keys = pathEntries.length === 0 ? ['PATH'] : pathEntries.map(([key]) => key)
+  return Object.fromEntries(keys.map(key => [key, value]))
 }
 
 /** Desktop-host-selected defaults for source and packaged launches. */
@@ -97,9 +175,10 @@ export function resolveHarnessInvocation(
   }
   if (options.packageManagerBin !== undefined) launchEnvironment.DSH_PNPM_BIN = options.packageManagerBin
   if (options.runtimeBinPath !== undefined) {
-    launchEnvironment.PATH = environment.PATH === undefined || environment.PATH.length === 0
-      ? options.runtimeBinPath
-      : `${options.runtimeBinPath}${delimiter}${environment.PATH}`
+    Object.assign(
+      launchEnvironment,
+      resolveRuntimePathEnvironment(environment, options.runtimeBinPath, process.platform),
+    )
   }
   if (Object.keys(launchEnvironment).length > 0) {
     launch.environment = launchEnvironment

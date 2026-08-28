@@ -51,7 +51,7 @@ Build the unsigned Windows x64 NSIS installer on Windows with:
 npm run package:desktop:win:x64
 ```
 
-The installer is written to `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`. It carries the official Windows x64 Node 24.11.1 executable, pnpm 11.7.0, and a symlink-free production Harness closure with its real `node_modules` hierarchy, so a user does not need Node or pnpm on `PATH`. Preparation verifies the official Node archive SHA-256, required Windows native modules, the embedded pnpm version, and a real Harness readiness launch before Electron Builder runs.
+The installer is written to `.artifacts/desktop-windows/DeepSeek-Harness-windows-x64.exe`. It carries the official Windows x64 Node 24.11.1 executable, pnpm 11.7.0, and a symlink-free production Harness closure with its real `node_modules` hierarchy, so a user does not need Node or pnpm on `PATH`. The Harness environment puts the embedded runtime first, guarantees `%SystemRoot%`, `System32`, Wbem, and Windows PowerShell, then preserves the user PATH inherited when Electron started. Plugins can therefore spawn Windows system executables and inherited third-party commands by bare name. A third-party tool remains unavailable when it is absent from that inherited PATH; changing the registry PATH or installing a command while the desktop is running requires an application restart, and the desktop does not evaluate PowerShell profiles to discover extra commands. Preparation verifies the official Node archive SHA-256, required Windows native modules, the embedded pnpm version, and a real Harness readiness launch before Electron Builder runs.
 
 Build the Linux x64 packages on Linux with:
 

@@ -7,6 +7,7 @@ import {
   resolveDevelopmentLaunchOptions,
   resolveHarnessInvocation,
   resolveHarnessLaunch,
+  resolveRuntimePathEnvironment,
 } from '../src/launch.ts'
 
 describe('desktop Harness launch', () => {
@@ -90,6 +91,63 @@ describe('desktop Harness launch', () => {
         PATH: `/runtime/bin${process.platform === 'win32' ? ';' : ':'}/usr/bin:/bin`,
       },
     })
+  })
+
+  it('preserves the inherited Windows Path spelling and guarantees system executables', () => {
+    expect(resolveRuntimePathEnvironment({
+      Path: 'C:\\Program Files\\Git\\cmd;C:\\Users\\test user\\AppData\\Local\\Programs\\Cursor\\bin',
+      SystemRoot: 'C:\\WINDOWS',
+    }, 'D:\\DeepSeek Harness\\resources\\runtime\\win32-x64', 'win32')).toEqual({
+      Path: [
+        'D:\\DeepSeek Harness\\resources\\runtime\\win32-x64',
+        'C:\\WINDOWS\\System32',
+        'C:\\WINDOWS',
+        'C:\\WINDOWS\\System32\\Wbem',
+        'C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0',
+        'C:\\Program Files\\Git\\cmd',
+        'C:\\Users\\test user\\AppData\\Local\\Programs\\Cursor\\bin',
+      ].join(';'),
+    })
+  })
+
+  it('provides Windows system paths when the inherited PATH is absent', () => {
+    expect(resolveRuntimePathEnvironment({
+      SystemRoot: 'C:\\Windows',
+    }, 'D:\\应用\\runtime', 'win32')).toEqual({
+      PATH: [
+        'D:\\应用\\runtime',
+        'C:\\Windows\\System32',
+        'C:\\Windows',
+        'C:\\Windows\\System32\\Wbem',
+        'C:\\Windows\\System32\\WindowsPowerShell\\v1.0',
+      ].join(';'),
+    })
+  })
+
+  it('deduplicates Windows system paths without changing inherited PATH key casing', () => {
+    expect(resolveRuntimePathEnvironment({
+      PATH: 'C:\\Windows\\System32;C:\\WINDOWS;C:\\Windows\\System32\\Wbem',
+      SystemRoot: 'C:\\WINDOWS\\',
+    }, 'D:\\runtime', 'win32')).toEqual({
+      PATH: [
+        'D:\\runtime',
+        'C:\\WINDOWS\\System32',
+        'C:\\WINDOWS',
+        'C:\\WINDOWS\\System32\\Wbem',
+        'C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0',
+      ].join(';'),
+    })
+  })
+
+  it('overwrites every inherited Windows PATH spelling with one resolved value', () => {
+    const resolved = resolveRuntimePathEnvironment({
+      PATH: 'C:\\tools-a',
+      Path: 'C:\\tools-b',
+      SYSTEMROOT: 'C:\\Windows',
+    }, 'D:\\runtime', 'win32')
+    expect(resolved.PATH).toBe(resolved.Path)
+    expect(resolved.PATH).toContain('C:\\tools-a')
+    expect(resolved.PATH).toContain('C:\\tools-b')
   })
 
   it('passes a packaged pnpm JavaScript entry without composing a command string', () => {

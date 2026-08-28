@@ -12,13 +12,13 @@ Windows 桌面安装包会重命名 Harness 生产运行时的 `node_modules` �
 
 Windows x64 安装包在 `resources/runtime/win32-x64` 中携带官方 Node 24.11.1，在 `resources/harness` 中携带保留真实 `node_modules` 层级的 Harness 部署闭包。准备脚本只接受固定的官方归档哈希，将部署链接实体化，递归注入旧版 deploy 遗漏的已声明工作区依赖，删除非目标平台原生包，提供 pnpm 11.7.0，验证必需的 Windows 模块，使用暂存运行时安装全部预设归档，并在打包前通过这套准确运行时启动 Harness。Electron Builder 26 通过独立的资源映射接收闭包顶层的 `node_modules`，因为它的通用目录复制器会有意忽略名称为 `node_modules` 的源根目录。
 
-Electron 宿主使用内置 `node.exe` 启动 `resources/harness/lib/bin.js`，通过 `DSH_PNPM_BIN` 传入内置 `pnpm.mjs` 的绝对路径，并把运行时目录放到插件生命周期脚本 `PATH` 的开头。CLI 使用当前 Node 进程和参数数组直接执行该入口，不经过 shell 插值，因此安装路径与归档路径中的空格会保留在原参数内。宿主不会设置 `ELECTRON_RUN_AS_NODE`、`NODE_PATH` 或 Electron 专属 Node 参数。
+Electron 宿主使用内置 `node.exe` 启动 `resources/harness/lib/bin.js`，通过 `DSH_PNPM_BIN` 传入内置 `pnpm.mjs` 的绝对路径，并把运行时目录放到 Harness `PATH` 的开头。Windows 环境变量键不区分大小写，因此宿主会覆盖 `Path`、`PATH` 等所有继承写法，而不是生成相互竞争的键。最终值会保证包含 `SystemRoot`、`System32`、Wbem 与 Windows PowerShell 目录，再保留应用启动时继承的用户 PATH。内置运行时仍具有最高优先级，同时插件可以按裸命令名解析 Windows 系统程序与用户安装的命令。CLI 使用当前 Node 进程和参数数组直接执行 pnpm 入口，不经过 shell 插值，因此安装路径与归档路径中的空格会保留在原参数内。宿主不会设置 `ELECTRON_RUN_AS_NODE`、`NODE_PATH` 或 Electron 专属 Node 参数。
 
 子进程在就绪前连续退出三次会进入终止性的启动失败状态。加载页会显示有界的失败信息和日志位置，并提供明确的重试与打开日志目录操作。
 
 ## 验证
 
-桌面与 CLI 单元测试固定原生 Node 启动参数、无 shell 的 `pnpm.mjs` 调用、预设安装早期失败日志、三次失败上限和明确重试。运行时准备会实际执行内置 Node、安装全部预设归档并验证 Harness 就绪路径。Windows 工作流会把静默安装参数与目标目录参数分别传给最终 NSIS 进程，在包含空格和中文字符的路径中安装时限制并检查该进程，验证已安装资源布局，并在上传产物前要求 Harness 就绪，以及全部预设依赖、bundle 条目、锁文件和 seed 标记存在。
+桌面与 CLI 单元测试固定原生 Node 启动参数、无 shell 的 `pnpm.mjs` 调用、不区分大小写的 Windows PATH 继承、必需的 Windows 系统目录、预设安装早期失败日志、三次失败上限和明确重试。运行时准备会实际执行内置 Node、安装全部预设归档并验证 Harness 就绪路径。Windows 工作流会把静默安装参数与目标目录参数分别传给最终 NSIS 进程，在包含空格和中文字符的路径中安装时限制并检查该进程，验证已安装资源布局，并在上传产物前要求 Harness 就绪，以及全部预设依赖、bundle 条目、锁文件和 seed 标记存在。
 
 ## 考虑过的替代方案
 
@@ -30,4 +30,4 @@ Electron 宿主使用内置 `node.exe` 启动 `resources/harness/lib/bin.js`，�
 
 ## 后果
 
-Windows 安装包会因包含官方 Node 发行版和未改名的依赖闭包而增大。作为回报，应用启动与插件生命周期命令采用和 CLI 相同的 Node 语义，打包时及安装后的烟雾测试会拒绝损坏的布局，持续启动失败也会变得可诊断，而不是无限循环。
+Windows 安装包会因包含官方 Node 发行版和未改名的依赖闭包而增大。作为回报，应用启动与插件生命周期命令采用和 CLI 相同的 Node 语义，插件仍可使用系统命令与继承的用户命令，打包时及安装后的烟雾测试会拒绝损坏的布局，持续启动失败也会变得可诊断，而不是无限循环。PATH 仍是应用启动时的快照；安装新的第三方命令或修改注册表 PATH 后需要重启桌面宿主。
