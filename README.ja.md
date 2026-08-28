@@ -13,6 +13,8 @@
 > [!IMPORTANT]
 >
 > **[v0.1.1-rc.2 を公開しました。ぜひお試しください](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/dsh-v0.1.1-rc.2)。** 独立したデータ環境、インポート後のプラグイン復元、強化された診断、テキスト選択アクション、デスクトップ統合を追加しています。
+>
+> 上流の [DeepSeek Harness 0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) 更新を確認しており、アーキテクチャの変更を精査しながら安全な統合を準備しています。
 
 Open DeepSeek Harness Desktop は、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) を基盤とする、コミュニティ運営の独立したデスクトップ配布版です。Node.js、pnpm、Harness ランタイムをインストーラーに同梱し、モデル設定、コーディングセッション、実行履歴、プラグイン、Skill、外部コーディングツール、IM ボットを一つのアプリで扱えます。
 

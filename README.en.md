@@ -13,6 +13,8 @@ Languages: [简体中文](README.md) · English · [日本語](README.ja.md) · 
 > [!IMPORTANT]
 >
 > **[v0.1.1-rc.2 is available now — download it and give it a try](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/dsh-v0.1.1-rc.2).** This release adds independent data environments, safe plugin restoration after import, much stronger plugin diagnostics, text-selection actions, and a more complete desktop host.
+>
+> We are aware of the upstream [DeepSeek Harness 0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) update and are reviewing its architectural changes while preparing a safe integration.
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="Downloads"></a>

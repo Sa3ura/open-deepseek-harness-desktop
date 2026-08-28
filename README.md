@@ -13,6 +13,8 @@
 > [!IMPORTANT]
 >
 > **[v0.1.1-rc.2 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/dsh-v0.1.1-rc.2)。** 新版本带来了独立配置环境、导入插件恢复、超级强化的插件诊断、文本划选快捷操作，以及更完整的桌面宿主体验。
+>
+> 我们已关注到上游 [DeepSeek Harness 0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) 更新，正在评估其中的架构变化并筹备安全合并。
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="下载量"></a>
