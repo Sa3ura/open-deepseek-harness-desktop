@@ -6,15 +6,27 @@ import type {
   PluginInstallSnapshot,
 } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 import {
+  cancelDesktopDiagnosticLabRun,
+  cleanupDesktopDiagnosticLabRun,
+  desktopDiagnosticLabAvailable,
+  exportDesktopDiagnosticLabRun,
   getDeferredPluginInstall,
+  getCurrentDesktopDiagnosticLabRun,
+  getDesktopDiagnosticLabRun,
   getPluginInstall,
-  installDesktopDiagnosticFixture,
+  listDesktopDiagnosticLabScenarios,
   openDesktopHarnessLog,
   restartDesktopApplication,
+  startDesktopDiagnosticLab,
   startDeferredPluginInstall,
   startPluginInstall,
+  subscribeDesktopDiagnosticLab,
 } from '../src/client/bundled-install-bridge.ts'
-import type { DesktopBundledPluginInstallSnapshot } from '../src/client/bundled-install-bridge.ts'
+import type {
+  DesktopBundledPluginInstallSnapshot,
+  DiagnosticLabRunSnapshot,
+  DiagnosticLabScenario,
+} from '../src/client/bundled-install-bridge.ts'
 
 afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop
@@ -27,6 +39,28 @@ const desktopSnapshot = {
   command: 'dsh plugin --profile web add dsh-better-sidebar@0.15.2', phase: 'running',
   stage: 'extracting' as const, progress: 46,
 } satisfies DesktopBundledPluginInstallSnapshot
+const labScenario = {
+  id: 'orphaned-bundle',
+  title: 'Orphaned bundle',
+  description: 'Fixture',
+  expectedCode: 'ORPHANED_BUNDLE',
+  targets: ['isolated', 'active-profile'],
+} satisfies DiagnosticLabScenario
+const labSnapshot = {
+  schema: 1,
+  runId: 'lab-one',
+  target: 'isolated',
+  preset: 'quick',
+  scenarioIds: [labScenario.id],
+  rounds: 1,
+  phase: 'queued',
+  currentRound: 0,
+  completedSteps: 0,
+  totalSteps: 6,
+  recovery: 'clean',
+  startedAt: '2026-08-28T00:00:00.000Z',
+  results: [],
+} satisfies DiagnosticLabRunSnapshot
 
 describe('desktop bundled install bridge', () => {
   it('uses an allowlisted desktop job and polls it through Electron', async () => {
@@ -72,18 +106,42 @@ describe('desktop bundled install bridge', () => {
   })
 
   it('stays invisible when the deferred marker or desktop bridge is unavailable', async () => {
+    expect(desktopDiagnosticLabAvailable()).toBe(false)
     await expect(startDeferredPluginInstall(request)).resolves.toBeUndefined()
     await expect(openDesktopHarnessLog()).resolves.toBe(false)
     await expect(restartDesktopApplication()).resolves.toBe(false)
-    await expect(installDesktopDiagnosticFixture()).resolves.toBeUndefined()
+    await expect(listDesktopDiagnosticLabScenarios()).rejects.toThrow('desktop diagnostic lab bridge is unavailable')
+    expect(subscribeDesktopDiagnosticLab(vi.fn())).toEqual(expect.any(Function))
   })
 
-  it('runs only the fixed diagnostic fixture capability exposed by Electron source mode', async () => {
-    const install = vi.fn(async () => ({ installed: true as const, diagnostic: 'real quarantine report' }))
-    ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = { diagnosticFixtures: { install } }
-    await expect(installDesktopDiagnosticFixture()).resolves.toBe('real quarantine report')
-    expect(install).toHaveBeenCalledOnce()
+  it('routes every Diagnostics Lab operation through the complete restricted bridge', async () => {
+    const catalog = vi.fn(async () => [labScenario])
+    const start = vi.fn(async () => labSnapshot)
+    const getRun = vi.fn(async () => labSnapshot)
+    const cancel = vi.fn(async () => ({ ...labSnapshot, phase: 'cancelled' as const }))
+    const cleanup = vi.fn(async () => ({ ...labSnapshot, phase: 'completed' as const }))
+    const exportReport = vi.fn(async () => '{"schema":1}')
+    const onStatus = vi.fn(() => () => {})
+    ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = {
+      diagnosticLab: { catalog, current: vi.fn(async () => labSnapshot), start, getRun, cancel, cleanup, exportReport, onStatus },
+    }
+    expect(desktopDiagnosticLabAvailable()).toBe(true)
+    await expect(listDesktopDiagnosticLabScenarios()).resolves.toEqual([labScenario])
+    await expect(getCurrentDesktopDiagnosticLabRun()).resolves.toBe(labSnapshot)
+    await expect(startDesktopDiagnosticLab({
+      scenarioIds: [labScenario.id], preset: 'quick', target: 'isolated',
+    })).resolves.toBe(labSnapshot)
+    await expect(getDesktopDiagnosticLabRun('lab-one')).resolves.toBe(labSnapshot)
+    await expect(cancelDesktopDiagnosticLabRun('lab-one')).resolves.toMatchObject({ phase: 'cancelled' })
+    await expect(cleanupDesktopDiagnosticLabRun('lab-one')).resolves.toMatchObject({ phase: 'completed' })
+    await expect(exportDesktopDiagnosticLabRun('lab-one')).resolves.toBe('{"schema":1}')
+    const unsubscribe = subscribeDesktopDiagnosticLab(vi.fn())
+    expect(onStatus).toHaveBeenCalledOnce()
+    unsubscribe()
     ;(globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop = { shell: {}, bundledPlugins: {} }
-    await expect(installDesktopDiagnosticFixture()).resolves.toBeUndefined()
+    expect(desktopDiagnosticLabAvailable()).toBe(false)
+    await expect(startDesktopDiagnosticLab({
+      scenarioIds: [labScenario.id], preset: 'quick', target: 'isolated',
+    })).rejects.toThrow('desktop diagnostic lab bridge is unavailable')
   })
 })

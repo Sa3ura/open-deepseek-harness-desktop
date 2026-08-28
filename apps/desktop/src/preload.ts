@@ -14,6 +14,11 @@ import type {
   BundledPluginStartResult,
 } from './bundled-plugin-installer.ts'
 import type { ImportedPluginRestoreSnapshot } from './imported-plugin-restore.ts'
+import type {
+  DiagnosticLabRunSnapshot,
+  DiagnosticLabScenario,
+  DiagnosticLabStartRequest,
+} from './diagnostic-lab.ts'
 import { CUSTOM_WINDOW_TITLE_BAR_HEIGHT, usesCustomWindowFrame } from './window-frame.ts'
 import {
   parseDesktopStartupProgress,
@@ -88,9 +93,16 @@ export interface DesktopImportedPluginsBridge {
   ignore(): Promise<ImportedPluginRestoreSnapshot | undefined>
 }
 
-/** Fixed source-mode fixture operation; no renderer-supplied path is accepted. */
-export interface DesktopDiagnosticFixturesBridge {
-  install(): Promise<{ installed: true; diagnostic: string }>
+/** Fixed desktop diagnostic exercises; no renderer-supplied path or command is accepted. */
+export interface DesktopDiagnosticLabBridge {
+  catalog(): Promise<readonly DiagnosticLabScenario[]>
+  current(): Promise<DiagnosticLabRunSnapshot | undefined>
+  start(request: DiagnosticLabStartRequest): Promise<DiagnosticLabRunSnapshot>
+  getRun(runId: string): Promise<DiagnosticLabRunSnapshot>
+  cancel(runId: string): Promise<DiagnosticLabRunSnapshot>
+  cleanup(runId: string): Promise<DiagnosticLabRunSnapshot>
+  exportReport(runId: string): Promise<string>
+  onStatus(callback: (snapshot: DiagnosticLabRunSnapshot) => void): () => void
 }
 
 /** Device-local background persistence owned by the desktop data directory. */
@@ -171,8 +183,19 @@ const importedPluginsBridge: DesktopImportedPluginsBridge = {
   ) as Promise<ImportedPluginRestoreSnapshot | undefined>,
 }
 
-const diagnosticFixturesBridge: DesktopDiagnosticFixturesBridge = {
-  install: () => ipcRenderer.invoke('dsh:desktop:diagnostic-fixture:install') as Promise<{ installed: true; diagnostic: string }>,
+const diagnosticLabBridge: DesktopDiagnosticLabBridge = {
+  catalog: () => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:catalog') as Promise<readonly DiagnosticLabScenario[]>,
+  current: () => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:current') as Promise<DiagnosticLabRunSnapshot | undefined>,
+  start: request => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:start', request) as Promise<DiagnosticLabRunSnapshot>,
+  getRun: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:get', runId) as Promise<DiagnosticLabRunSnapshot>,
+  cancel: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:cancel', runId) as Promise<DiagnosticLabRunSnapshot>,
+  cleanup: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:cleanup', runId) as Promise<DiagnosticLabRunSnapshot>,
+  exportReport: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:export', runId) as Promise<string>,
+  onStatus(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, snapshot: DiagnosticLabRunSnapshot): void => { callback(snapshot) }
+    ipcRenderer.on('dsh:desktop:diagnostic-lab:status', listener)
+    return () => { ipcRenderer.removeListener('dsh:desktop:diagnostic-lab:status', listener) }
+  },
 }
 
 const chatBackgroundBridge: DesktopChatBackgroundBridge = {
@@ -190,10 +213,10 @@ contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   importedPlugins: Object.freeze(sourceMode
     ? { ...importedPluginsBridge, development: true as const }
     : importedPluginsBridge),
+  diagnosticLab: Object.freeze(diagnosticLabBridge),
   chatBackground: Object.freeze(chatBackgroundBridge),
   ...(sourceMode ? {
     updater: Object.freeze(bridge),
-    diagnosticFixtures: Object.freeze(diagnosticFixturesBridge),
   } : {}),
 }))
 

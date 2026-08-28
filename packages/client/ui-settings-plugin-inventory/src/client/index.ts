@@ -10,6 +10,7 @@ import { PluginDiagnosticsSection, type PluginDiagnosticsSectionInjected } from 
 import { PluginDiscovery } from './PluginDiscovery.tsx'
 import type { PluginDiscoveryInjected } from './PluginDiscovery.tsx'
 import { ExternalToolsSection, type ExternalToolsSectionInjected } from './ExternalToolsSection.tsx'
+import { DiagnosticLabProgressCard } from './DiagnosticLabProgressCard.tsx'
 import {
   ImportedPluginRestoreSection,
   importedPluginRestoreInjected,
@@ -17,8 +18,16 @@ import {
 import { readImportedPluginRestoreBridge } from './imported-restore-bridge.ts'
 import { en, zh, type PluginInventoryLocaleKey } from './locales.ts'
 import {
+  cancelDesktopDiagnosticLabRun,
+  cleanupDesktopDiagnosticLabRun,
+  desktopDiagnosticLabAvailable,
+  exportDesktopDiagnosticLabRun,
+  getCurrentDesktopDiagnosticLabRun,
+  getDesktopDiagnosticLabRun,
   getPluginInstall,
-  installDesktopDiagnosticFixture,
+  listDesktopDiagnosticLabScenarios,
+  startDesktopDiagnosticLab,
+  subscribeDesktopDiagnosticLab,
   startPluginInstall,
 } from './bundled-install-bridge.ts'
 
@@ -77,11 +86,23 @@ export function apply(ctx: ClientContext): void {
     getInstall,
     startUninstall,
   })
+  const diagnosticLab = desktopDiagnosticLabAvailable()
+    ? {
+      listScenarios: listDesktopDiagnosticLabScenarios,
+      current: getCurrentDesktopDiagnosticLabRun,
+      start: startDesktopDiagnosticLab,
+      getRun: getDesktopDiagnosticLabRun,
+      cancel: cancelDesktopDiagnosticLabRun,
+      cleanup: cleanupDesktopDiagnosticLabRun,
+      exportReport: exportDesktopDiagnosticLabRun,
+      subscribe: subscribeDesktopDiagnosticLab,
+    }
+    : undefined
   const diagnosticsInjected = (): PluginDiagnosticsSectionInjected => ({
     list,
     getInstall,
     startUninstall,
-    installDiagnosticFixture: installDesktopDiagnosticFixture,
+    ...(diagnosticLab === undefined ? {} : { diagnosticLab }),
     startDependencyDoctor: async (request) => {
       const result = await ctx.remote.pluginInventory.startDependencyDoctor(request)
       if (!result.ok) throw new Error(`pluginInventory.startDependencyDoctor failed: ${result.error.code}: ${result.error.message}`)
@@ -182,6 +203,15 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: diagnosticsInjected,
   }, PluginDiagnosticsSection))
+  if (diagnosticLab !== undefined) {
+    ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+      name: 'shell.overlay',
+      id: 'diagnostic-lab-progress',
+      order: 80,
+      locale: NS,
+      inject: () => diagnosticLab,
+    }, DiagnosticLabProgressCard))
+  }
   ctx.slots.inject('conversation.hero.pluginDiscovery', () => ctx.slots.register({
     name: 'conversation.hero.pluginDiscovery',
     locale: NS,

@@ -1,0 +1,215 @@
+.lab {
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  padding: 16px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+}
+
+.lab > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.lab h3,
+.lab p {
+  margin: 0;
+}
+
+.lab h3 {
+  margin-top: 2px;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.lab header p,
+.scenarios small,
+.progress p {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.eyebrow,
+.offline {
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.offline {
+  flex: none;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.controls label {
+  display: flex;
+  min-width: 150px;
+  flex: 1;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
+.controls select {
+  height: 34px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+}
+
+.rounds {
+  padding-bottom: 8px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 28%, var(--dsw-alias-border-l2));
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 6%, var(--dsw-alias-bg-layer-3));
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.scenarios {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.scenarios label {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: pointer;
+}
+
+.scenarios label:has(input:checked) {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 45%, var(--dsw-alias-border-l2));
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 6%, var(--dsw-alias-bg-layer-2));
+}
+
+.scenarios input {
+  margin-top: 3px;
+  accent-color: var(--dsw-alias-state-business-primary);
+}
+
+.scenarios label > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.scenarios strong {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.scenarios code,
+.progress code {
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--ds-font-family-code);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding-top: 12px;
+}
+
+.progress > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.progress progress {
+  width: 100%;
+  height: 7px;
+  accent-color: var(--dsw-alias-state-business-primary);
+}
+
+.progress ul {
+  display: grid;
+  max-height: 180px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.progress li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 6px;
+  padding: 4px 0;
+  color: var(--dsw-alias-state-success-primary);
+  font-size: 11px;
+}
+
+.progress li[data-result='failed'],
+.progress li[data-result='cancelled'],
+.error {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.diagnostic {
+  max-height: 150px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.error {
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+@container plugin-diagnostics (max-width: 560px) {
+  .scenarios {
+    grid-template-columns: 1fr;
+  }
+}

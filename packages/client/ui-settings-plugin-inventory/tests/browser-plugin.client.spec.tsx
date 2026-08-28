@@ -9,6 +9,7 @@ import { usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply, inject, NS } from '../src/client/index.ts'
 import { PluginInventorySettingsTab } from '../src/client/PluginInventorySettingsTab.tsx'
 import { PluginDiagnosticsSection } from '../src/client/PluginDiagnosticsSection.tsx'
+import type { PluginDiagnosticsSectionInjected } from '../src/client/PluginDiagnosticsSection.tsx'
 import { ExternalToolsSection } from '../src/client/ExternalToolsSection.tsx'
 import { PluginDiscovery } from '../src/client/PluginDiscovery.tsx'
 import { ImportedPluginRestoreSection } from '../src/client/ImportedPluginRestore.tsx'
@@ -36,11 +37,30 @@ const restoreBridge = {
   ignore: vi.fn(),
 }
 
-async function bench(options: { desktopRestore?: boolean } = {}) {
-  if (options.desktopRestore !== false) {
-    ;(globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop = {
-      importedPlugins: restoreBridge,
-    }
+async function bench(options: { desktopRestore?: boolean; diagnosticLab?: boolean } = {}) {
+  const diagnosticLabCatalog = vi.fn(async () => [{
+    id: 'orphaned-bundle' as const,
+    title: 'Orphaned bundle',
+    description: 'Fixture',
+    expectedCode: 'ORPHANED_BUNDLE',
+    targets: ['isolated' as const, 'active-profile' as const],
+  }])
+  const diagnosticLab = {
+    catalog: diagnosticLabCatalog,
+    current: vi.fn(async () => undefined),
+    start: vi.fn(),
+    getRun: vi.fn(),
+    cancel: vi.fn(),
+    cleanup: vi.fn(),
+    exportReport: vi.fn(),
+    onStatus: vi.fn(() => () => {}),
+  }
+  const desktop = {
+    ...(options.desktopRestore !== false ? { importedPlugins: restoreBridge } : {}),
+    ...(options.diagnosticLab === true ? { diagnosticLab } : {}),
+  }
+  if (Object.keys(desktop).length > 0) {
+    ;(globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop = desktop
   }
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
@@ -83,7 +103,15 @@ async function bench(options: { desktopRestore?: boolean } = {}) {
     externalTools,
     setExternalTool,
   })
-  return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, list, startInstall, getInstall }
+  return {
+    ctx,
+    slots: ctx.get('slots') as SlotRegistry,
+    locale,
+    list,
+    startInstall,
+    getInstall,
+    diagnosticLabCatalog,
+  }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -126,6 +154,8 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     expect(diagnostics.component).toBe(PluginDiagnosticsSection)
     expect(diagnostics.options).toMatchObject({ id: 'diagnostics', order: 25 })
     expect(resolveSlotLabel(diagnostics.options.label)).toBe('诊断')
+    const diagnosticsInjected = (diagnostics.inject as unknown as () => PluginDiagnosticsSectionInjected)()
+    expect(diagnosticsInjected.diagnosticLab).toBeUndefined()
     expect(b.slots.entries('conversation.hero.pluginDiscovery')[0]?.component).toBe(PluginDiscovery)
     expect(b.slots.entries('shell.overlay')).toHaveLength(0)
     expect(b.list).not.toHaveBeenCalled()
@@ -144,6 +174,22 @@ describe('ui-settings-plugin-inventory browser plugin', () => {
     await b.ctx.plugin({ inject: [...inject], apply }).await()
 
     expect(b.slots.entries('settings.section').some(section => section.options.id === 'plugin-restore')).toBe(false)
+    await b.ctx.fiber.dispose()
+  })
+
+  it('exposes the restricted Diagnostics Lab only when Electron provides its full bridge', async () => {
+    const b = await bench({ diagnosticLab: true })
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+
+    const diagnostics = b.slots.entries('settings.section')
+      .find(section => section.options.id === 'diagnostics')!
+    const injected = (diagnostics.inject as unknown as () => PluginDiagnosticsSectionInjected)()
+    await expect(injected.diagnosticLab?.listScenarios()).resolves.toEqual([
+      expect.objectContaining({ id: 'orphaned-bundle' }),
+    ])
+    expect(b.slots.entries('shell.overlay')).toHaveLength(1)
+    expect(b.diagnosticLabCatalog).toHaveBeenCalledOnce()
     await b.ctx.fiber.dispose()
   })
 
