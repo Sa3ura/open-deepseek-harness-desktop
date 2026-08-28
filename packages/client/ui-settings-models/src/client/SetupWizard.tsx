@@ -192,7 +192,7 @@ export function SetupWizard(props: SetupWizardProps): ReactNode {
                   skipLabel={t('setup.skip')}
                   onConfigure={() => {
                     openSection({
-                      sectionId: 'plugins', subsectionId: 'im', step: 2,
+                      sectionId: 'xmanrui-dsh-im', step: 2,
                       complete: () => { mark('im', 'complete') },
                     })
                   }}

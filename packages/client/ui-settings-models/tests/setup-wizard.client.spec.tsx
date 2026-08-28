@@ -110,11 +110,12 @@ describe('SetupWizard', () => {
     expect(screen.getByText(zh['setup.progress'].replace('{count}', '1'))).toBeTruthy()
   })
 
-  it('opens the IM tab and Codex connection center before reaching the success welcome', () => {
+  it('opens the standalone IM section and Codex connection center before reaching the success welcome', () => {
     const h = mount({ modelReady: true })
     fireEvent.click(screen.getAllByRole('button', { name: zh['setup.configure'] })[0]!)
     const request = h.openSection.mock.calls[0]![0]
-    expect(request).toMatchObject({ sectionId: 'plugins', subsectionId: 'im', step: 2 })
+    expect(request).toMatchObject({ sectionId: 'xmanrui-dsh-im', step: 2 })
+    expect(request.subsectionId).toBeUndefined()
     act(() => { request.complete() })
 
     fireEvent.click(screen.getByRole('button', { name: zh['setup.connect'] }))
