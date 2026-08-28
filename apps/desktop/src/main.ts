@@ -42,7 +42,12 @@ import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus } from './r
 import { SourceUpdater } from './source-updater.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
 import { usesCustomWindowFrame, withCustomWindowFrameInset } from './window-frame.ts'
-import { stageDiagnosticFixture } from './diagnostic-fixture.ts'
+import {
+  DiagnosticLabManager,
+  type DiagnosticLabDoctorResult,
+  type DiagnosticLabRunSnapshot,
+  type DiagnosticLabStartRequest,
+} from './diagnostic-lab.ts'
 import { parseStartupBuildApproval } from './startup-build-approval.ts'
 import {
   desktopDataHomeSetup,
@@ -124,6 +129,7 @@ let bundledPluginInstaller: BundledPluginInstaller | undefined
 let importedPluginRestoreManager: ImportedPluginRestoreManager | undefined
 let desktopCliManager: DesktopCliManager | undefined
 let chatBackgroundStore: DesktopChatBackgroundStore | undefined
+let diagnosticLabManager: DiagnosticLabManager | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
@@ -534,6 +540,24 @@ async function runHarnessInvocation(
       else reject(new Error(`desktop: Harness invocation failed (${String(code)}, ${String(signal)}): ${diagnostic.slice(-4000)}`))
     })
   })
+}
+
+function parseDiagnosticLabDoctorOutput(output: string): DiagnosticLabDoctorResult {
+  const start = output.indexOf('{')
+  const end = output.lastIndexOf('}')
+  if (start < 0 || end < start) throw new Error(`desktop: Doctor returned no structured report: ${output.slice(-2000)}`)
+  const report = JSON.parse(output.slice(start, end + 1)) as {
+    status?: unknown
+    issues?: Array<{ code?: unknown }>
+  }
+  if (typeof report.status !== 'string' || !Array.isArray(report.issues)) {
+    throw new Error('desktop: Doctor returned an invalid structured report')
+  }
+  return {
+    status: report.status,
+    issueCodes: report.issues.flatMap(issue => typeof issue.code === 'string' ? [issue.code] : []),
+    output,
+  }
 }
 
 class PackageManagerInvocationError extends Error {
@@ -1069,18 +1093,49 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return installSelectedImportedPlugin(restoreId, 'archive')
   })
-  ipcMain.handle('dsh:desktop:diagnostic-fixture:install', async (event) => {
+  ipcMain.handle('dsh:desktop:diagnostic-lab:catalog', (event) => {
     assertMainRenderer(event.sender)
-    if (app.isPackaged) throw new Error('desktop: diagnostic fixture is unavailable in packaged builds')
-    const fixtureSource = join(DEFAULT_SOURCE_ROOT, 'apps', 'desktop', 'fixtures', 'diagnostic-incompatible-plugin')
-    const fixtureArchive = await stageDiagnosticFixture(
-      fixtureSource,
-      join(app.getPath('userData'), 'diagnostic-fixtures', 'incompatible-plugin'),
-    )
-    const diagnostic = await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
-      'plugin', '--profile', 'web', 'add', fixtureArchive,
-    ], launchOptions))
-    return { installed: true as const, diagnostic: diagnostic.slice(-4000) }
+    if (diagnosticLabManager === undefined) throw new Error('desktop: diagnostic lab is unavailable')
+    return diagnosticLabManager.catalog()
+  })
+  ipcMain.handle('dsh:desktop:diagnostic-lab:current', (event) => {
+    assertMainRenderer(event.sender)
+    if (diagnosticLabManager === undefined) throw new Error('desktop: diagnostic lab is unavailable')
+    return diagnosticLabManager.current()
+  })
+  ipcMain.handle('dsh:desktop:diagnostic-lab:start', (event, request: unknown) => {
+    assertMainRenderer(event.sender)
+    if (diagnosticLabManager === undefined) throw new Error('desktop: diagnostic lab is unavailable')
+    if (request === null || typeof request !== 'object') throw new TypeError('desktop: invalid diagnostic lab request')
+    return diagnosticLabManager.start(request as DiagnosticLabStartRequest)
+  })
+  ipcMain.handle('dsh:desktop:diagnostic-lab:get', (event, runId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (diagnosticLabManager === undefined || typeof runId !== 'string') {
+      throw new TypeError('desktop: invalid diagnostic lab run id')
+    }
+    return diagnosticLabManager.get(runId)
+  })
+  ipcMain.handle('dsh:desktop:diagnostic-lab:cancel', (event, runId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (diagnosticLabManager === undefined || typeof runId !== 'string') {
+      throw new TypeError('desktop: invalid diagnostic lab run id')
+    }
+    return diagnosticLabManager.cancel(runId)
+  })
+  ipcMain.handle('dsh:desktop:diagnostic-lab:cleanup', async (event, runId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (diagnosticLabManager === undefined || typeof runId !== 'string') {
+      throw new TypeError('desktop: invalid diagnostic lab run id')
+    }
+    return diagnosticLabManager.cleanup(runId)
+  })
+  ipcMain.handle('dsh:desktop:diagnostic-lab:export', (event, runId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (diagnosticLabManager === undefined || typeof runId !== 'string') {
+      throw new TypeError('desktop: invalid diagnostic lab run id')
+    }
+    return diagnosticLabManager.exportReport(runId)
   })
   ipcMain.on('dsh:window:minimize', (event) => {
     const window = BrowserWindow.fromWebContents(event.sender)
@@ -1322,6 +1377,36 @@ async function startApplication(): Promise<void> {
       showNotification('failed', notificationCopy.failed)
     },
   })
+  diagnosticLabManager = new DiagnosticLabManager({
+    root: join(app.getPath('userData'), 'diagnostic-lab'),
+    activeDshHome: dshHome,
+    logDirectory: join(app.getPath('logs'), 'diagnostic-lab'),
+    suspendHarness: async () => { await supervisor?.stop() },
+    resumeHarness: () => { supervisor?.resume() },
+    installProfile: async (home) => {
+      await runPackageManagerInvocation(
+        ['install', '--offline', '--ignore-scripts'],
+        join(home, 'profiles', 'web'),
+        { ...harnessEnvironment, DSH_HOME: home },
+        launchOptions,
+        90_000,
+      )
+    },
+    runDoctor: async (home, repair) => {
+      const environment = { ...harnessEnvironment, DSH_HOME: home }
+      const output = await runHarnessInvocation(resolveHarnessInvocation(environment, [
+        'plugin', '--profile', 'web', 'doctor', ...(repair ? ['--repair'] : []),
+      ], launchOptions), repair ? [0, 10, 11] : [0, 2])
+      return parseDiagnosticLabDoctorOutput(output)
+    },
+    onSnapshot: (snapshot: DiagnosticLabRunSnapshot) => {
+      const window = mainWindow
+      if (window !== undefined && !window.isDestroyed()) {
+        window.webContents.send('dsh:desktop:diagnostic-lab:status', snapshot)
+      }
+    },
+  })
+  await diagnosticLabManager.recoverPending()
   supervisor.start()
 
   if (releaseChecker !== undefined) {

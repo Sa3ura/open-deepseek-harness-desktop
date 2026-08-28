@@ -198,4 +198,16 @@ export class HarnessSupervisor {
     this.#log = undefined
     this.#options.onState('stopped')
   }
+
+  /** Resume a child after a deliberate bounded stop for desktop maintenance. */
+  resume(): boolean {
+    if (!this.#stopping || this.#child !== undefined) return false
+    this.#stopping = false
+    this.#failed = false
+    this.#restartCount = 0
+    this.#preReadyExitCount = 0
+    this.#safeMode = false
+    this.start()
+    return true
+  }
 }

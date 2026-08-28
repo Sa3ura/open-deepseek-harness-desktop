@@ -26,6 +26,10 @@ import type {
 import { en, type PluginInventoryLocaleKey } from '../src/client/locales.ts'
 import { ImportedPluginRestore } from '../src/client/ImportedPluginRestore.tsx'
 import type { ImportedPluginRestoreSnapshot } from '../src/client/imported-restore-bridge.ts'
+import type {
+  DiagnosticLabRunSnapshot,
+  DiagnosticLabScenario,
+} from '../src/client/bundled-install-bridge.ts'
 
 afterEach(() => {
   cleanup()
@@ -284,11 +288,11 @@ describe('ImportedPluginRestore', () => {
 
     fireEvent.click(screen.getByRole('button', { name: en['restore.development.not-found'] }))
     expect(screen.getAllByText(en['restore.availability.unavailable']).length).toBeGreaterThan(0)
-    expect((screen.getByRole('checkbox', { name: /community-plugin/u }) as HTMLInputElement).disabled).toBe(true)
+    expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /community-plugin/u }).disabled).toBe(true)
 
     fireEvent.click(screen.getByRole('button', { name: en['restore.development.real'] }))
     await waitFor(() => {
-      expect((screen.getByRole('checkbox', { name: /community-plugin/u }) as HTMLInputElement).checked).toBe(true)
+      expect(screen.getByRole<HTMLInputElement>('checkbox', { name: /community-plugin/u }).checked).toBe(true)
     })
     expect(screen.getByRole('button', { name: en['restore.install'] }).hasAttribute('disabled')).toBe(false)
   })
@@ -439,44 +443,38 @@ describe('PluginDiagnosticsSection', () => {
     },
   }
 
-  it('installs the fixed source-mode fixture and reloads the real quarantine record', async () => {
+  it('runs the desktop Diagnostics Lab with the reviewed offline catalog', async () => {
     const startDependencyDoctor = vi.fn()
     const startUninstall = vi.fn()
     const startQuarantineRetry = vi.fn()
     const uninstallQuarantine = vi.fn()
-    const quarantinedSnapshot = {
-      entries: [],
-      dependencyHealth: {
-        lastRepair: { status: 'quarantined', conflicts: [] },
-        issues: [],
-        safeMode: null,
-        quarantined: [{
-          quarantineId: 'fixture-quarantine',
-          profile: 'web',
-          packageName: '@hecoococ/dsh-diagnostic-conflict-fixture',
-          packageSpec: 'file:fixture',
-          quarantinedAt: '2026-08-24T00:00:00.000Z',
-          reason: 'incompatible-host-dependency',
-          conflicts: [{
-            rootPackage: '@hecoococ/dsh-diagnostic-conflict-fixture',
-            dependencyChain: ['@hecoococ/dsh-diagnostic-conflict-fixture', '@deepseek-ai/dsh-tools'],
-            dependency: '@deepseek-ai/dsh-tools',
-            declaredRange: '^0.0.0',
-            declaredIn: 'dependencies',
-            hostVersion: '0.1.0-rc.8',
-            compatible: false,
-          }],
-        }],
-      },
-    } as unknown as Snapshot
-    const list = vi.fn()
-      .mockResolvedValueOnce(diagnosticsSnapshot)
-      .mockResolvedValue(quarantinedSnapshot)
-    const installDiagnosticFixture = vi.fn(async () => 'real quarantine report')
-    const view = render(<PluginDiagnosticsSection {...({
+    const scenario = {
+      id: 'host-shadow-compatible',
+      title: 'Compatible Host shadow',
+      description: 'Detect a second physical Host instance.',
+      expectedCode: 'HOST_SHADOW_COMPATIBLE',
+      targets: ['isolated', 'active-profile'],
+    } satisfies DiagnosticLabScenario
+    const queued = {
+      schema: 1,
+      runId: 'lab-run-one',
+      target: 'isolated',
+      preset: 'quick',
+      scenarioIds: [scenario.id],
+      rounds: 1,
+      phase: 'queued',
+      currentRound: 0,
+      completedSteps: 0,
+      totalSteps: 6,
+      recovery: 'clean',
+      startedAt: '2026-08-28T00:00:00.000Z',
+      results: [],
+    } satisfies DiagnosticLabRunSnapshot
+    const listScenarios = vi.fn(async () => [scenario])
+    const start = vi.fn(async () => queued)
+    render(<PluginDiagnosticsSection {...({
       t,
-      installDiagnosticFixture,
-      list,
+      list: async () => diagnosticsSnapshot,
       startDependencyDoctor,
       getDependencyDoctor: vi.fn(),
       getInstall: vi.fn(),
@@ -484,28 +482,29 @@ describe('PluginDiagnosticsSection', () => {
       startQuarantineRetry,
       uninstallQuarantine,
       dismissDependencyHealth: vi.fn(),
+      diagnosticLab: {
+        listScenarios,
+        current: vi.fn(async () => undefined),
+        start,
+        getRun: vi.fn(async () => queued),
+        cancel: vi.fn(async () => queued),
+        cleanup: vi.fn(async () => queued),
+        exportReport: vi.fn(async () => '{}'),
+        subscribe: vi.fn(() => () => {}),
+      },
     } as PluginDiagnosticsSectionProps)} />)
 
-    const installButton = await screen.findByRole('button', { name: en['diagnostics.fixture.install'] })
-    expect(screen.queryByText(en['diagnostics.fixture.title'])).toBeNull()
-    fireEvent.focus(installButton)
-    expect(await screen.findByText(en['diagnostics.fixture.description'])).toBeTruthy()
-    fireEvent.click(installButton)
-    expect(screen.getByRole('dialog', { name: en['diagnostics.fixture.title'] })).toBeTruthy()
-    expect(installDiagnosticFixture).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: en['diagnostics.fixture.cancel'] }))
-    expect(screen.queryByRole('dialog', { name: en['diagnostics.fixture.title'] })).toBeNull()
-    fireEvent.click(installButton)
-    fireEvent.click(screen.getByRole('button', { name: en['diagnostics.fixture.confirm'] }))
-    await waitFor(() => { expect(installDiagnosticFixture).toHaveBeenCalledOnce() })
-    expect(await screen.findAllByText('@hecoococ/dsh-diagnostic-conflict-fixture')).toHaveLength(2)
-    expect(screen.getByText(en['diagnostics.quarantined'])).toBeTruthy()
-    expect(screen.getByText(en['health.quarantine.reason.incompatible'])).toBeTruthy()
-    expect(view.container.textContent).toContain('@deepseek-ai/dsh-tools@^0.0.0')
-    expect(view.container.textContent).toContain('0.1.0-rc.8')
-    expect(screen.getByText(en['diagnostics.metric.issues']).parentElement?.querySelector('dd')?.textContent).toBe('1')
-    expect(screen.getByText(en['diagnostics.metric.conflicts']).parentElement?.querySelector('dd')?.textContent).toBe('1')
-    expect(screen.getByText(en['diagnostics.metric.quarantine']).parentElement?.querySelector('dd')?.textContent).toBe('1')
+    expect(await screen.findByRole('heading', { name: en['lab.title'] })).toBeTruthy()
+    expect(listScenarios).toHaveBeenCalledOnce()
+    expect(screen.getByText(en['lab.scenario.hostCompatible.title'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['lab.start'] }))
+    await waitFor(() => {
+      expect(start).toHaveBeenCalledWith({
+        scenarioIds: ['host-shadow-compatible'],
+        preset: 'quick',
+        target: 'isolated',
+      })
+    })
     expect(startDependencyDoctor).not.toHaveBeenCalled()
     expect(startUninstall).not.toHaveBeenCalled()
     expect(startQuarantineRetry).not.toHaveBeenCalled()

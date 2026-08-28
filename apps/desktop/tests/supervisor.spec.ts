@@ -125,4 +125,35 @@ describe('Harness supervisor startup failures', () => {
     await supervisor.stop()
     expect(terminateProcessTree).toHaveBeenCalledTimes(2)
   })
+
+  it('resumes once after a deliberate maintenance stop', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-supervisor-maintenance-'))
+    roots.push(root)
+    const script = join(root, 'ready.mjs')
+    await writeFile(script, `
+      console.log('dsh web: http://127.0.0.1:43126')
+      setInterval(() => {}, 1000)
+    `)
+    let readyCount = 0
+    let resolveReady: () => void = () => {}
+    let ready = new Promise<void>((resolve) => { resolveReady = resolve })
+    const supervisor = new HarnessSupervisor({
+      launch: { command: process.execPath, args: [script] },
+      logPath: join(root, 'harness.log'),
+      environment: { ...process.env },
+      onReady: () => { readyCount += 1; resolveReady() },
+      onState: () => {},
+      onFailure: (failure) => { throw new Error(failure.message) },
+    })
+
+    supervisor.start()
+    await ready
+    await supervisor.stop()
+    ready = new Promise<void>((resolve) => { resolveReady = resolve })
+    expect(supervisor.resume()).toBe(true)
+    await ready
+    expect(readyCount).toBe(2)
+    expect(supervisor.resume()).toBe(false)
+    await supervisor.stop()
+  }, 10_000)
 })

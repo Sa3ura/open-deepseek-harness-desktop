@@ -29,19 +29,192 @@ interface DesktopShellBridge {
   restart?(): Promise<unknown>
 }
 
-/**
- * Install the fixed source-mode fixture through the trusted Electron host.
- * @returns The real diagnostic output, or undefined outside the desktop fixture bridge.
- */
-export async function installDesktopDiagnosticFixture(): Promise<string | undefined> {
+/** Closed identifiers for desktop-owned offline diagnostic exercises. */
+export type DiagnosticLabScenarioId =
+  | 'host-shadow-compatible'
+  | 'host-shadow-incompatible'
+  | 'orphaned-bundle'
+  | 'module-resolution-missing'
+  | 'patch-invalid'
+  | 'loader-duplicate'
+  | 'loader-lifecycle-failure'
+  | 'build-script-blocked'
+  | 'interrupted-repair'
+
+/** Fixed repetition levels accepted by the desktop host. */
+export type DiagnosticLabPreset = 'quick' | 'standard' | 'soak'
+/** Reviewed data environments accepted by the desktop host. */
+export type DiagnosticLabTarget = 'isolated' | 'active-profile'
+
+/** One immutable scenario descriptor projected by the desktop catalog. */
+export interface DiagnosticLabScenario {
+  readonly id: DiagnosticLabScenarioId
+  readonly title: string
+  readonly description: string
+  readonly expectedCode: string
+  readonly targets: readonly DiagnosticLabTarget[]
+}
+
+/** One scenario outcome from one pressure-test round. */
+export interface DiagnosticLabScenarioResult {
+  readonly scenarioId: DiagnosticLabScenarioId
+  readonly round: number
+  readonly phase: 'passed' | 'failed' | 'cancelled'
+  readonly expectedCode: string
+  readonly actualCode?: string
+  readonly repaired: boolean
+  readonly cleaned: boolean
+  readonly durationMs: number
+  readonly diagnostic?: string
+}
+
+/** Renderer-safe progress and terminal state for one diagnostic run. */
+export interface DiagnosticLabRunSnapshot {
+  readonly schema: 1
+  readonly runId: string
+  readonly target: DiagnosticLabTarget
+  readonly preset: DiagnosticLabPreset
+  readonly scenarioIds: readonly DiagnosticLabScenarioId[]
+  readonly rounds: number
+  readonly phase: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  readonly currentRound: number
+  readonly currentScenarioId?: DiagnosticLabScenarioId
+  readonly currentStep?: 'baseline' | 'inject' | 'detect' | 'repair' | 'verify' | 'cleanup'
+  readonly completedSteps: number
+  readonly totalSteps: number
+  readonly recovery: 'clean' | 'pending' | 'recovering' | 'failed'
+  readonly startedAt: string
+  readonly finishedAt?: string
+  readonly results: readonly DiagnosticLabScenarioResult[]
+  readonly diagnostic?: string
+}
+
+/** Restricted selection sent to the desktop diagnostic runner. */
+export interface DiagnosticLabStartRequest {
+  readonly scenarioIds: readonly DiagnosticLabScenarioId[]
+  readonly preset: DiagnosticLabPreset
+  readonly target: DiagnosticLabTarget
+}
+
+interface DesktopDiagnosticLabBridge {
+  catalog(): Promise<readonly DiagnosticLabScenario[]>
+  current(): Promise<DiagnosticLabRunSnapshot | undefined>
+  start(request: DiagnosticLabStartRequest): Promise<DiagnosticLabRunSnapshot>
+  getRun(runId: string): Promise<DiagnosticLabRunSnapshot>
+  cancel(runId: string): Promise<DiagnosticLabRunSnapshot>
+  cleanup(runId: string): Promise<DiagnosticLabRunSnapshot>
+  exportReport(runId: string): Promise<string>
+  onStatus(callback: (snapshot: DiagnosticLabRunSnapshot) => void): () => void
+}
+
+function readDesktopDiagnosticLabBridge(): DesktopDiagnosticLabBridge | undefined {
   const desktop = (globalThis as typeof globalThis & { deepSeekHarnessDesktop?: unknown }).deepSeekHarnessDesktop
   if (desktop === null || typeof desktop !== 'object') return undefined
-  const fixtures = (desktop as { diagnosticFixtures?: unknown }).diagnosticFixtures
-  if (fixtures === null || typeof fixtures !== 'object') return undefined
-  const install = (fixtures as { install?: unknown }).install
-  if (typeof install !== 'function') return undefined
-  const result = await (install as () => Promise<{ installed: true; diagnostic: string }>)()
-  return result.diagnostic
+  const lab = (desktop as { diagnosticLab?: unknown }).diagnosticLab
+  if (lab === null || typeof lab !== 'object') return undefined
+  const candidate = lab as Partial<DesktopDiagnosticLabBridge>
+  if (typeof candidate.catalog !== 'function'
+    || typeof candidate.current !== 'function'
+    || typeof candidate.start !== 'function'
+    || typeof candidate.getRun !== 'function'
+    || typeof candidate.cancel !== 'function'
+    || typeof candidate.cleanup !== 'function'
+    || typeof candidate.exportReport !== 'function'
+    || typeof candidate.onStatus !== 'function') return undefined
+  return candidate as DesktopDiagnosticLabBridge
+}
+
+/**
+ * Report whether Electron exposed the restricted Diagnostics Lab capability.
+ * @returns True in source and packaged desktop windows with the matching preload bridge.
+ */
+export function desktopDiagnosticLabAvailable(): boolean {
+  return readDesktopDiagnosticLabBridge() !== undefined
+}
+
+/**
+ * Read the reviewed desktop scenario catalog.
+ * @returns The immutable scenarios supplied by the desktop host.
+ */
+export async function listDesktopDiagnosticLabScenarios(): Promise<readonly DiagnosticLabScenario[]> {
+  const bridge = readDesktopDiagnosticLabBridge()
+  if (bridge === undefined) throw new Error('desktop diagnostic lab bridge is unavailable')
+  return bridge.catalog()
+}
+
+/**
+ * Recover the latest desktop-owned run after Harness reloads the renderer.
+ * @returns The active or latest run, or undefined before the first exercise.
+ */
+export async function getCurrentDesktopDiagnosticLabRun(): Promise<DiagnosticLabRunSnapshot | undefined> {
+  const bridge = readDesktopDiagnosticLabBridge()
+  if (bridge === undefined) throw new Error('desktop diagnostic lab bridge is unavailable')
+  return bridge.current()
+}
+
+/**
+ * Start one restricted desktop diagnostic run.
+ * @param request - Closed scenario, repetition, and target selection.
+ * @returns Initial desktop-owned run state.
+ */
+export async function startDesktopDiagnosticLab(request: DiagnosticLabStartRequest): Promise<DiagnosticLabRunSnapshot> {
+  const bridge = readDesktopDiagnosticLabBridge()
+  if (bridge === undefined) throw new Error('desktop diagnostic lab bridge is unavailable')
+  return bridge.start(request)
+}
+
+/**
+ * Poll one desktop diagnostic run.
+ * @param runId - Opaque run id returned by the desktop host.
+ * @returns Latest run state.
+ */
+export async function getDesktopDiagnosticLabRun(runId: string): Promise<DiagnosticLabRunSnapshot> {
+  const bridge = readDesktopDiagnosticLabBridge()
+  if (bridge === undefined) throw new Error('desktop diagnostic lab bridge is unavailable')
+  return bridge.getRun(runId)
+}
+
+/**
+ * Cancel one desktop diagnostic run at its next safe boundary.
+ * @param runId - Opaque run id returned by the desktop host.
+ * @returns State observed when cancellation was requested.
+ */
+export async function cancelDesktopDiagnosticLabRun(runId: string): Promise<DiagnosticLabRunSnapshot> {
+  const bridge = readDesktopDiagnosticLabBridge()
+  if (bridge === undefined) throw new Error('desktop diagnostic lab bridge is unavailable')
+  return bridge.cancel(runId)
+}
+
+/**
+ * Remove retained runtime data for a terminal desktop diagnostic run.
+ * @param runId - Opaque run id returned by the desktop host.
+ * @returns Terminal run state retained for reporting.
+ */
+export async function cleanupDesktopDiagnosticLabRun(runId: string): Promise<DiagnosticLabRunSnapshot> {
+  const bridge = readDesktopDiagnosticLabBridge()
+  if (bridge === undefined) throw new Error('desktop diagnostic lab bridge is unavailable')
+  return bridge.cleanup(runId)
+}
+
+/**
+ * Export one redacted desktop diagnostic report.
+ * @param runId - Opaque run id returned by the desktop host.
+ * @returns Structured JSON report text.
+ */
+export async function exportDesktopDiagnosticLabRun(runId: string): Promise<string> {
+  const bridge = readDesktopDiagnosticLabBridge()
+  if (bridge === undefined) throw new Error('desktop diagnostic lab bridge is unavailable')
+  return bridge.exportReport(runId)
+}
+
+/**
+ * Subscribe to desktop-owned diagnostic progress.
+ * @param callback - Consumer for immutable snapshots.
+ * @returns Idempotent listener disposer.
+ */
+export function subscribeDesktopDiagnosticLab(callback: (snapshot: DiagnosticLabRunSnapshot) => void): () => void {
+  const bridge = readDesktopDiagnosticLabBridge()
+  return bridge === undefined ? () => {} : bridge.onStatus(callback)
 }
 
 function readDesktopBundledPluginsBridge(): DesktopBundledPluginsBridge | undefined {
