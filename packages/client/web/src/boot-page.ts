@@ -74,7 +74,10 @@ export class BootPage {
     this.render()
   }
 
-  /** Keep the kernel page alive while the Host removes one incompatible Profile plugin. */
+  /**
+   * Keep the kernel page alive while the Host removes one incompatible Profile plugin.
+   * @param packageName - Profile package currently being isolated by the Host.
+   */
   recover(packageName: string): void {
     this.failure = undefined
     this.hint.textContent = `Isolating incompatible plugin ${packageName}…`

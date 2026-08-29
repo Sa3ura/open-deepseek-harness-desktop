@@ -44,6 +44,8 @@ function errorMessages(reason: unknown): string[] {
 /**
  * Parse only the deterministic client-module invariant paired with its Loader owner.
  * Generic plugin exceptions deliberately return undefined and remain visible to the user.
+ * @param reason - Loader failure or Error cause chain reported during client boot.
+ * @returns Closed recovery evidence, or undefined when the failure cannot be safely attributed.
  */
 export function clientLoadFailure(reason: unknown): ClientLoadFailure | undefined {
   const messages = errorMessages(reason)
@@ -63,7 +65,12 @@ export function clientLoadFailure(reason: unknown): ClientLoadFailure | undefine
   return { packageName, entryId, requestedModule, code: 'client-module-unavailable' }
 }
 
-/** Call the authenticated Host Remote without depending on any client plugin having loaded. */
+/**
+ * Call the authenticated Host Remote without depending on any client plugin having loaded.
+ * @param request - Validated client-load failure evidence to quarantine.
+ * @param send - Fetch-compatible transport, injectable for deterministic tests.
+ * @returns Host recovery status received before the desktop process restarts.
+ */
 export async function recoverClientLoadFailure(
   request: ClientLoadFailure,
   send: RecoveryFetch = (input, init) => globalThis.fetch(input, init),
