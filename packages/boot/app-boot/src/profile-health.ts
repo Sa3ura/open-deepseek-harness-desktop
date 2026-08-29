@@ -778,7 +778,7 @@ export function quarantineProfilePluginAfterLoadFailure(
   const rollback = options.runPackageManager(['install'])
   const rollbackDiagnostic = rollback.exitCode === 0
     ? cleanupDiagnostic
-    : `${cleanupDiagnostic ?? `failed to quarantine ${packageName}`}; rollback failed: ${rollback.diagnostic ?? 'package manager failed'}`
+    : `${cleanupDiagnostic}; rollback failed: ${rollback.diagnostic ?? 'package manager failed'}`
   return retainMaterialReport(home, report(
     options.profile,
     'failed',

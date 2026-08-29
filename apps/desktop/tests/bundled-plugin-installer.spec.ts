@@ -56,7 +56,7 @@ describe('BundledPluginInstaller', () => {
 
   it('installs only the bundled archive without attempting the registry', async () => {
     const f = await fixture()
-    const entry = f.manifest.plugins[0]!
+    const entry = f.manifest.plugins[0]
     const install = vi.fn(async () => {})
     await expect(installBundledPluginSource(entry, '/archive.tgz', install)).resolves.toBe('archive')
     expect(install).toHaveBeenCalledOnce()
@@ -130,8 +130,9 @@ describe('BundledPluginInstaller', () => {
 
   it('handles only an exact manual allowlist request and keeps one active writer', async () => {
     const f = await fixture()
-    const deferred = Promise.withResolvers<undefined>()
-    const install = vi.fn(() => deferred.promise)
+    let finishInstall: (() => void) | undefined
+    const installPromise = new Promise<void>((resolve) => { finishInstall = resolve })
+    const install = vi.fn(() => installPromise)
     const installer = new BundledPluginInstaller({
       manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'),
       install, createId: () => 'job-1',
@@ -146,7 +147,8 @@ describe('BundledPluginInstaller', () => {
     expect(first.snapshot.phase).toBe('running')
     expect(first.snapshot).toMatchObject({ stage: 'verifying', progress: 0 })
     expect(() => installer.getInstall('not-desktop')).toThrow(/invalid/)
-    deferred.resolve(undefined)
+    if (finishInstall === undefined) throw new Error('install promise did not expose its resolver')
+    finishInstall()
     await vi.waitFor(() => { expect(installer.getInstall(first.snapshot.installId).phase).toBe('succeeded') })
     expect(install).toHaveBeenCalledOnce()
   })

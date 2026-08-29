@@ -108,7 +108,8 @@ describe('bootstrap failure rendering', () => {
 
   it('uses the authenticated Remote envelope before the client plugin tree exists', async () => {
     const send = vi.fn(async (_input: URL, init: RequestInit) => {
-      const request = JSON.parse(String(init.body)) as { rpcId: string }
+      if (typeof init.body !== 'string') throw new TypeError('expected a serialized Remote request body')
+      const request = JSON.parse(init.body) as { rpcId: string }
       return Response.json({
         type: 'server-response',
         rpcId: request.rpcId,

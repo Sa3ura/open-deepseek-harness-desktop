@@ -467,7 +467,8 @@ export class PluginInventoryGateway extends TypertRemoteService {
   async recoverClientLoadFailure(
     request: PluginClientLoadFailureRequest,
   ): Promise<PluginClientLoadRecoveryResult> {
-    if (request.code !== 'client-module-unavailable'
+    const code: unknown = request.code
+    if (code !== 'client-module-unavailable'
       || !REGISTRY_PACKAGE_NAME.test(request.packageName)
       || !CLIENT_LOADER_ENTRY_ID.test(request.entryId)
       || !CLIENT_MODULE_REQUEST.test(request.requestedModule)) {

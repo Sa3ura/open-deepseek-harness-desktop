@@ -95,7 +95,9 @@ export class AppWebEntry {
         if (ctx !== undefined) await ctx.fiber.dispose()
         this.page.recover(failure.packageName)
         try {
-          const outcome = await (this.seams?.recoverClientLoadFailure ?? recoverClientLoadFailure)(failure)
+          const outcome = await (this.seams?.recoverClientLoadFailure === undefined
+            ? recoverClientLoadFailure(failure)
+            : this.seams.recoverClientLoadFailure(failure))
           if (outcome.status === 'quarantined' && outcome.restartScheduled) return
           const suffix = outcome.status === 'quarantined'
             ? 'The plugin was isolated. Restart Harness to finish recovery.'
