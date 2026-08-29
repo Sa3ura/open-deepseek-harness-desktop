@@ -89,7 +89,15 @@ Cordis Context, Service, Symbol은 버전 번호뿐 아니라 물리 모듈의 �
 
 현재 세션이 선택·확인·답변을 기다리거나 입력창이 비활성화되면 “현재 대화에 추가”는 자동으로 숨겨집니다.
 
-<table><tr><th width="50%">선택 작업 표시줄</th><th width="50%">오른쪽 클릭 메뉴</th></tr><tr><td align="center"><img src="./assets/readme/selection-toolbar-zh.png" alt="텍스트 선택 후 가로 작업 표시줄"></td><td align="center"><img src="./assets/readme/selection-context-menu-zh.png" alt="선택 텍스트의 세로 오른쪽 클릭 메뉴"></td></tr></table>
+<p align="center">
+  <strong>선택 작업 표시줄</strong><br>
+  <img src="./assets/readme/selection-toolbar-zh.png" width="900" alt="텍스트 선택 후 가로 작업 표시줄">
+</p>
+
+<p align="center">
+  <strong>오른쪽 클릭 메뉴</strong><br>
+  <img src="./assets/readme/selection-context-menu-zh.png" width="900" alt="선택 텍스트의 세로 오른쪽 클릭 메뉴">
+</p>
 
 ## 데스크톱 경험
 

@@ -89,7 +89,15 @@ Al seleccionar texto de solo lectura en mensajes, resultados de herramientas, de
 
 Si la sesión espera una elección, confirmación o respuesta, o el editor está desactivado, la opción de añadir a la conversación actual se oculta automáticamente.
 
-<table><tr><th width="50%">Barra de selección</th><th width="50%">Menú contextual</th></tr><tr><td align="center"><img src="./assets/readme/selection-toolbar-zh.png" alt="Barra horizontal tras seleccionar texto"></td><td align="center"><img src="./assets/readme/selection-context-menu-zh.png" alt="Menú vertical al hacer clic derecho"></td></tr></table>
+<p align="center">
+  <strong>Barra de selección</strong><br>
+  <img src="./assets/readme/selection-toolbar-zh.png" width="900" alt="Barra horizontal tras seleccionar texto">
+</p>
+
+<p align="center">
+  <strong>Menú contextual</strong><br>
+  <img src="./assets/readme/selection-context-menu-zh.png" width="900" alt="Menú vertical al hacer clic derecho">
+</p>
 
 ## Experiencia de escritorio
 

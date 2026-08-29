@@ -105,13 +105,15 @@ Cordis の Context、Service、Symbol はバージョン番号だけでなく物
 
 現在の会話が確認や選択を待っていて入力欄が無効な場合、「現在の会話へ追加」は非表示になります。
 
-<table>
-  <tr><th width="50%">選択ツールバー</th><th width="50%">右クリックメニュー</th></tr>
-  <tr>
-    <td align="center"><img src="./assets/readme/selection-toolbar-zh.png" alt="選択後の横型ツールバー"></td>
-    <td align="center"><img src="./assets/readme/selection-context-menu-zh.png" alt="選択テキストの縦型右クリックメニュー"></td>
-  </tr>
-</table>
+<p align="center">
+  <strong>選択ツールバー</strong><br>
+  <img src="./assets/readme/selection-toolbar-zh.png" width="900" alt="選択後の横型ツールバー">
+</p>
+
+<p align="center">
+  <strong>右クリックメニュー</strong><br>
+  <img src="./assets/readme/selection-context-menu-zh.png" width="900" alt="選択テキストの縦型右クリックメニュー">
+</p>
 
 ## デスクトップ体験
 

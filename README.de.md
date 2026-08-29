@@ -83,7 +83,15 @@ Markierter Nur-Lese-Text in Unterhaltung, Tool-Ausgabe, Details oder Dateivorsch
 
 Wartet die Sitzung auf Auswahl, Bestätigung oder Antwort oder ist der Editor gesperrt, wird „Zur aktuellen Unterhaltung hinzufügen“ automatisch ausgeblendet.
 
-<table><tr><th width="50%">Auswahlleiste</th><th width="50%">Kontextmenü</th></tr><tr><td align="center"><img src="./assets/readme/selection-toolbar-zh.png" alt="Horizontale Leiste nach Textauswahl"></td><td align="center"><img src="./assets/readme/selection-context-menu-zh.png" alt="Vertikales Kontextmenü bei Rechtsklick"></td></tr></table>
+<p align="center">
+  <strong>Auswahlleiste</strong><br>
+  <img src="./assets/readme/selection-toolbar-zh.png" width="900" alt="Horizontale Leiste nach Textauswahl">
+</p>
+
+<p align="center">
+  <strong>Kontextmenü</strong><br>
+  <img src="./assets/readme/selection-context-menu-zh.png" width="900" alt="Vertikales Kontextmenü bei Rechtsklick">
+</p>
 
 ## Desktop-Erlebnis
 

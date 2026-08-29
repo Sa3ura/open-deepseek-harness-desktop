@@ -147,16 +147,15 @@ Selecting text in read-only conversation messages, tool output, details, or file
 
 When the current session is waiting for a choice, confirmation, or answer, or when the composer cannot be edited, **Add to the current conversation** disappears. Copy and Ask in a new conversation remain available. Selections inside inputs, code editors, Settings, the sidebar, buttons, and existing menus do not trigger these actions.
 
-<table>
-  <tr>
-    <th width="50%">Selection action bar</th>
-    <th width="50%">Rounded context menu</th>
-  </tr>
-  <tr>
-    <td align="center"><img src="./assets/readme/selection-toolbar-zh.png" alt="Horizontal action bar shown after selecting text"></td>
-    <td align="center"><img src="./assets/readme/selection-context-menu-zh.png" alt="Vertical rounded menu shown after right-clicking selected text"></td>
-  </tr>
-</table>
+<p align="center">
+  <strong>Selection action bar</strong><br>
+  <img src="./assets/readme/selection-toolbar-zh.png" width="900" alt="Horizontal action bar shown after selecting text">
+</p>
+
+<p align="center">
+  <strong>Rounded context menu</strong><br>
+  <img src="./assets/readme/selection-context-menu-zh.png" width="900" alt="Vertical rounded menu shown after right-clicking selected text">
+</p>
 
 ## Desktop enhancements to the upstream Web experience
 

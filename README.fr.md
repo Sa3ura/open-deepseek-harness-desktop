@@ -83,7 +83,15 @@ Sélectionner du texte en lecture seule dans une conversation, une sortie d’ou
 
 Quand la session attend un choix, une confirmation ou une réponse, ou que l’éditeur est désactivé, l’ajout à la conversation actuelle disparaît automatiquement.
 
-<table><tr><th width="50%">Barre de sélection</th><th width="50%">Menu contextuel</th></tr><tr><td align="center"><img src="./assets/readme/selection-toolbar-zh.png" alt="Barre horizontale après sélection"></td><td align="center"><img src="./assets/readme/selection-context-menu-zh.png" alt="Menu vertical après clic droit"></td></tr></table>
+<p align="center">
+  <strong>Barre de sélection</strong><br>
+  <img src="./assets/readme/selection-toolbar-zh.png" width="900" alt="Barre horizontale après sélection">
+</p>
+
+<p align="center">
+  <strong>Menu contextuel</strong><br>
+  <img src="./assets/readme/selection-context-menu-zh.png" width="900" alt="Menu vertical après clic droit">
+</p>
 
 ## Expérience de bureau
 

@@ -83,7 +83,15 @@ Selecionar texto somente leitura em conversas, saída de ferramentas, detalhes o
 
 Quando a sessão aguarda escolha, confirmação ou resposta, ou o editor está desativado, “Adicionar à conversa atual” é ocultado automaticamente.
 
-<table><tr><th width="50%">Barra de seleção</th><th width="50%">Menu de contexto</th></tr><tr><td align="center"><img src="./assets/readme/selection-toolbar-zh.png" alt="Barra horizontal após selecionar texto"></td><td align="center"><img src="./assets/readme/selection-context-menu-zh.png" alt="Menu vertical ao clicar com o botão direito"></td></tr></table>
+<p align="center">
+  <strong>Barra de seleção</strong><br>
+  <img src="./assets/readme/selection-toolbar-zh.png" width="900" alt="Barra horizontal após selecionar texto">
+</p>
+
+<p align="center">
+  <strong>Menu de contexto</strong><br>
+  <img src="./assets/readme/selection-context-menu-zh.png" width="900" alt="Menu vertical ao clicar com o botão direito">
+</p>
 
 ## Experiência desktop
 
