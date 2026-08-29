@@ -374,12 +374,14 @@ const TITLE_BAR_STYLE = `
     box-sizing: border-box;
     height: 100%;
     overflow: hidden;
-    padding-top: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px;
   }
   html.dsh-desktop-custom-frame body {
     box-sizing: border-box;
-    height: 100% !important;
-    min-height: 100% !important;
+    height: auto !important;
+    inset: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px 0 0;
+    min-height: 0 !important;
+    overflow: hidden;
+    position: fixed;
   }
   #dsh-desktop-titlebar {
     -webkit-app-region: drag;

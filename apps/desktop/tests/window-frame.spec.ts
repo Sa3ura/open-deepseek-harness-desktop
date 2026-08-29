@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
 import {
   CUSTOM_WINDOW_TITLE_BAR_HEIGHT,
@@ -27,5 +28,14 @@ describe('desktop window frame policy', () => {
   it('does not stamp the macOS Harness URL', () => {
     const url = 'http://127.0.0.1:64174/?token=one#session'
     expect(withCustomWindowFrameInset(url, 'darwin')).toBe(url)
+  })
+
+  it('pins Web content below the custom title bar instead of relying on document padding', async () => {
+    const preload = await readFile(new URL('../src/preload.ts', import.meta.url), 'utf8')
+
+    expect(preload).toContain('inset: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px 0 0;')
+    expect(preload).toContain('height: auto !important;')
+    expect(preload).toContain('position: fixed;')
+    expect(preload).not.toContain('padding-top: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px;')
   })
 })

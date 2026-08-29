@@ -91,7 +91,7 @@ Profile 插件属于可信的可执行代码。内置包管理运行时让插件
 
 ## 跨平台发行矩阵
 
-源码宿主只使用 macOS、Windows 和 Linux 共用的 Electron 与 Node 进程 API。macOS 保留原生标题栏与交通灯按钮；Windows 和 Linux 使用无系统边框窗口，由 Harness 自绘 36 px 可拖拽标题栏及最小化、最大化或还原、关闭按钮。这两个平台的 Harness URL 会同时声明 36 px 的 `dsh-desktop-titlebar-inset`，使 Better Sidebar 等固定或全视口 Web 插件为桌面 chrome 预留空间，而不会渲染到窗口按钮下方。打包工作流会在匹配的原生运行器上构建以下矩阵：
+源码宿主只使用 macOS、Windows 和 Linux 共用的 Electron 与 Node 进程 API。macOS 保留原生标题栏与交通灯按钮；Windows 和 Linux 使用无系统边框窗口，由 Harness 自绘 36 px 可拖拽标题栏及最小化、最大化或还原、关闭按钮。preload 会把 Web 文档明确约束在标题栏下方的剩余视口中，而不是依赖页面内边距；这两个平台的 Harness URL 还会声明相同的 36 px `dsh-desktop-titlebar-inset`，使 Better Sidebar 等固定或全视口 Web 插件为桌面 chrome 预留空间，而不会渲染到窗口按钮下方。打包工作流会在匹配的原生运行器上构建以下矩阵：
 
 | 平台 | 原生运行器 | 产物 |
 | --- | --- | --- |
