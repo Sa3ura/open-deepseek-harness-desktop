@@ -101,7 +101,7 @@ export interface DesktopDiagnosticLabBridge {
   start(request: DiagnosticLabStartRequest): Promise<DiagnosticLabRunSnapshot>
   getRun(runId: string): Promise<DiagnosticLabRunSnapshot>
   cancel(runId: string): Promise<DiagnosticLabRunSnapshot>
-  cleanup(runId: string): Promise<DiagnosticLabRunSnapshot>
+  restoreAll(runId: string): Promise<DiagnosticLabRunSnapshot>
   exportReport(runId: string): Promise<string>
   onStatus(callback: (snapshot: DiagnosticLabRunSnapshot) => void): () => void
 }
@@ -191,7 +191,7 @@ const diagnosticLabBridge: DesktopDiagnosticLabBridge = {
   start: request => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:start', request) as Promise<DiagnosticLabRunSnapshot>,
   getRun: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:get', runId) as Promise<DiagnosticLabRunSnapshot>,
   cancel: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:cancel', runId) as Promise<DiagnosticLabRunSnapshot>,
-  cleanup: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:cleanup', runId) as Promise<DiagnosticLabRunSnapshot>,
+  restoreAll: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:restore-all', runId) as Promise<DiagnosticLabRunSnapshot>,
   exportReport: runId => ipcRenderer.invoke('dsh:desktop:diagnostic-lab:export', runId) as Promise<string>,
   onStatus(callback) {
     const listener = (_event: Electron.IpcRendererEvent, snapshot: DiagnosticLabRunSnapshot): void => { callback(snapshot) }

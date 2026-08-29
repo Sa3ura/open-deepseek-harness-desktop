@@ -22,7 +22,9 @@ async function fixture() {
   const resourcesDirectory = join(root, 'resources')
   await mkdir(resourcesDirectory)
   const bytes = Buffer.from('archive')
-  for (const archive of ['startup.tgz', 'manual.tgz']) await writeFile(join(resourcesDirectory, archive), bytes)
+  for (const archive of ['startup.tgz', 'manual.tgz', 'diagnostic.tgz']) {
+    await writeFile(join(resourcesDirectory, archive), bytes)
+  }
   const integrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`
   const manifest: BundledPluginManifest = {
     schema: 2,
@@ -34,6 +36,10 @@ async function fixture() {
       {
         seedId: 'manual', packageName: 'manual', version: '2.0.0', profile: 'web',
         installPolicy: 'manual', registrySpec: 'manual@2.0.0', archive: 'manual.tgz', integrity,
+      },
+      {
+        seedId: 'diagnostic', packageName: 'diagnostic', version: '3.0.0', profile: 'web',
+        installPolicy: 'diagnostic', archive: 'diagnostic.tgz', integrity,
       },
     ],
   }
@@ -131,6 +137,7 @@ describe('BundledPluginInstaller', () => {
       install, createId: () => 'job-1',
     })
     expect(installer.startManual('web', 'other@1.0.0')).toEqual({ handled: false })
+    expect(installer.startManual('web', 'diagnostic@3.0.0')).toEqual({ handled: false })
     const first = installer.startManual('web', 'manual@2.0.0')
     const second = installer.startManual('web', 'manual@2.0.0')
     expect(first).toEqual(second)

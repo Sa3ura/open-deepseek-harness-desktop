@@ -67,10 +67,16 @@ describe('bundled plugin seed', () => {
       ['dsh-skill-picker', 'startup'],
       ['dsh-better-sidebar', 'startup'],
       ['dsh-pocket', 'startup'],
+      ['dsh-font', 'diagnostic'],
     ])
-    for (const entry of manifest.plugins.filter(candidate => !candidate.registrySpec?.startsWith('github:'))) {
+    for (const entry of manifest.plugins.filter(candidate => (
+      candidate.installPolicy !== 'diagnostic' && !candidate.registrySpec?.startsWith('github:')
+    ))) {
       expect(entry.registrySpec).toBe(`${entry.packageName}@${entry.version}`)
     }
+    const diagnosticEntry = manifest.plugins.find(entry => entry.packageName === 'dsh-font')
+    expect(diagnosticEntry).toMatchObject({ version: '1.1.0', installPolicy: 'diagnostic' })
+    expect(diagnosticEntry?.registrySpec).toBeUndefined()
     expect(new Set(manifest.plugins.map(entry => entry.seedId)).size).toBe(manifest.plugins.length)
     expect(manifest.plugins.find(entry => entry.packageName === 'dsh-better-sidebar')?.approvedBuilds)
       .toEqual(['node-pty'])

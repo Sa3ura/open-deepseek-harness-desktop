@@ -9,7 +9,7 @@ export interface BundledPluginManifestEntry {
   readonly packageName: string
   readonly version: string
   readonly profile: string
-  readonly installPolicy: 'startup' | 'manual'
+  readonly installPolicy: 'startup' | 'manual' | 'diagnostic'
   /** Exact npm or Git spec used first so ordinary installs remain updateable. */
   readonly registrySpec?: string
   /** Reviewed registry packages whose lifecycle scripts this bundled entry requires. */
@@ -74,7 +74,9 @@ export function assertBundledPluginManifestEntry(entry: unknown): asserts entry 
     || !/^[a-z0-9][a-z0-9.+-]*$/iu.test(candidate.version)
     || typeof candidate.archive !== 'string'
     || basename(candidate.archive) !== candidate.archive
-    || (candidate.installPolicy !== 'startup' && candidate.installPolicy !== 'manual')
+    || (candidate.installPolicy !== 'startup'
+      && candidate.installPolicy !== 'manual'
+      && candidate.installPolicy !== 'diagnostic')
     || (candidate.registrySpec !== undefined && (
       typeof candidate.registrySpec !== 'string'
       || !/^\S+$/u.test(candidate.registrySpec)
@@ -226,6 +228,25 @@ async function writeMarker(path: string, entry: BundledPluginManifestEntry): Pro
   await rename(temporary, path)
 }
 
+/**
+ * Verify one packaged archive without installing it or creating a seed marker.
+ * Diagnostic-only entries use this path so a lab exercise cannot become a
+ * normal preset merely by being carried in the application resources.
+ */
+export async function verifyBundledPluginArchive(
+  resourcesDirectory: string,
+  entry: BundledPluginManifestEntry,
+): Promise<string> {
+  assertBundledPluginManifestEntry(entry)
+  const source = join(resourcesDirectory, entry.archive)
+  const bytes = await readFile(source)
+  const actualIntegrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`
+  if (actualIntegrity !== entry.integrity) {
+    throw new Error(`desktop: bundled plugin integrity mismatch for ${entry.packageName}`)
+  }
+  return source
+}
+
 /** Seed once. The durable marker intentionally survives a later user uninstall. */
 export async function seedBundledPlugin(options: SeedBundledPluginOptions): Promise<SeedBundledPluginResult> {
   const {
@@ -259,12 +280,7 @@ export async function seedBundledPlugin(options: SeedBundledPluginOptions): Prom
   }
 
   onProgress?.({ stage: 'verifying', progress: 8 })
-  const source = join(resourcesDirectory, entry.archive)
-  const bytes = await readFile(source)
-  const actualIntegrity = `sha512-${createHash('sha512').update(bytes).digest('base64')}`
-  if (actualIntegrity !== entry.integrity) {
-    throw new Error(`desktop: bundled plugin integrity mismatch for ${entry.packageName}`)
-  }
+  const source = await verifyBundledPluginArchive(resourcesDirectory, entry)
   await mkdir(stateDirectory, { recursive: true })
   const stableArchive = join(stateDirectory, entry.archive)
   await copyFile(source, stableArchive)

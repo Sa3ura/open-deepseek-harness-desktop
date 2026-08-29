@@ -79,8 +79,11 @@
   font: inherit;
 }
 
-.rounds {
-  padding-bottom: 8px;
+.persistence {
+  align-self: center;
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 8%, transparent);
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
 }

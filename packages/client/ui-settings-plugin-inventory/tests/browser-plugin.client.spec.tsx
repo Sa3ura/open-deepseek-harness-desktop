@@ -51,7 +51,7 @@ async function bench(options: { desktopRestore?: boolean; diagnosticLab?: boolea
     start: vi.fn(),
     getRun: vi.fn(),
     cancel: vi.fn(),
-    cleanup: vi.fn(),
+    restoreAll: vi.fn(),
     exportReport: vi.fn(),
     onStatus: vi.fn(() => () => {}),
   }

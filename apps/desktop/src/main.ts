@@ -9,7 +9,7 @@ import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, session, shell, Tray,
   type MenuItemConstructorOptions, type MessageBoxOptions,
 } from 'electron'
-import { appendBundledPluginFailure } from './bundled-plugin-seed.ts'
+import { appendBundledPluginFailure, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
 import {
   BundledPluginInstaller,
   installBundledPluginSource,
@@ -1123,12 +1123,12 @@ async function startApplication(): Promise<void> {
     }
     return diagnosticLabManager.cancel(runId)
   })
-  ipcMain.handle('dsh:desktop:diagnostic-lab:cleanup', async (event, runId: unknown) => {
+  ipcMain.handle('dsh:desktop:diagnostic-lab:restore-all', async (event, runId: unknown) => {
     assertMainRenderer(event.sender)
     if (diagnosticLabManager === undefined || typeof runId !== 'string') {
       throw new TypeError('desktop: invalid diagnostic lab run id')
     }
-    return diagnosticLabManager.cleanup(runId)
+    return diagnosticLabManager.restoreAll(runId)
   })
   ipcMain.handle('dsh:desktop:diagnostic-lab:export', (event, runId: unknown) => {
     assertMainRenderer(event.sender)
@@ -1391,6 +1391,20 @@ async function startApplication(): Promise<void> {
         launchOptions,
         90_000,
       )
+    },
+    installDiagnosticPlugin: async (home, packageName) => {
+      const entry = manifest.plugins.find(candidate => (
+        candidate.installPolicy === 'diagnostic'
+        && candidate.profile === 'web'
+        && candidate.packageName === packageName
+      ))
+      if (entry === undefined) throw new Error(`desktop: packaged diagnostic plugin ${packageName} is unavailable`)
+      const archivePath = await verifyBundledPluginArchive(bundledDirectory, entry)
+      await runHarnessInvocation(resolveHarnessInvocation(
+        { ...harnessEnvironment, DSH_HOME: home },
+        ['plugin', '--profile', entry.profile, 'add', '--save-exact', archivePath],
+        launchOptions,
+      ))
     },
     runDoctor: async (home, repair) => {
       const environment = { ...harnessEnvironment, DSH_HOME: home }

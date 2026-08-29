@@ -34,6 +34,7 @@ export type DiagnosticLabScenarioId =
   | 'host-shadow-compatible'
   | 'host-shadow-incompatible'
   | 'orphaned-bundle'
+  | 'client-module-unavailable'
   | 'module-resolution-missing'
   | 'patch-invalid'
   | 'loader-duplicate'
@@ -41,8 +42,6 @@ export type DiagnosticLabScenarioId =
   | 'build-script-blocked'
   | 'interrupted-repair'
 
-/** Fixed repetition levels accepted by the desktop host. */
-export type DiagnosticLabPreset = 'quick' | 'standard' | 'soak'
 /** Reviewed data environments accepted by the desktop host. */
 export type DiagnosticLabTarget = 'isolated' | 'active-profile'
 
@@ -55,34 +54,31 @@ export interface DiagnosticLabScenario {
   readonly targets: readonly DiagnosticLabTarget[]
 }
 
-/** One scenario outcome from one pressure-test round. */
+/** One retained scenario outcome. */
 export interface DiagnosticLabScenarioResult {
   readonly scenarioId: DiagnosticLabScenarioId
-  readonly round: number
   readonly phase: 'passed' | 'failed' | 'cancelled'
   readonly expectedCode: string
   readonly actualCode?: string
   readonly repaired: boolean
-  readonly cleaned: boolean
+  readonly retained: boolean
+  readonly disposition?: 'repaired' | 'quarantined' | 'retained'
   readonly durationMs: number
   readonly diagnostic?: string
 }
 
 /** Renderer-safe progress and terminal state for one diagnostic run. */
 export interface DiagnosticLabRunSnapshot {
-  readonly schema: 1
+  readonly schema: 2
   readonly runId: string
   readonly target: DiagnosticLabTarget
-  readonly preset: DiagnosticLabPreset
   readonly scenarioIds: readonly DiagnosticLabScenarioId[]
-  readonly rounds: number
-  readonly phase: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
-  readonly currentRound: number
+  readonly phase: 'queued' | 'running' | 'active' | 'restoring' | 'restored' | 'failed' | 'cancelled'
   readonly currentScenarioId?: DiagnosticLabScenarioId
-  readonly currentStep?: 'baseline' | 'inject' | 'detect' | 'repair' | 'verify' | 'cleanup'
+  readonly currentStep?: 'baseline' | 'inject' | 'detect' | 'repair' | 'verify' | 'retain'
   readonly completedSteps: number
   readonly totalSteps: number
-  readonly recovery: 'clean' | 'pending' | 'recovering' | 'failed'
+  readonly recovery: 'clean' | 'pending' | 'retained' | 'recovering' | 'failed'
   readonly startedAt: string
   readonly finishedAt?: string
   readonly results: readonly DiagnosticLabScenarioResult[]
@@ -92,7 +88,6 @@ export interface DiagnosticLabRunSnapshot {
 /** Restricted selection sent to the desktop diagnostic runner. */
 export interface DiagnosticLabStartRequest {
   readonly scenarioIds: readonly DiagnosticLabScenarioId[]
-  readonly preset: DiagnosticLabPreset
   readonly target: DiagnosticLabTarget
 }
 
@@ -102,7 +97,7 @@ interface DesktopDiagnosticLabBridge {
   start(request: DiagnosticLabStartRequest): Promise<DiagnosticLabRunSnapshot>
   getRun(runId: string): Promise<DiagnosticLabRunSnapshot>
   cancel(runId: string): Promise<DiagnosticLabRunSnapshot>
-  cleanup(runId: string): Promise<DiagnosticLabRunSnapshot>
+  restoreAll(runId: string): Promise<DiagnosticLabRunSnapshot>
   exportReport(runId: string): Promise<string>
   onStatus(callback: (snapshot: DiagnosticLabRunSnapshot) => void): () => void
 }
@@ -118,7 +113,7 @@ function readDesktopDiagnosticLabBridge(): DesktopDiagnosticLabBridge | undefine
     || typeof candidate.start !== 'function'
     || typeof candidate.getRun !== 'function'
     || typeof candidate.cancel !== 'function'
-    || typeof candidate.cleanup !== 'function'
+    || typeof candidate.restoreAll !== 'function'
     || typeof candidate.exportReport !== 'function'
     || typeof candidate.onStatus !== 'function') return undefined
   return candidate as DesktopDiagnosticLabBridge
@@ -154,7 +149,7 @@ export async function getCurrentDesktopDiagnosticLabRun(): Promise<DiagnosticLab
 
 /**
  * Start one restricted desktop diagnostic run.
- * @param request - Closed scenario, repetition, and target selection.
+ * @param request - Closed scenario and target selection.
  * @returns Initial desktop-owned run state.
  */
 export async function startDesktopDiagnosticLab(request: DiagnosticLabStartRequest): Promise<DiagnosticLabRunSnapshot> {
@@ -186,14 +181,14 @@ export async function cancelDesktopDiagnosticLabRun(runId: string): Promise<Diag
 }
 
 /**
- * Remove retained runtime data for a terminal desktop diagnostic run.
+ * Restore every file and dependency retained by a completed desktop exercise.
  * @param runId - Opaque run id returned by the desktop host.
- * @returns Terminal run state retained for reporting.
+ * @returns Restored run state retained for reporting.
  */
-export async function cleanupDesktopDiagnosticLabRun(runId: string): Promise<DiagnosticLabRunSnapshot> {
+export async function restoreAllDesktopDiagnosticLabRun(runId: string): Promise<DiagnosticLabRunSnapshot> {
   const bridge = readDesktopDiagnosticLabBridge()
   if (bridge === undefined) throw new Error('desktop diagnostic lab bridge is unavailable')
-  return bridge.cleanup(runId)
+  return bridge.restoreAll(runId)
 }
 
 /**

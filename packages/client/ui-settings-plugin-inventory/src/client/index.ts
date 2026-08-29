@@ -20,7 +20,7 @@ import { readImportedPluginRestoreBridge } from './imported-restore-bridge.ts'
 import { en, zh, type PluginInventoryLocaleKey } from './locales.ts'
 import {
   cancelDesktopDiagnosticLabRun,
-  cleanupDesktopDiagnosticLabRun,
+  restoreAllDesktopDiagnosticLabRun,
   desktopDiagnosticLabAvailable,
   exportDesktopDiagnosticLabRun,
   getCurrentDesktopDiagnosticLabRun,
@@ -94,7 +94,7 @@ export function apply(ctx: ClientContext): void {
       start: startDesktopDiagnosticLab,
       getRun: getDesktopDiagnosticLabRun,
       cancel: cancelDesktopDiagnosticLabRun,
-      cleanup: cleanupDesktopDiagnosticLabRun,
+      restoreAll: restoreAllDesktopDiagnosticLabRun,
       exportReport: exportDesktopDiagnosticLabRun,
       subscribe: subscribeDesktopDiagnosticLab,
     }

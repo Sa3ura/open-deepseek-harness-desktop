@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Button, IconWarningOutline16, RiskConfirmation } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import type {
-  DiagnosticLabPreset,
   DiagnosticLabRunSnapshot,
   DiagnosticLabScenario,
   DiagnosticLabScenarioId,
@@ -18,7 +17,7 @@ export interface DiagnosticLabInjected {
   readonly start: (request: DiagnosticLabStartRequest) => Promise<DiagnosticLabRunSnapshot>
   readonly getRun: (runId: string) => Promise<DiagnosticLabRunSnapshot>
   readonly cancel: (runId: string) => Promise<DiagnosticLabRunSnapshot>
-  readonly cleanup: (runId: string) => Promise<DiagnosticLabRunSnapshot>
+  readonly restoreAll: (runId: string) => Promise<DiagnosticLabRunSnapshot>
   readonly exportReport: (runId: string) => Promise<string>
   readonly subscribe: (callback: (snapshot: DiagnosticLabRunSnapshot) => void) => () => void
 }
@@ -28,8 +27,6 @@ export interface DiagnosticLabPanelProps extends DiagnosticLabInjected {
   readonly t: (key: PluginInventoryLocaleKey) => string
 }
 
-const ROUNDS = { quick: 1, standard: 3, soak: 10 } satisfies Record<DiagnosticLabPreset, number>
-
 const SCENARIO_KEYS: Record<DiagnosticLabScenarioId, {
   readonly title: PluginInventoryLocaleKey
   readonly body: PluginInventoryLocaleKey
@@ -37,6 +34,7 @@ const SCENARIO_KEYS: Record<DiagnosticLabScenarioId, {
   'host-shadow-compatible': { title: 'lab.scenario.hostCompatible.title', body: 'lab.scenario.hostCompatible.body' },
   'host-shadow-incompatible': { title: 'lab.scenario.hostIncompatible.title', body: 'lab.scenario.hostIncompatible.body' },
   'orphaned-bundle': { title: 'lab.scenario.orphan.title', body: 'lab.scenario.orphan.body' },
+  'client-module-unavailable': { title: 'lab.scenario.clientModule.title', body: 'lab.scenario.clientModule.body' },
   'module-resolution-missing': { title: 'lab.scenario.module.title', body: 'lab.scenario.module.body' },
   'patch-invalid': { title: 'lab.scenario.patch.title', body: 'lab.scenario.patch.body' },
   'loader-duplicate': { title: 'lab.scenario.duplicate.title', body: 'lab.scenario.duplicate.body' },
@@ -46,7 +44,7 @@ const SCENARIO_KEYS: Record<DiagnosticLabScenarioId, {
 }
 
 function terminal(phase: DiagnosticLabRunSnapshot['phase']): boolean {
-  return phase === 'completed' || phase === 'failed' || phase === 'cancelled'
+  return phase === 'active' || phase === 'restored' || phase === 'failed' || phase === 'cancelled'
 }
 
 function saveReport(content: string, runId: string): void {
@@ -58,21 +56,20 @@ function saveReport(content: string, runId: string): void {
   URL.revokeObjectURL(url)
 }
 
-/** Render the desktop-only diagnostic scenario and pressure-test controls. */
+/** Render the desktop-only persistent diagnostic scenario controls. */
 export function DiagnosticLabPanel({
   listScenarios,
   current,
   start,
   getRun,
   cancel,
-  cleanup,
+  restoreAll,
   exportReport,
   subscribe,
   t,
 }: DiagnosticLabPanelProps): ReactNode {
   const [scenarios, setScenarios] = useState<readonly DiagnosticLabScenario[]>([])
   const [selected, setSelected] = useState<ReadonlySet<DiagnosticLabScenarioId>>(new Set())
-  const [preset, setPreset] = useState<DiagnosticLabPreset>('quick')
   const [target, setTarget] = useState<DiagnosticLabTarget>('isolated')
   const [run, setRun] = useState<DiagnosticLabRunSnapshot | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -106,7 +103,9 @@ export function DiagnosticLabPanel({
 
   const available = useMemo(() => scenarios.filter(scenario => scenario.targets.includes(target)), [scenarios, target])
   const chosen = available.filter(scenario => selected.has(scenario.id))
-  const running = run?.phase === 'queued' || run?.phase === 'running'
+  const running = run?.phase === 'queued' || run?.phase === 'running' || run?.phase === 'restoring'
+  const retained = run?.phase === 'active'
+  const occupied = running || retained
   const progress = run === null || run.totalSteps === 0
     ? 0
     : Math.min(100, Math.round(run.completedSteps / run.totalSteps * 100))
@@ -133,7 +132,7 @@ export function DiagnosticLabPanel({
     setConfirmOpen(false)
     setAcknowledged(false)
     setError(null)
-    void start({ scenarioIds: chosen.map(item => item.id), preset, target }).then(setRun, (reason: unknown) => {
+    void start({ scenarioIds: chosen.map(item => item.id), target }).then(setRun, (reason: unknown) => {
       setError(reason instanceof Error ? reason.message : String(reason))
     })
   }
@@ -153,7 +152,7 @@ export function DiagnosticLabPanel({
         <label>
           <span>{t('lab.target')}</span>
           <select
-            disabled={running}
+            disabled={occupied}
             value={target}
             onChange={(event) => { changeTarget(event.currentTarget.value as DiagnosticLabTarget) }}
           >
@@ -161,15 +160,7 @@ export function DiagnosticLabPanel({
             <option value="active-profile">{t('lab.target.active')}</option>
           </select>
         </label>
-        <label>
-          <span>{t('lab.preset')}</span>
-          <select disabled={running} value={preset} onChange={(event) => { setPreset(event.currentTarget.value as DiagnosticLabPreset) }}>
-            <option value="quick">{t('lab.preset.quick')}</option>
-            <option value="standard">{t('lab.preset.standard')}</option>
-            <option value="soak">{t('lab.preset.soak')}</option>
-          </select>
-        </label>
-        <span className={css.rounds}>{t('lab.rounds').replace('{count}', String(ROUNDS[preset]))}</span>
+        <span className={css.persistence}>{t('lab.persistence')}</span>
       </div>
 
       {target === 'active-profile' ? (
@@ -186,7 +177,7 @@ export function DiagnosticLabPanel({
             <label key={scenario.id}>
               <input
                 type="checkbox"
-                disabled={running}
+                disabled={occupied}
                 checked={selected.has(scenario.id)}
                 onChange={() => { toggleScenario(scenario.id) }}
               />
@@ -201,7 +192,7 @@ export function DiagnosticLabPanel({
       </div>
 
       <div className={css.actions}>
-        <Button variant="primary" disabled={running || chosen.length === 0} onClick={begin}>
+        <Button variant="primary" disabled={occupied || chosen.length === 0} onClick={begin}>
           {t('lab.start')}
         </Button>
         {running ? (
@@ -217,9 +208,11 @@ export function DiagnosticLabPanel({
             >
               {t('lab.export')}
             </Button>
-            <Button variant="outline" onClick={() => { void cleanup(run.runId).then(setRun) }}>
-              {t('lab.cleanup')}
-            </Button>
+            {run.phase === 'active' ? (
+              <Button variant="outline" onClick={() => { void restoreAll(run.runId).then(setRun) }}>
+                {t('lab.restoreAll')}
+              </Button>
+            ) : null}
           </>
         ) : null}
       </div>
@@ -233,15 +226,13 @@ export function DiagnosticLabPanel({
           <progress max={100} value={progress} />
           <p>
             {t('lab.progress')
-              .replace('{round}', String(run.currentRound))
-              .replace('{rounds}', String(run.rounds))
               .replace('{scenario}', run.currentScenarioId ?? '—')
               .replace('{step}', run.currentStep ?? '—')}
           </p>
           {run.results.length > 0 ? (
             <ul>
               {run.results.map(result => (
-                <li key={`${result.round}:${result.scenarioId}`} data-result={result.phase}>
+                <li key={result.scenarioId} data-result={result.phase}>
                   <span>{result.phase === 'passed' ? '✓' : '!'}</span>
                   <code>{result.scenarioId}</code>
                   <small>{t('lab.duration').replace('{count}', String(result.durationMs))}</small>
@@ -257,7 +248,7 @@ export function DiagnosticLabPanel({
       <RiskConfirmation
         open={confirmOpen}
         title={t('lab.confirm.title')}
-        description={t('lab.confirm.description').replace('{count}', String(ROUNDS[preset]))}
+        description={t('lab.confirm.description')}
         acknowledgeLabel={t('lab.confirm.acknowledge')}
         cancelLabel={t('lab.confirm.cancel')}
         closeLabel={t('lab.confirm.cancel')}

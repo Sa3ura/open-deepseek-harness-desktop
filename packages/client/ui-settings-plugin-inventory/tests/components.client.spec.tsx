@@ -456,14 +456,11 @@ describe('PluginDiagnosticsSection', () => {
       targets: ['isolated', 'active-profile'],
     } satisfies DiagnosticLabScenario
     const queued = {
-      schema: 1,
+      schema: 2,
       runId: 'lab-run-one',
       target: 'isolated',
-      preset: 'quick',
       scenarioIds: [scenario.id],
-      rounds: 1,
       phase: 'queued',
-      currentRound: 0,
       completedSteps: 0,
       totalSteps: 6,
       recovery: 'clean',
@@ -488,7 +485,7 @@ describe('PluginDiagnosticsSection', () => {
         start,
         getRun: vi.fn(async () => queued),
         cancel: vi.fn(async () => queued),
-        cleanup: vi.fn(async () => queued),
+        restoreAll: vi.fn(async () => queued),
         exportReport: vi.fn(async () => '{}'),
         subscribe: vi.fn(() => () => {}),
       },
@@ -501,7 +498,6 @@ describe('PluginDiagnosticsSection', () => {
     await waitFor(() => {
       expect(start).toHaveBeenCalledWith({
         scenarioIds: ['host-shadow-compatible'],
-        preset: 'quick',
         target: 'isolated',
       })
     })
@@ -509,6 +505,64 @@ describe('PluginDiagnosticsSection', () => {
     expect(startUninstall).not.toHaveBeenCalled()
     expect(startQuarantineRetry).not.toHaveBeenCalled()
     expect(uninstallQuarantine).not.toHaveBeenCalled()
+  })
+
+  it('keeps a completed exercise visible until the user restores everything', async () => {
+    const scenario = {
+      id: 'orphaned-bundle',
+      title: 'Orphaned bundle',
+      description: 'Retain one real quarantine.',
+      expectedCode: 'profile.orphaned-bundle',
+      targets: ['isolated', 'active-profile'],
+    } satisfies DiagnosticLabScenario
+    const active = {
+      schema: 2,
+      runId: 'lab-run-retained',
+      target: 'active-profile',
+      scenarioIds: [scenario.id],
+      phase: 'active',
+      completedSteps: 6,
+      totalSteps: 6,
+      recovery: 'retained',
+      startedAt: '2026-08-28T00:00:00.000Z',
+      results: [{
+        scenarioId: scenario.id,
+        phase: 'passed',
+        expectedCode: scenario.expectedCode,
+        actualCode: scenario.expectedCode,
+        repaired: true,
+        retained: true,
+        disposition: 'quarantined',
+        durationMs: 12,
+      }],
+    } satisfies DiagnosticLabRunSnapshot
+    const restored = { ...active, phase: 'restored', recovery: 'clean' } satisfies DiagnosticLabRunSnapshot
+    const restoreAll = vi.fn(async () => restored)
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => diagnosticsSnapshot,
+      startDependencyDoctor: vi.fn(),
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(),
+      startUninstall: vi.fn(),
+      startQuarantineRetry: vi.fn(),
+      uninstallQuarantine: vi.fn(),
+      dismissDependencyHealth: vi.fn(),
+      diagnosticLab: {
+        listScenarios: vi.fn(async () => [scenario]),
+        current: vi.fn(async () => active),
+        start: vi.fn(async () => active),
+        getRun: vi.fn(async () => active),
+        cancel: vi.fn(async () => active),
+        restoreAll,
+        exportReport: vi.fn(async () => '{}'),
+        subscribe: vi.fn(() => () => {}),
+      },
+    } as PluginDiagnosticsSectionProps)} />)
+
+    const restoreButton = await screen.findByRole('button', { name: en['lab.restoreAll'] })
+    fireEvent.click(restoreButton)
+    await waitFor(() => { expect(restoreAll).toHaveBeenCalledWith(active.runId) })
   })
 
   it('runs a current read-only check and presents the structured result', async () => {
