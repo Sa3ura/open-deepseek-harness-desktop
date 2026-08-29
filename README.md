@@ -153,16 +153,15 @@ Cordis 的 Context、Service 注册和部分工具运行时依赖对象与 `Symb
 
 当当前会话正在等待用户选择、确认或回答问题，或者输入框暂时不可编辑时，“添加到当前对话”会自动隐藏；复制和在新对话询问仍可使用。输入框、代码编辑器、设置页、侧栏、按钮和已有菜单中的文字不会触发这套快捷操作。
 
-<table>
-  <tr>
-    <th width="50%">划选快捷工具条</th>
-    <th width="50%">右键圆角菜单</th>
-  </tr>
-  <tr>
-    <td align="center"><img src="./assets/readme/selection-toolbar-zh.png" alt="选中文本后显示的横向快捷工具条"></td>
-    <td align="center"><img src="./assets/readme/selection-context-menu-zh.png" alt="右键选中文本后显示的竖向圆角菜单"></td>
-  </tr>
-</table>
+<p align="center">
+  <strong>划选快捷工具条</strong><br>
+  <img src="./assets/readme/selection-toolbar-zh.png" width="900" alt="选中文本后显示的横向快捷工具条">
+</p>
+
+<p align="center">
+  <strong>右键圆角菜单</strong><br>
+  <img src="./assets/readme/selection-context-menu-zh.png" width="900" alt="右键选中文本后显示的竖向圆角菜单">
+</p>
 
 ## 桌面客户端体验
 
