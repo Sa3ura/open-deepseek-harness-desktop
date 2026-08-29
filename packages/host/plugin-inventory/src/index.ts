@@ -320,7 +320,7 @@ function dshLauncherArgv(): readonly string[] {
 /**
  * Preserve the desktop-selected Profile and package manager across the
  * subprocess service's intentional `DSH_*` environment scrub. Other ambient
- * Harness variables stay excluded: plugin maintenance only needs these two
+ * Harness variables stay excluded: plugin maintenance only needs these
  * host-owned paths, and forwarding the whole namespace would weaken the
  * subprocess boundary.
  */
@@ -331,6 +331,10 @@ function profileCommandEnvironment(environment: NodeJS.ProcessEnv = process.env)
   }
   if (environment.DSH_PNPM_BIN !== undefined && environment.DSH_PNPM_BIN.trim() !== '') {
     forwarded.DSH_PNPM_BIN = environment.DSH_PNPM_BIN
+  }
+  if (environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR !== undefined
+    && environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR.trim() !== '') {
+    forwarded.DSH_DESKTOP_BUNDLED_PLUGINS_DIR = environment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR
   }
   return forwarded
 }

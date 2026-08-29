@@ -128,7 +128,7 @@ describe('BundledPluginInstaller', () => {
     expect(install).toHaveBeenCalledOnce()
   })
 
-  it('handles only an exact manual allowlist request and keeps one active writer', async () => {
+  it('handles bundled startup/manual requests and keeps newer registry versions Host-owned', async () => {
     const f = await fixture()
     let finishInstall: (() => void) | undefined
     const installPromise = new Promise<void>((resolve) => { finishInstall = resolve })
@@ -139,6 +139,7 @@ describe('BundledPluginInstaller', () => {
     })
     expect(installer.startManual('web', 'other@1.0.0')).toEqual({ handled: false })
     expect(installer.startManual('web', 'diagnostic@3.0.0')).toEqual({ handled: false })
+    expect(installer.startManual('web', 'manual@2.1.0')).toEqual({ handled: false })
     const first = installer.startManual('web', 'manual@2.0.0')
     const second = installer.startManual('web', 'manual@2.0.0')
     expect(first).toEqual(second)
@@ -150,6 +151,21 @@ describe('BundledPluginInstaller', () => {
     if (finishInstall === undefined) throw new Error('install promise did not expose its resolver')
     finishInstall()
     await vi.waitFor(() => { expect(installer.getInstall(first.snapshot.installId).phase).toBe('succeeded') })
+    expect(install).toHaveBeenCalledOnce()
+  })
+
+  it('restores an explicitly requested startup entry from its bundled archive', async () => {
+    const f = await fixture()
+    const install = vi.fn(async () => {})
+    const installer = new BundledPluginInstaller({
+      manifest: f.manifest, resourcesDirectory: f.resourcesDirectory, dshHome: join(f.root, 'home'),
+      install, createId: () => 'startup-restore',
+    })
+
+    const started = installer.startManual('web', 'startup')
+    expect(started.handled).toBe(true)
+    if (!started.handled) throw new Error('expected bundled startup restore')
+    await vi.waitFor(() => { expect(installer.getInstall(started.snapshot.installId).phase).toBe('succeeded') })
     expect(install).toHaveBeenCalledOnce()
   })
 

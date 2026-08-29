@@ -7,7 +7,7 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { DesktopBundledPluginInstallSnapshot } from './bundled-install-bridge.ts'
 import css from './BetterSidebarInstallCard.module.css'
 
-const REQUEST: PluginInstallRequest = { profile: 'web', packageSpec: 'dsh-better-sidebar@0.15.2' }
+const REQUEST: PluginInstallRequest = { profile: 'web', packageSpec: 'dsh-better-sidebar' }
 const STAGES = ['verifying', 'extracting', 'configuring'] as const
 type InstallStage = typeof STAGES[number]
 

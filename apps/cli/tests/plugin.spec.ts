@@ -1,10 +1,15 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { allowProfilePackageBuild } from '@deepseek-ai/dsh-app-boot'
 import { resolvePnpmCommand, runPlugin } from '../src/plugin.ts'
+import {
+  DESKTOP_BUNDLED_PLUGINS_DIR_ENV,
+  resolveDesktopBundledPluginArgs,
+} from '../src/desktop-bundled-plugin.ts'
 import {
   extractGitPrepareBuildKey,
   extractIgnoredBuildKey,
@@ -19,6 +24,90 @@ afterEach(() => {
 })
 
 describe('profile plugin package manager', () => {
+  it('restores an absent bundled version locally while leaving explicit updates online', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-bundled-plugin-'))
+    const resources = join(root, 'bundled-plugins')
+    const profile = join(root, 'profile')
+    const archive = join(resources, 'sidebar.tgz')
+    const bytes = Buffer.from('verified bundled sidebar')
+    mkdirSync(resources, { recursive: true })
+    mkdirSync(profile, { recursive: true })
+    writeFileSync(archive, bytes)
+    writeFileSync(join(resources, 'manifest.json'), JSON.stringify({
+      schema: 2,
+      plugins: [
+        {
+          packageName: 'dsh-better-sidebar',
+          version: '0.16.1',
+          profile: 'web',
+          installPolicy: 'startup',
+          registrySpec: 'dsh-better-sidebar@0.16.1',
+          archive: 'sidebar.tgz',
+          integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`,
+        },
+        {
+          packageName: 'diagnostic-only',
+          version: '1.0.0',
+          profile: 'web',
+          installPolicy: 'diagnostic',
+          archive: 'sidebar.tgz',
+          integrity: `sha512-${createHash('sha512').update(bytes).digest('base64')}`,
+        },
+      ],
+    }))
+    const environment = { [DESKTOP_BUNDLED_PLUGINS_DIR_ENV]: resources }
+    try {
+      expect(resolveDesktopBundledPluginArgs('web', profile, [
+        'add', 'dsh-better-sidebar',
+      ], environment)).toEqual(['add', archive])
+      expect(resolveDesktopBundledPluginArgs('web', profile, [
+        'add', '--save-exact', 'dsh-better-sidebar@0.16.1',
+      ], environment)).toEqual(['add', '--save-exact', archive])
+      expect(resolveDesktopBundledPluginArgs('web', profile, [
+        'add', 'dsh-better-sidebar@0.17.0',
+      ], environment)).toEqual(['add', 'dsh-better-sidebar@0.17.0'])
+      expect(resolveDesktopBundledPluginArgs('web', profile, [
+        'add', 'dsh-better-sidebar@latest',
+      ], environment)).toEqual(['add', 'dsh-better-sidebar@latest'])
+      expect(resolveDesktopBundledPluginArgs('web', profile, [
+        'add', 'diagnostic-only',
+      ], environment)).toEqual(['add', 'diagnostic-only'])
+
+      writeFileSync(join(profile, 'package.json'), JSON.stringify({
+        dependencies: { 'dsh-better-sidebar': '0.16.1' },
+      }))
+      expect(resolveDesktopBundledPluginArgs('web', profile, [
+        'add', 'dsh-better-sidebar',
+      ], environment)).toEqual(['add', 'dsh-better-sidebar'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a modified bundled archive instead of silently falling back to the registry', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-desktop-bundled-integrity-'))
+    const resources = join(root, 'bundled-plugins')
+    const profile = join(root, 'profile')
+    mkdirSync(resources, { recursive: true })
+    mkdirSync(profile, { recursive: true })
+    writeFileSync(join(resources, 'plugin.tgz'), 'modified')
+    writeFileSync(join(resources, 'manifest.json'), JSON.stringify({
+      schema: 2,
+      plugins: [{
+        packageName: 'fixture-plugin', version: '1.0.0', profile: 'web', installPolicy: 'startup',
+        archive: 'plugin.tgz', integrity: `sha512-${Buffer.alloc(64).toString('base64')}`,
+      }],
+    }))
+    try {
+      expect(() => resolveDesktopBundledPluginArgs(
+        'web', profile, ['add', 'fixture-plugin'],
+        { [DESKTOP_BUNDLED_PLUGINS_DIR_ENV]: resources },
+      )).toThrow(/integrity mismatch/)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('uses pnpm from PATH when the host provides no executable', () => {
     expect(resolvePnpmCommand({})).toBe('pnpm')
   })

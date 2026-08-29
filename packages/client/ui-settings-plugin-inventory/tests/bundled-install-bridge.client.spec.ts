@@ -32,11 +32,11 @@ afterEach(() => {
   delete (globalThis as unknown as Record<string, unknown>).deepSeekHarnessDesktop
 })
 
-const request: PluginInstallRequest = { profile: 'web', packageSpec: 'dsh-better-sidebar@0.15.2' }
+const request: PluginInstallRequest = { profile: 'web', packageSpec: 'dsh-better-sidebar' }
 const desktopSnapshot = {
   installId: 'desktop-bundled:one' as PluginInstallId,
   profile: 'web', packageSpec: request.packageSpec,
-  command: 'dsh plugin --profile web add dsh-better-sidebar@0.15.2', phase: 'running',
+  command: 'dsh plugin --profile web add dsh-better-sidebar@0.16.1', phase: 'running',
   stage: 'extracting' as const, progress: 46,
 } satisfies DesktopBundledPluginInstallSnapshot
 const labScenario = {

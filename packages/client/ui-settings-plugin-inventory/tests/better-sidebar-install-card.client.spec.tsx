@@ -11,8 +11,8 @@ afterEach(cleanup)
 const running: DesktopBundledPluginInstallSnapshot = {
   installId: 'desktop-bundled:sidebar' as PluginInstallId,
   profile: 'web',
-  packageSpec: 'dsh-better-sidebar@0.15.2',
-  command: 'dsh plugin --profile web add dsh-better-sidebar@0.15.2',
+  packageSpec: 'dsh-better-sidebar@0.16.1',
+  command: 'dsh plugin --profile web add dsh-better-sidebar@0.16.1',
   phase: 'running',
   stage: 'extracting',
   progress: 46,
@@ -36,6 +36,7 @@ describe('BetterSidebarInstallCard', () => {
     const viewProps = props()
     render(<BetterSidebarInstallCard {...viewProps} />)
     expect(await screen.findByText('正在解压 · 46%')).toBeTruthy()
+    expect(viewProps.startInstall).toHaveBeenCalledWith({ profile: 'web', packageSpec: 'dsh-better-sidebar' })
     expect(screen.getByRole('progressbar').getAttribute('value')).toBe('46')
     fireEvent.click(screen.getByRole('button', { name: '隐藏' }))
     expect(screen.queryByText('正在准备 Better Sidebar')).toBeNull()

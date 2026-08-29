@@ -65,7 +65,7 @@ const CURATED_PLUGINS: readonly CuratedPlugin[] = [
     categoryKey: 'discovery.category.workspace',
     descriptionKey: 'discovery.plugin.sidebar',
     profile: 'web',
-    packageSpec: 'dsh-better-sidebar@0.15.2',
+    packageSpec: 'dsh-better-sidebar',
   },
   {
     id: 'dsh-tui',

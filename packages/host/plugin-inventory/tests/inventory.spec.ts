@@ -359,6 +359,7 @@ describe('PluginInventoryGateway', () => {
   it('starts a structured CLI install, deduplicates it while running, and publishes completion', async () => {
     vi.stubEnv('DSH_HOME', '/desktop data/development/dsh-home')
     vi.stubEnv('DSH_PNPM_BIN', '/desktop runtime/pnpm.mjs')
+    vi.stubEnv('DSH_DESKTOP_BUNDLED_PLUGINS_DIR', '/desktop resources/bundled-plugins')
     const { inventory, subprocess } = await harness()
     const deferred = Promise.withResolvers<{ exitCode: number | null; signal: null }>()
     const baseSpawn = subprocess.spawn.bind(subprocess)
@@ -381,6 +382,7 @@ describe('PluginInventoryGateway', () => {
     expect(subprocess.spawns[0]?.env).toEqual({
       DSH_HOME: '/desktop data/development/dsh-home',
       DSH_PNPM_BIN: '/desktop runtime/pnpm.mjs',
+      DSH_DESKTOP_BUNDLED_PLUGINS_DIR: '/desktop resources/bundled-plugins',
     })
 
     deferred.resolve({ exitCode: 0, signal: null })

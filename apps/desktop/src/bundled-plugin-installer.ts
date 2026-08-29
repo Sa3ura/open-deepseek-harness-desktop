@@ -175,7 +175,7 @@ export class BundledPluginInstaller {
     return results
   }
 
-  /** Start only an exact manual entry; all other registry requests stay Host-owned. */
+  /** Start an explicit bundled request; newer registry versions stay Host-owned. */
   startManual(profile: string, packageSpec: string): BundledPluginStartResult {
     const entry = this.findManual(profile, packageSpec)
     if (entry === undefined) return { handled: false }
@@ -196,9 +196,9 @@ export class BundledPluginInstaller {
 
   private findManual(profile: string, packageSpec: string): BundledPluginManifestEntry | undefined {
     return this.options.manifest.plugins.find(candidate => (
-      candidate.installPolicy === 'manual'
+      candidate.installPolicy !== 'diagnostic'
       && candidate.profile === profile
-      && bundledPluginRequestSpec(candidate) === packageSpec
+      && (bundledPluginRequestSpec(candidate) === packageSpec || candidate.packageName === packageSpec)
     ))
   }
 

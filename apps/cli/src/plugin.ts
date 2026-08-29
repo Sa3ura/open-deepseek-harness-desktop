@@ -38,6 +38,7 @@ import {
   type ProfileRepairReport,
 } from '@deepseek-ai/dsh-app-boot'
 import { INSTALL_ANCHOR } from './install-anchor.ts'
+import { resolveDesktopBundledPluginArgs } from './desktop-bundled-plugin.ts'
 import { runProfilePackageManager } from './profile-package-manager.ts'
 
 export { resolvePnpmCommand } from './profile-package-manager.ts'
@@ -339,11 +340,18 @@ export function runPlugin(profile: string, args: readonly string[]): number {
     process.stderr.write(`${NAME}: profile dependency health ${JSON.stringify(preflight)}\n`)
   }
   const before = readProfileManifest(NAME, dir)
+  let packageManagerArgs: readonly string[]
+  try {
+    packageManagerArgs = resolveDesktopBundledPluginArgs(profile, dir, args)
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`)
+    return 1
+  }
   // A host-provided pnpm.mjs is executed by the current Node process without a
   // shell; ordinary Windows pnpm.cmd discovery retains its compatibility path.
   const result = runProfilePackageManager(
     dir,
-    args.map(argument => anchorPathSpec(argument, process.cwd())),
+    packageManagerArgs.map(argument => anchorPathSpec(argument, process.cwd())),
   )
   if (result.diagnostic !== undefined) process.stderr.write(`${result.diagnostic}\n`)
   const exitCode = result.exitCode ?? 1

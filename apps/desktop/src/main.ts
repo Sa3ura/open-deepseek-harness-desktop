@@ -1266,6 +1266,10 @@ async function startApplication(): Promise<void> {
     process.resourcesPath,
     DEFAULT_SOURCE_ROOT,
   )
+  // Descendant `dsh plugin add` processes (including the plugin market) can
+  // restore an absent bundled version without downloading it again. The CLI
+  // verifies the manifest and archive before using this directory.
+  harnessEnvironment.DSH_DESKTOP_BUNDLED_PLUGINS_DIR = bundledDirectory
   const manifest = parseBundledPluginManifest(
     JSON.parse(await readFile(join(bundledDirectory, 'manifest.json'), 'utf8')) as unknown,
   )
