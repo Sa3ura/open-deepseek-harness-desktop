@@ -160,6 +160,41 @@ describe('bundled plugin seed', () => {
     expect(prepare).toHaveBeenCalledWith(options.entry)
   })
 
+  it('upgrades a stale desktop-owned archive when the bundled version changes', async () => {
+    const options = await fixture()
+    const profile = join(options.dshHome, 'profiles', 'web')
+    const state = join(options.dshHome, 'bundled-plugins')
+    await mkdir(profile, { recursive: true })
+    await mkdir(state, { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({
+      dependencies: { dshmarket: `file:${join(state, 'dshmarket-1.0.0.tgz')}` },
+    }))
+    await writeFile(join(state, 'dshmarket.seeded.json'), JSON.stringify({
+      schema: 2, packageName: 'dshmarket', version: '1.0.0',
+    }))
+    const install = vi.fn(async () => {})
+
+    await expect(seedBundledPlugin({ ...options, install })).resolves.toBe('installed')
+    expect(install).toHaveBeenCalledWith(join(state, options.entry.archive), options.entry)
+    await expect(readFile(join(state, 'dshmarket.seeded.json'), 'utf8')).resolves.toContain('"version": "1.12.1"')
+  })
+
+  it('does not replace a user-owned registry dependency when the bundled marker is older', async () => {
+    const options = await fixture()
+    const profile = join(options.dshHome, 'profiles', 'web')
+    const state = join(options.dshHome, 'bundled-plugins')
+    await mkdir(profile, { recursive: true })
+    await mkdir(state, { recursive: true })
+    await writeFile(join(profile, 'package.json'), JSON.stringify({ dependencies: { dshmarket: '9.9.9' } }))
+    await writeFile(join(state, 'dshmarket.seeded.json'), JSON.stringify({
+      schema: 2, packageName: 'dshmarket', version: '1.0.0',
+    }))
+    const install = vi.fn(async () => {})
+
+    await expect(seedBundledPlugin({ ...options, install })).resolves.toBe('already-seeded')
+    expect(install).not.toHaveBeenCalled()
+  })
+
   it('repairs a legacy development marker whose dependency was written to the wrong home', async () => {
     const options = await fixture()
     const state = join(options.dshHome, 'bundled-plugins')

@@ -38,6 +38,7 @@ type PanelProps = {
   activeId: string | undefined
   onSelect: (id: string) => void
   onClose: () => void
+  preferredSubsectionId?: string
 }
 
 type OnboardingPanelProps = {
@@ -110,7 +111,7 @@ function OnboardingSectionPanel({ request, renderSlot, t, onBack, onComplete }: 
  * header button, a mask click, and document-level Escape (mounted only while
  * open, so the listener lifetime is the panel's).
  */
-function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelProps) {
+function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose, preferredSubsectionId }: PanelProps) {
   // Entries can unmount underneath the requested id, so the render-time
   // projection falls back to the first row when the id is gone.
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
@@ -158,7 +159,10 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
             </button>
           </div>
           <div className={css.options}>
-            {active !== undefined && renderSlot('settings.section', { close: onClose }, { only: active })}
+            {active !== undefined && renderSlot('settings.section', {
+              close: onClose,
+              ...(preferredSubsectionId === undefined ? {} : { preferredSubsectionId }),
+            }, { only: active })}
           </div>
         </div>
       </div>
@@ -172,20 +176,30 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose }: PanelP
  * @returns the settings shell element tree.
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
-  const { wide, useSections, useOnboardingSteps, useSessions, renderSlot, t } = props
+  const { wide, useSections, useOnboardingSteps, useNavigation, useSessions, renderSlot, t } = props
   const [open, setOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
+  const [preferredSubsectionId, setPreferredSubsectionId] = useState<string | undefined>()
   const [onboardingSection, setOnboardingSection] = useState<SettingsOnboardingSectionRequest>()
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
   const close = useCallback(() => {
     setOpen(false)
     setActiveId(undefined)
+    setPreferredSubsectionId(undefined)
   }, [])
   // The ledger tick keeps the nav rows fresh: registrants re-register with
   // freshly localized text on locale change, and the trigger/header/close
   // seats re-render through their own outlets' subscriptions.
   const rows = useSections(s => s)
   const onboardingSteps = useOnboardingSteps(s => s)
+  const navigation = useNavigation(s => s)
+
+  useEffect(() => {
+    if (navigation === undefined) return
+    setOpen(true)
+    setActiveId(navigation.sectionId)
+    setPreferredSubsectionId(navigation.subsectionId)
+  }, [navigation?.revision])
   const onboardingActive = useSessions(state =>
     state.phase === 'ready'
     && (state.current === undefined || state.byId[state.current]?.blank === true))
@@ -222,8 +236,9 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
           rows={rows}
           renderSlot={renderSlot}
           activeId={activeId}
-          onSelect={setActiveId}
+          onSelect={(id) => { setActiveId(id); setPreferredSubsectionId(undefined) }}
           onClose={close}
+          {...preferredSubsectionId === undefined ? {} : { preferredSubsectionId }}
         />
       )}
       {/* Dialog chrome and `#root` inert ownership live inside each step's

@@ -33,6 +33,7 @@ import type {
 
 afterEach(() => {
   cleanup()
+  vi.clearAllMocks()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
@@ -779,79 +780,49 @@ describe('PluginDiscovery', () => {
   const installed: PluginInstallSnapshot = {
     installId: 'install-1' as PluginInstallId,
     profile: 'web',
-    packageSpec: '@linxin666/dsh-web-ui-all',
-    command: 'dsh plugin --profile web add @linxin666/dsh-web-ui-all',
+    packageSpec: 'dshmarket',
+    command: 'dsh plugin --profile web add dshmarket',
     phase: 'succeeded',
     exitCode: 0,
   }
   const startInstall = vi.fn(async () => installed)
   const getInstall = vi.fn(async () => installed)
-  const discoveryProps = { t, startInstall, getInstall } as PluginDiscoveryProps
+  const list = vi.fn(async () => ({ entries: [{ moduleName: 'dshmarket' }], dependencyHealth: { lastRepair: null, quarantined: [] } } as never))
+  const openSettings = vi.fn()
+  const discoveryProps = { t, list, startInstall, getInstall, openSettings } as PluginDiscoveryProps
+  const preview = {
+    schema: 'dsh-market/preview/v1', updated: '2026-08-29',
+    items: [{ name: 'popular-plugin', owner: 'author', category: ['tools'], categoryLabels: { tools: { en: 'Tools' } },
+      description: { en: 'A live description' }, downloads: 1234, stars: 42, packageName: 'popular-plugin', state: 'uninstalled' }],
+  }
 
-  it('opens the curated guide and copies an official CLI install command', async () => {
-    const writeText = vi.fn(async () => {})
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    })
+  it('loads live market data and navigates installation to the full market', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(preview), { status: 200 })))
     render(<PluginDiscovery {...discoveryProps} />)
-
-    const trigger = screen.getByRole('button', { name: /Explore plugins/ })
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    const trigger = screen.getByRole('button', { name: en['discovery.trigger'] })
+    expect(trigger.textContent).not.toContain('5')
     fireEvent.click(trigger)
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    expect(screen.getByRole('dialog', { name: en['discovery.title'] })).toBeTruthy()
-    expect(screen.getAllByText(en['discovery.thirdParty'])).toHaveLength(5)
-    expect(screen.getByText(en['discovery.notice'])).toBeTruthy()
-    expect(screen.getByText(en['discovery.collected'])).toBeTruthy()
-    expect(screen.getByRole('link', { name: en['discovery.more'] }).getAttribute('href'))
-      .toBe('https://github.com/topics/dsh-plugin')
-
-    fireEvent.click(screen.getAllByRole('button', { name: en['discovery.copy'] })[0]!)
-    await waitFor(() => {
-      expect(writeText).toHaveBeenCalledWith('dsh plugin --profile web add @linxin666/dsh-web-ui-all')
-    })
-    expect(screen.getByRole('button', { name: en['discovery.copied'] })).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: en['discovery.close'] }))
-    expect(screen.queryByRole('dialog')).toBeNull()
-    fireEvent.click(trigger)
-    expect(screen.queryByRole('button', { name: en['discovery.copied'] })).toBeNull()
+    expect(await screen.findByText('popular-plugin')).toBeTruthy()
+    expect(screen.getByText('★ 42')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.goInstall'] }))
+    expect(openSettings).toHaveBeenCalledWith('market', 'discover:popular-plugin')
   })
 
-  it('keeps the copy label when the browser refuses clipboard access', async () => {
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText: vi.fn(async () => { throw new Error('denied') }) },
-    })
+  it('identifies an installed old market instead of calling it missing', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
     render(<PluginDiscovery {...discoveryProps} />)
-    fireEvent.click(screen.getByRole('button', { name: /Explore plugins/ }))
-    fireEvent.click(screen.getAllByRole('button', { name: en['discovery.copy'] })[0]!)
-    await act(async () => { await Promise.resolve() })
-    expect(screen.queryByRole('button', { name: en['discovery.copied'] })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.trigger'] }))
+    expect(await screen.findByText(en['discovery.outdated.title'])).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.updateMarket'] }))
+    await waitFor(() => { expect(startInstall).toHaveBeenCalledOnce() })
   })
 
-  it('confirms and starts a reviewed structured plugin installation', async () => {
-    startInstall.mockClear()
+  it('installs a missing market only after the user asks', async () => {
+    list.mockResolvedValueOnce({ entries: [], dependencyHealth: { lastRepair: null, quarantined: [] } } as never)
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
     render(<PluginDiscovery {...discoveryProps} />)
-    fireEvent.click(screen.getByRole('button', { name: /Explore plugins/ }))
-    fireEvent.click(screen.getAllByRole('button', { name: en['discovery.install.action'] })[0]!)
-
-    const confirmation = screen.getByRole('dialog', { name: en['discovery.confirm.title'] })
-    const confirm = screen.getByRole('button', { name: en['discovery.confirm.install'] })
-    expect(confirm.hasAttribute('disabled')).toBe(true)
-    fireEvent.click(screen.getByRole('checkbox', { name: en['discovery.confirm.acknowledge'] }))
-    expect(confirm.hasAttribute('disabled')).toBe(false)
-    fireEvent.click(confirm)
-
-    await waitFor(() => {
-      expect(startInstall).toHaveBeenCalledWith({
-        profile: 'web',
-        packageSpec: '@linxin666/dsh-web-ui-all',
-      })
-    })
-    expect(screen.queryByRole('dialog', { name: en['discovery.confirm.title'] })).toBeNull()
-    expect(await screen.findByText(en['discovery.install.succeeded'])).toBeTruthy()
-    expect(confirmation.isConnected).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.trigger'] }))
+    fireEvent.click(await screen.findByRole('button', { name: en['discovery.installMarket'] }))
+    await waitFor(() => { expect(startInstall).toHaveBeenCalledOnce() })
   })
 })

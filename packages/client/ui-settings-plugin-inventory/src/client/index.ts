@@ -54,7 +54,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const NS = 'settings.pluginInventory'
 
 /** Services required by the Settings registration and generated Remote face. */
-export const inject = ['slots', 'locale', 'remote', 'remote.pluginInventory']
+export const inject = ['slots', 'locale', 'remote', 'remote.pluginInventory', 'settingsNavigation']
 
 /** Contribute the lazy inventory tab and new-session discovery entry. */
 export function apply(ctx: ClientContext): void {
@@ -145,20 +145,28 @@ export function apply(ctx: ClientContext): void {
       return result.value
     },
   })
-  const discoveryInjected = (): PluginDiscoveryInjected => ({
-    startInstall: request => startPluginInstall(request, async (fallbackRequest) => {
+  const startControlledInstall = (request: Parameters<typeof startPluginInstall>[0]) => startPluginInstall(
+    request,
+    async (fallbackRequest) => {
       const result = await ctx.remote.pluginInventory.startInstall(fallbackRequest)
       if (!result.ok) {
         throw new Error(`pluginInventory.startInstall failed: ${result.error.code}: ${result.error.message}`)
       }
       return result.value
-    }),
+    },
+  )
+  const discoveryInjected = (): PluginDiscoveryInjected => ({
+    list,
+    startInstall: () => startControlledInstall({ profile: 'web', packageSpec: 'dshmarket' }),
     getInstall,
+    openSettings: (sectionId, subsectionId) => {
+      ctx.settingsNavigation.open({ sectionId, ...(subsectionId === undefined ? {} : { subsectionId }) })
+    },
   })
   const externalToolsInjected = (): ExternalToolsSectionInjected => ({
     list,
     getInstall,
-    startInstall: discoveryInjected().startInstall,
+    startInstall: request => startControlledInstall(request),
     externalTools: async () => {
       const result = await ctx.remote.pluginInventory.externalTools()
       if (!result.ok) throw new Error(`pluginInventory.externalTools failed: ${result.error.code}: ${result.error.message}`)

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useEffect, useState } from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { SettingsRootComponentProps } from '../src/client/shell-contract.ts'
+import type { SettingsNavigationRequest } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
 
 afterEach(cleanup)
@@ -34,7 +35,8 @@ function mount({
     { id: 'welcome', order: -100 },
     { id: 'credential', order: 0 },
   ],
-}: { wide?: boolean; onboardingActive?: boolean; rows?: Row[]; steps?: Step[] } = {}) {
+  navigation,
+}: { wide?: boolean; onboardingActive?: boolean; rows?: Row[]; steps?: Step[]; navigation?: SettingsNavigationRequest } = {}) {
   // Mutable row source standing in for the bound useSections hook; bump()
   // plays a ledger change through the same observable contract.
   let current = rows
@@ -59,6 +61,7 @@ function mount({
     useWorkspaces: unusedHook,
     wide,
     useOnboardingSteps: select => select(steps),
+    useNavigation: select => select(navigation),
     useSections: (select) => {
       const [, force] = useState(0)
       useEffect(() => {
@@ -168,6 +171,19 @@ describe('SettingsPanel close paths', () => {
 })
 
 describe('SettingsPanel navigation', () => {
+  it('opens a requested section and forwards its subsection', () => {
+    const { renderSlot } = mount({
+      navigation: { sectionId: 'models', subsectionId: 'provider', revision: 1 },
+    })
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    expect(screen.getByTestId('section-models')).toBeTruthy()
+    expect(renderSlot).toHaveBeenCalledWith(
+      'settings.section',
+      expect.objectContaining({ preferredSubsectionId: 'provider' }),
+      { only: 'models' },
+    )
+  })
+
   it('projects rows, marks the first active, and renders only that section', () => {
     mount()
     openPanel()

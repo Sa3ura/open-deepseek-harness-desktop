@@ -27,6 +27,8 @@ kind: "package-reference"
 
 用户通过侧边栏底部的 Settings 控件进入外壳；功能插件通过本外壳所投影的 slot 账本贡献自己的页面与引导步骤。外壳渲染模态面板、由 `settings.section` 条目构建的导航，以及每次只挂载一个的引导步骤。
 
+功能也可以调用 `ctx.settingsNavigation.open({ sectionId, subsectionId })`。外壳会打开面板、选择请求的贡献分区，并把可选子分区标识传给该分区；后续请求拥有更高 revision，即使目标相同也会再次处理。
+
 ### 「通用」分区
 
 「通用」分区承载由功能包注册进 `settings.general.item` 的行——它没有内置行。功能插件拥有行文案与行为；外壳只提供分区及其 slot。例如「外观」行位于 ui-theme。
@@ -51,7 +53,7 @@ kind: "package-reference"
 
 ### 账本投影
 
-导航是 `settings.section` 账本的投影；导航 label 可以是跟随语言的 thunk，经 `resolveSlotLabel` 解析，并在分区账本更新或 locale revision 变化时重新渲染（`ctx.get('locale')` 可选读取，无硬 locale 依赖）。引导账本按升序投影；当前注册方会收到该条目的 id、`complete()` 与 `openSection(id)` 回调，完成或跳过当前步骤后，所有权转交给下一项。
+导航是 `settings.section` 账本的投影；导航 label 可以是跟随语言的 thunk，经 `resolveSlotLabel` 解析，并在分区账本更新或 locale revision 变化时重新渲染（`ctx.get('locale')` 可选读取，无硬 locale 依赖）。外壳还订阅设置领域导航服务；其单调递增 revision 区分重复请求，子分区标识则对外壳保持不透明。引导账本按升序投影；当前注册方会收到该条目的 id、`complete()` 与 `openSection(id)` 回调，完成或跳过当前步骤后，所有权转交给下一项。
 
 ### 文档可用性
 

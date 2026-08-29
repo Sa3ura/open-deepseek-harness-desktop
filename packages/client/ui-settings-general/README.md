@@ -27,6 +27,8 @@ English | [中文](README.zh.md)
 
 Users reach the shell through the sidebar's bottom Settings control; feature plugins contribute their pages and onboarding steps through the slot ledgers this shell projects. The shell renders the modal panel, the navigation built from `settings.section` entries, and exactly one mounted onboarding step at a time.
 
+A feature can also call `ctx.settingsNavigation.open({ sectionId, subsectionId })`. The shell opens the panel, selects the requested contributed section, and forwards the optional subsection identifier to that section; a later request has a higher revision and is handled even when it repeats the same destination.
+
 ### The General section
 
 The General section holds rows registered into `settings.general.item` by feature packages — it has no built-in rows. Feature plugins own the row copy and behavior; the shell only provides the section and its slot. The Appearance row, for example, lives in ui-theme.
@@ -51,7 +53,7 @@ The shell owns the chrome and the projections; every piece of content and copy b
 
 ### Ledger projections
 
-The navigation is a projection of the `settings.section` ledger; nav labels may be locale-following thunks, resolved through `resolveSlotLabel` and re-rendered on the section ledger bump or the locale revision (an optional `ctx.get('locale')` read; no hard locale dependency). The onboarding ledger projects in ascending order; the active registrant receives its id, `complete()`, and an `openSection(id)` callback, and completing or skipping transfers ownership to the next entry.
+The navigation is a projection of the `settings.section` ledger; nav labels may be locale-following thunks, resolved through `resolveSlotLabel` and re-rendered on the section ledger bump or the locale revision (an optional `ctx.get('locale')` read; no hard locale dependency). The shell also subscribes to the settings-domain navigation service, whose monotonic revision distinguishes repeated requests and whose subsection remains opaque to the shell. The onboarding ledger projects in ascending order; the active registrant receives its id, `complete()`, and an `openSection(id)` callback, and completing or skipping transfers ownership to the next entry.
 
 ### Document availability
 

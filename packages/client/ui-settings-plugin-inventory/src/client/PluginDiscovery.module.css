@@ -103,6 +103,21 @@
   text-decoration: underline;
 }
 
+.author {
+  color: var(--dsw-alias-label-caption);
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.state {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
 .stars {
   flex: none;
   color: var(--dsw-alias-label-primary-bluish);

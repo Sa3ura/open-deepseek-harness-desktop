@@ -23,6 +23,7 @@ import type {} from '@deepseek-ai/dsh-settings/types'
 import { SettingsSchemaService } from './schema.ts'
 import { SettingsScopeBinder } from './settings-scope.ts'
 import { SettingsDescribeMirror } from './settings-mirror.ts'
+import { SettingsNavigation } from './settings-navigation.ts'
 
 export type {
   SettingsGeneralItemOwnerProps, SettingsHeaderOwnerProps, SettingsOnboardingOwnerProps,
@@ -30,6 +31,7 @@ export type {
   SettingsTriggerOwnerProps,
 } from './contract/slots.ts'
 export type { SettingsScopeController, SettingsScopeBinder } from './settings-scope.ts'
+export { SettingsNavigation, type SettingsNavigationRequest } from './settings-navigation.ts'
 export type { SettingsScope, SettingsScopeSnapshot, SettingsScopeSpec } from './settings-contract.ts'
 export type { SettingsSchemaService } from './schema.ts'
 export type { SchemaNode } from './schema.ts'
@@ -53,6 +55,7 @@ export const inject = ['connection', 'remote', 'remote.settings']
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
+  new SettingsNavigation(ctx)
   const schema = new SettingsSchemaService(ctx)
   const connection = ctx.get('connection') as ConnectionHandle
   // Captured once here, where `remote.settings` is declared in this plugin's

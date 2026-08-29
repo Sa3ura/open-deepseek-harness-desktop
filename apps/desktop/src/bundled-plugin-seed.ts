@@ -2,7 +2,7 @@
 
 import { createHash } from 'node:crypto'
 import { appendFile, copyFile, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 
 export interface BundledPluginManifestEntry {
   readonly seedId: string
@@ -122,19 +122,44 @@ function dependencyMatchesBundledEntry(
   return expectedRepository !== undefined && githubRepositoryIdentity(dependencySpec) === expectedRepository
 }
 
-async function hasDependency(packagePath: string, entry: BundledPluginManifestEntry): Promise<boolean> {
+interface BundledDependencyState {
+  readonly present: boolean
+  readonly desktopOwned: boolean
+}
+
+function pathIsWithin(parent: string, candidate: string): boolean {
+  const path = relative(resolve(parent), resolve(candidate))
+  return path === '' || (!path.startsWith('..') && !path.startsWith('/') && !path.startsWith('\\'))
+}
+
+async function bundledDependencyState(
+  packagePath: string,
+  stateDirectory: string,
+  entry: BundledPluginManifestEntry,
+): Promise<BundledDependencyState> {
   try {
     const manifest = JSON.parse(await readFile(packagePath, 'utf8')) as {
       dependencies?: Record<string, unknown>
       devDependencies?: Record<string, unknown>
     }
-    return Object.entries({ ...manifest.devDependencies, ...manifest.dependencies })
-      .some(([dependencyName, dependencySpec]) => (
+    const dependency = Object.entries({ ...manifest.devDependencies, ...manifest.dependencies })
+      .find(([dependencyName, dependencySpec]) => (
         dependencyMatchesBundledEntry(dependencyName, dependencySpec, entry)
       ))
+    if (dependency === undefined) return { present: false, desktopOwned: false }
+    const [dependencyName, dependencySpec] = dependency
+    const filePath = typeof dependencySpec === 'string' && dependencySpec.startsWith('file:')
+      ? resolve(dirname(packagePath), dependencySpec.slice('file:'.length))
+      : undefined
+    return {
+      present: true,
+      desktopOwned: dependencyName === entry.packageName
+        && filePath !== undefined
+        && pathIsWithin(stateDirectory, filePath),
+    }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code
-    if (code === 'ENOENT') return false
+    if (code === 'ENOENT') return { present: false, desktopOwned: false }
     throw error
   }
 }
@@ -149,13 +174,22 @@ async function markerExists(path: string): Promise<boolean> {
   }
 }
 
-async function seedMarkerSchema(path: string): Promise<number | undefined> {
+interface BundledPluginSeedMarker {
+  readonly schema: number
+  readonly version?: string
+}
+
+async function readSeedMarker(path: string): Promise<BundledPluginSeedMarker | undefined> {
   try {
-    const value = JSON.parse(await readFile(path, 'utf8')) as { schema?: unknown }
-    return typeof value.schema === 'number' ? value.schema : 0
+    const value = JSON.parse(await readFile(path, 'utf8')) as { schema?: unknown; version?: unknown }
+    const version = typeof value.version === 'string' ? value.version : undefined
+    return {
+      schema: typeof value.schema === 'number' ? value.schema : 0,
+      ...(version === undefined ? {} : { version }),
+    }
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
-    return 0
+    return { schema: 0 }
   }
 }
 
@@ -185,8 +219,8 @@ export async function hasLegacyBundledPluginSeedMarker(
   entry: BundledPluginManifestEntry,
 ): Promise<boolean> {
   assertBundledPluginManifestEntry(entry)
-  const schema = await seedMarkerSchema(join(dshHome, 'bundled-plugins', `${entry.seedId}.seeded.json`))
-  return schema !== undefined && schema < 2
+  const marker = await readSeedMarker(join(dshHome, 'bundled-plugins', `${entry.seedId}.seeded.json`))
+  return marker !== undefined && marker.schema < 2
 }
 
 /**
@@ -256,22 +290,28 @@ export async function seedBundledPlugin(options: SeedBundledPluginOptions): Prom
   assertBundledPluginManifestEntry(entry)
   const stateDirectory = join(dshHome, 'bundled-plugins')
   const markerPath = join(stateDirectory, `${entry.seedId}.seeded.json`)
-  const dependencyPresent = await hasDependency(
-    join(dshHome, 'profiles', entry.profile, 'package.json'),
+  const dependency = await bundledDependencyState(
+    join(dshHome, 'profiles', entry.profile, 'package.json'), stateDirectory,
     entry,
   )
+  let replaceDesktopOwnedDependency = false
   if (!force) {
-    const markerSchema = await seedMarkerSchema(markerPath)
-    if (markerSchema !== undefined) {
-      if (!repairLegacyMarker || markerSchema >= 2 || dependencyPresent) {
-        if (dependencyPresent) await prepare?.(entry)
+    const marker = await readSeedMarker(markerPath)
+    if (marker !== undefined) {
+      const bundledVersionChanged = marker.schema >= 2
+        && marker.version !== undefined
+        && marker.version !== entry.version
+      replaceDesktopOwnedDependency = bundledVersionChanged && dependency.desktopOwned
+      if (!replaceDesktopOwnedDependency
+        && (!repairLegacyMarker || marker.schema >= 2 || dependency.present)) {
+        if (dependency.present) await prepare?.(entry)
         return 'already-seeded'
       }
       await unlink(markerPath)
     }
   }
 
-  if (dependencyPresent) {
+  if (dependency.present && !replaceDesktopOwnedDependency) {
     await prepare?.(entry)
     onProgress?.({ stage: 'configuring', progress: 90 })
     await writeMarker(markerPath, entry)
