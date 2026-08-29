@@ -197,6 +197,61 @@ describe('profile plugin package manager', () => {
     }
   })
 
+  it('persists a guarded client Loader quarantine through the internal doctor command', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-client-loader-quarantine-'))
+    const profileDir = join(home, 'profiles', 'web')
+    const pluginDir = join(profileDir, 'node_modules', 'dsh-font')
+    const pnpmEntry = join(home, 'pnpm-empty-success.mjs')
+    mkdirSync(pluginDir, { recursive: true })
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { 'dsh-font': '1.1.0' },
+      dsh: { profile: { bundles: ['dsh-font'] } },
+    }))
+    writeFileSync(join(pluginDir, 'package.json'), JSON.stringify({
+      name: 'dsh-font',
+      version: '1.1.0',
+      dsh: { bundle: { patch: './dsh.bundle.yml' } },
+    }))
+    writeFileSync(join(pluginDir, 'dsh.bundle.yml'), '[]\n')
+    writeFileSync(pnpmEntry, 'process.exit(0)\n')
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_PNPM_BIN', pnpmEntry)
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', [
+        'doctor', '--quarantine-client-module',
+        'dsh-font', '71626ed6', '@deepseek-ai/dsh-client-runtime/client',
+      ])).toBe(11)
+      expect(JSON.parse(String(stdout.mock.calls.at(-1)?.[0]))).toMatchObject({
+        status: 'quarantined',
+        quarantined: [{ packageName: 'dsh-font', reason: 'client-module-unavailable' }],
+      })
+      expect(JSON.parse(readFileSync(join(profileDir, 'package.json'), 'utf8'))).toMatchObject({
+        dependencies: {},
+        dsh: { profile: { bundles: [] } },
+      })
+      expect(existsSync(pluginDir)).toBe(false)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a versioned package in the internal client Loader quarantine command', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-client-loader-reject-'))
+    vi.stubEnv('DSH_HOME', home)
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', [
+        'doctor', '--quarantine-client-module',
+        'dsh-font@1.1.0', '71626ed6', '@deepseek-ai/dsh-client-runtime/client',
+      ])).toBe(1)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('rejects a registry add when pnpm exits zero without materializing the requested plugin', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-empty-success-'))
     const pnpmEntry = join(home, 'pnpm-empty-success.mjs')

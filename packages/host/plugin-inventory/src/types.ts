@@ -56,7 +56,7 @@ export interface PluginQuarantineRecord {
   readonly packageSpec: string
   readonly installedVersion?: string
   readonly quarantinedAt: string
-  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked'
+  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable'
   readonly buildApprovalKey?: string
   readonly conflicts: readonly PluginDependencyConflict[]
 }
@@ -127,6 +127,26 @@ export interface PluginBuildApprovalRequest {
 /** Explicit approval of a build key retained by a failed package operation. */
 export interface PluginDiagnosticBuildApprovalRequest {
   readonly diagnosticId: string
+}
+
+/** Browser-boot failure that can be recovered only by deactivating its owning Profile bundle. */
+export interface PluginClientLoadFailureRequest {
+  /** Direct active Profile bundle named by the failed client Loader entry. */
+  readonly packageName: string
+  /** Opaque client Loader entry id retained only for diagnostic attribution. */
+  readonly entryId: string
+  /** Exact module request that the client module table could not satisfy. */
+  readonly requestedModule: string
+  /** Closed failure vocabulary; arbitrary browser errors cannot request quarantine. */
+  readonly code: 'client-module-unavailable'
+}
+
+/** Result of one guarded browser-boot recovery transaction. */
+export interface PluginClientLoadRecoveryResult {
+  readonly packageName: string
+  readonly status: 'quarantined' | 'failed'
+  /** True when the Host accepted a bounded restart request after persisting quarantine. */
+  readonly restartScheduled: boolean
 }
 
 /** Redacted, portable diagnostics export assembled by the trusted Host. */

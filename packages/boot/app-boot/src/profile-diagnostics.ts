@@ -138,7 +138,7 @@ const POSIX_USER_PATH = /\/(?:Users|home)\/[^/\r\n]+/gu
 const PNPM_CODE = /\bERR_PNPM_[A-Z0-9_]+\b/u
 const NODE_CODE = /\b(?:ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EACCES|EPERM|EBUSY|ENOENT|ERR_FS_EISDIR)\b/u
 const RETAINED_BUILD_KEY = /^dsh: pnpm allowBuilds key (".*")$/mu
-const LOADER_ENTRY = /failed to apply loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/iu
+const LOADER_ENTRY = /failed to (?:apply|import) loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/iu
 const FAILED_MODULE = /plugin\(s\) failed to load:\s*([^,\s]+)/iu
 
 const RULES: readonly DiagnosticRule[] = [
@@ -224,7 +224,17 @@ const RULES: readonly DiagnosticRule[] = [
   },
   {
     code: 'profile.module-resolution', source: 'profile', severity: 'blocked', actions: ['repair', 'isolate', 'export'],
-    pattern: /cannot resolve profile bundle|plugin\(s\) failed to load|could not be resolved|module not found|ERR_MODULE_NOT_FOUND/iu,
+    pattern: new RegExp([
+      'cannot resolve profile bundle',
+      'plugin\\(s\\) failed to load',
+      'could not be resolved',
+      'module not found',
+      'ERR_MODULE_NOT_FOUND',
+      'failed to import loader entry',
+      'missed the module table',
+      'not a materialized module',
+      'no registered package factory',
+    ].join('|'), 'iu'),
   },
   {
     code: 'profile.patch-invalid', source: 'profile', severity: 'blocked', actions: ['open-config', 'export'],
@@ -446,13 +456,15 @@ export function orphanedBundleDiagnostic(packageName: string): ProfileDiagnostic
  */
 export function quarantinedPluginDiagnostic(
   packageName: string,
-  reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked',
+  reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable',
 ): ProfileDiagnostic {
   const code = reason === 'orphaned-bundle'
     ? 'profile.orphaned-bundle'
     : reason === 'build-script-blocked'
       ? 'pnpm.build-script-blocked'
-      : 'profile.host-dependency-conflict'
+      : reason === 'client-module-unavailable'
+        ? 'profile.module-resolution'
+        : 'profile.host-dependency-conflict'
   return {
     diagnosticId: randomUUID(),
     code,

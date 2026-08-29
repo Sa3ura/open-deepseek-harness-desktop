@@ -16,6 +16,8 @@ Profile 软件包安装与 Cordis 启动可能在不同层失败，但普通子�
 
 自动修改仅限能证明失效或停用的状态：fallback link、陈旧 lockfile importer、中断的隔离残留、孤儿 bundle 引用、已知废弃 Loader 行，以及安全的 Host 单例重连。网络、registry 认证、文件占用和等待期失败继续作为可重试环境 incident。只有故障能明确归属且有界修复无法恢复时，才隔离外部根。诊断绝不清空或重写用户凭据和 patch 文档。
 
+客户端模块表导入失败包含足够身份信息，可以在不加载故障插件的情况下隔离：cause 链必须包含缺少供应者的不变量，外层错误必须标明 Loader entry 与模块，而且该模块必须同时是 Profile 的直接依赖和活动外部 bundle。无框架浏览器内核只把这一封闭错误形态通过经过认证的 Host Remote 上报，保持加载页可见并等待桌面监督器。CLI 只移除该根，运行内置包管理器，复查软件包残留、孤儿 bundle 与 Host 身份冲突，并保留其说明符和 bundle 位置供重试。监督器随后重启普通 Profile，让用户进入主界面并在诊断页看到隔离记录；无法完成验证时恢复 manifest，并改用安装自带的安全 Profile。
+
 每次 `allowBuilds` 变更都是独立的精确键操作。失败的包管理器输出保留 pnpm 给出的精确 registry 包或 Git artifact 键。UI 在白色弹窗中展示根来源、键和风险，保留红色警告图标；黑色确认按钮只写入该键并重试原操作一次。取消不会改变任何策略。Profile 修复绝不设置 `minimumReleaseAge=0`，也不会允许全部构建。
 
 桌面启动通过 `DSH_PROFILE_SAFE_MODE_ON_FAILURE=1` 明确选择安全模式恢复。正常 Profile 的确定性故障会写入 incident，并输出一条稳定 stderr 标记。监督器立即使用 `DSH_PROFILE_SAFE_MODE=1` 重启一次；CLI 随后只组合安装自带模板 bundle，忽略 Profile manifest、外部 bundle 和用户 patch 层。安全模式记录跳过内容，并提供普通诊断 UI；它不能再次请求安全模式重启。如果安装自带组合也失败，则使用普通的终止启动失败页。

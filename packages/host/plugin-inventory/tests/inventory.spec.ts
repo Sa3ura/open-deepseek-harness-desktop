@@ -102,6 +102,7 @@ describe('PluginInventoryGateway', () => {
       { method: 'externalTools', invocation: { kind: 'direct' } },
       { method: 'setExternalTool', invocation: { kind: 'direct' } },
       { method: 'dismissDependencyHealth', invocation: { kind: 'direct' } },
+      { method: 'recoverClientLoadFailure', invocation: { kind: 'direct' } },
       { method: 'uninstallQuarantine', invocation: { kind: 'direct' } },
       { method: 'startQuarantineRetry', invocation: { kind: 'direct' } },
       { method: 'approveQuarantineBuild', invocation: { kind: 'direct' } },
@@ -113,6 +114,64 @@ describe('PluginInventoryGateway', () => {
       { method: 'getDependencyDoctor', invocation: { kind: 'direct' } },
       { method: 'getInstall', invocation: { kind: 'direct' } },
     ])
+  })
+
+  it('runs the guarded client Loader quarantine and restarts only after durable success', async () => {
+    vi.useFakeTimers()
+    try {
+      const { ctx, inventory, subprocess } = await harness()
+      const exit = vi.fn()
+      ctx.provide('appExit', exit)
+      subprocess.stdout = JSON.stringify({
+        schema: 'dsh/profile-dependency-repair/v1',
+        diagnosticSchema: 'dsh/profile-diagnostic/v2',
+        profile: 'web',
+        status: 'quarantined',
+        conflicts: [],
+        quarantined: [{
+          quarantineId: 'fixture-quarantine',
+          profile: 'web',
+          packageName: 'dsh-font',
+          packageSpec: '1.1.0',
+          bundleIndex: 0,
+          quarantinedAt: '2026-08-28T00:00:00.000Z',
+          reason: 'client-module-unavailable',
+          conflicts: [],
+        }],
+      })
+      subprocess.exitCode = 11
+
+      await expect(inventory.recoverClientLoadFailure({
+        packageName: 'dsh-font',
+        entryId: '71626ed6',
+        requestedModule: '@deepseek-ai/dsh-client-runtime/client',
+        code: 'client-module-unavailable',
+      })).resolves.toEqual({
+        packageName: 'dsh-font',
+        status: 'quarantined',
+        restartScheduled: true,
+      })
+      expect(subprocess.spawns[0]?.argv.slice(-8)).toEqual([
+        'plugin', '--profile', 'web', 'doctor', '--quarantine-client-module',
+        'dsh-font', '71626ed6', '@deepseek-ai/dsh-client-runtime/client',
+      ])
+      expect(exit).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(150)
+      expect(exit).toHaveBeenCalledWith(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('rejects arbitrary browser requests before spawning the product CLI', async () => {
+    const { inventory, subprocess } = await harness()
+    await expect(inventory.recoverClientLoadFailure({
+      packageName: '../dsh-font',
+      entryId: '71626ed6',
+      requestedModule: '@deepseek-ai/dsh-client-runtime/client',
+      code: 'client-module-unavailable',
+    })).rejects.toThrow(/invalid client Loader recovery request/)
+    expect(subprocess.spawns).toHaveLength(0)
   })
 
   it('projects disconnected Host tools and rejects unsupported or unavailable toggles', async () => {

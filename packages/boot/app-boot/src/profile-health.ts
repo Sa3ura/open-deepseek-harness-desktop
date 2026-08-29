@@ -98,7 +98,7 @@ export interface QuarantinedProfilePlugin {
   readonly installedVersion?: string
   readonly bundleIndex: number | null
   readonly quarantinedAt: string
-  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked'
+  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable'
   readonly buildApprovalKey?: string
   readonly conflicts: readonly ProfileDependencyConflict[]
 }
@@ -685,6 +685,107 @@ function retainMaterialReport(home: string, value: ProfileRepairReport): Profile
     writeProfileDiagnosticReport(createProfileDiagnosticReport(value.profile, issues), home)
   }
   return value
+}
+
+/**
+ * Deactivate one directly configured external bundle after its Loader import proves unusable.
+ * The operation retains the original dependency spec and bundle position for an explicit retry.
+ * @param options - profile inputs plus the caller-owned package-manager runner.
+ * @param packageName - exact direct dependency and active bundle attributed by the Loader error.
+ * @param issue - structured import failure retained for Diagnostics.
+ * @returns a quarantined report, or a failed report after restoring the original manifest.
+ */
+export function quarantineProfilePluginAfterLoadFailure(
+  options: ProfileRepairOptions,
+  packageName: string,
+  issue: ProfileDiagnostic,
+): ProfileRepairReport {
+  const home = options.home ?? resolveDshHome()
+  const profileDir = resolveProfileDir(options.profile, home)
+  if (!PACKAGE_NAME.test(packageName)) {
+    return retainMaterialReport(home, report(
+      options.profile,
+      'failed',
+      [],
+      [],
+      `invalid Loader-attributed package name ${JSON.stringify(packageName)}`,
+    ))
+  }
+
+  const originalManifest = readProfileManifest(options.binName, profileDir)
+  const packageSpec = originalManifest.dependencies?.[packageName]
+  const bundleIndex = originalManifest.dsh?.profile?.bundles?.indexOf(packageName) ?? -1
+  if (packageSpec === undefined || bundleIndex < 0) {
+    return retainMaterialReport(home, report(
+      options.profile,
+      'failed',
+      [],
+      [],
+      `cannot quarantine Loader import failure for ${packageName}: it is not a direct active Profile bundle`,
+    ))
+  }
+
+  const version = installedVersion(profileDir, packageName)
+  const record: QuarantinedProfilePlugin = {
+    quarantineId: randomUUID(),
+    profile: options.profile,
+    packageName,
+    packageSpec,
+    ...(version === undefined ? {} : { installedVersion: version }),
+    bundleIndex,
+    quarantinedAt: (options.now ?? (() => new Date()))().toISOString(),
+    reason: 'client-module-unavailable',
+    conflicts: [],
+  }
+  writeProfileManifest(profileDir, withoutRoots(originalManifest, new Set([packageName])))
+
+  const removal = options.runPackageManager(['install'])
+  let cleanupDiagnostic = removal.exitCode === 0 ? undefined : removal.diagnostic
+  try {
+    if (retainedPluginDirectories(profileDir, [record]).length > 0) {
+      removeInterruptedQuarantineResidue(options, home, profileDir, [record])
+      cleanupDiagnostic = [
+        cleanupDiagnostic,
+        removal.exitCode === 0
+          ? 'inactive plugin residue was removed directly'
+          : 'pnpm cleanup failed; inactive plugin residue was removed directly',
+      ].filter(Boolean).join('\n')
+    }
+    const remainingConflicts = inspectProfileDependencies({ ...options, home })
+    const remainingOrphans = inspectOrphanedProfileBundles({ ...options, home })
+    const remainingResidue = retainedPluginDirectories(profileDir, [record])
+    if (remainingConflicts.length === 0 && remainingOrphans.length === 0 && remainingResidue.length === 0) {
+      persistQuarantines(home, [record])
+      const retainedIssue: ProfileDiagnostic = {
+        ...issue,
+        attribution: { ...issue.attribution, rootPackage: packageName },
+      }
+      return retainMaterialReport(home, {
+        ...report(options.profile, 'quarantined', [], [record], cleanupDiagnostic),
+        issues: [retainedIssue],
+      })
+    }
+    cleanupDiagnostic = `profile remained unhealthy after quarantining ${packageName}: ${[
+      ...remainingConflicts.map(conflict => conflict.dependency),
+      ...remainingOrphans.map(orphan => orphan.packageName),
+      ...remainingResidue.map(residue => residue.packageName),
+    ].join(', ')}`
+  } catch (error) {
+    cleanupDiagnostic = error instanceof Error ? error.message : String(error)
+  }
+
+  writeProfileManifest(profileDir, originalManifest)
+  const rollback = options.runPackageManager(['install'])
+  const rollbackDiagnostic = rollback.exitCode === 0
+    ? cleanupDiagnostic
+    : `${cleanupDiagnostic ?? `failed to quarantine ${packageName}`}; rollback failed: ${rollback.diagnostic ?? 'package manager failed'}`
+  return retainMaterialReport(home, report(
+    options.profile,
+    'failed',
+    [],
+    [],
+    rollbackDiagnostic,
+  ))
 }
 
 function deduplicateDiagnostics(issues: readonly ProfileDiagnostic[]): ProfileDiagnostic[] {

@@ -92,6 +92,7 @@ const QUARANTINE_REASON_KEYS = {
   'convergence-failed': 'health.quarantine.reason.convergenceFailed',
   'orphaned-bundle': 'health.quarantine.reason.orphanedBundle',
   'build-script-blocked': 'health.quarantine.reason.buildScriptBlocked',
+  'client-module-unavailable': 'health.quarantine.reason.clientModuleUnavailable',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 type DiagnosticIssue = PluginInventorySnapshot['dependencyHealth']['issues'][number]

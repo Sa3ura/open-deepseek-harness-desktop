@@ -66,6 +66,7 @@ export {
   inspectOrphanedProfileBundles,
   listQuarantinedProfilePlugins,
   PROFILE_QUARANTINE_SCHEMA,
+  quarantineProfilePluginAfterLoadFailure,
   repairProfileDependencies,
   retryQuarantinedProfilePlugin,
   readLastProfileRepairReport,

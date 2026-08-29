@@ -13,10 +13,18 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { BootPage } from './boot-page.ts'
 import { getStaticModules } from './seed.ts'
 import { STATE_LABELS } from './loader-status.ts'
+import {
+  clientLoadFailure,
+  recoverClientLoadFailure,
+  type ClientLoadFailure,
+  type ClientLoadRecoveryResult,
+} from './client-load-recovery.ts'
 import './base.css'
 
 /** Module transport hook replaced by jsdom tests. */
-export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'>
+export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'> & {
+  recoverClientLoadFailure?(request: ClientLoadFailure): Promise<ClientLoadRecoveryResult>
+}
 
 /** Browser boot entry consumed by `apps/web`. */
 export class AppWebEntry {
@@ -80,6 +88,24 @@ export class AppWebEntry {
       await this.mountApp(ctx)
     } catch (reason) {
       console.error(reason)
+      const failure = clientLoadFailure(reason)
+      if (failure !== undefined) {
+        const ctx = this.ctx
+        this.ctx = undefined
+        if (ctx !== undefined) await ctx.fiber.dispose()
+        this.page.recover(failure.packageName)
+        try {
+          const outcome = await (this.seams?.recoverClientLoadFailure ?? recoverClientLoadFailure)(failure)
+          if (outcome.status === 'quarantined' && outcome.restartScheduled) return
+          const suffix = outcome.status === 'quarantined'
+            ? 'The plugin was isolated. Restart Harness to finish recovery.'
+            : 'Automatic plugin isolation failed. Open Diagnostics after correcting the Profile.'
+          this.page.fail(`${reason instanceof Error ? reason.message : String(reason)}\n${suffix}`)
+          return
+        } catch (recoveryError) {
+          console.error(recoveryError)
+        }
+      }
       this.page.fail(reason instanceof Error ? reason.message : String(reason))
     }
   }

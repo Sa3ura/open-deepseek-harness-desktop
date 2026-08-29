@@ -31,6 +31,7 @@ import {
   createProfileDiagnosticReport,
   readProfileDiagnosticReport,
   readProfileManifest,
+  quarantineProfilePluginAfterLoadFailure,
   repairProfileDependencies,
   resolveProfileDir,
   PROFILE_PATCH_FILENAME,
@@ -318,10 +319,52 @@ export interface RunProfileOptions {
 function startupFailurePhase(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   if (/pnpm|dependency|lockfile|node_modules|profile manifest/iu.test(message)) return 'preflight' as const
-  if (/cannot resolve|ERR_MODULE_NOT_FOUND|failed to load/iu.test(message)) return 'import' as const
+  if (/cannot resolve|ERR_MODULE_NOT_FOUND|failed to (?:load|import)|missed the module table/iu.test(message)) {
+    return 'import' as const
+  }
   if (/failed to apply|apply loader entry/iu.test(message)) return 'apply' as const
   if (/did not activate|pending \(waiting|activation/iu.test(message)) return 'activate' as const
   return 'compose' as const
+}
+
+const LOADER_IMPORT_FAILURE = /failed to import loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/iu
+const CLIENT_MODULE_UNAVAILABLE = new RegExp(
+  String.raw`client-modules:\s*require\([^\r\n]+\).*?`
+  + String.raw`(?:missed the module table|not a materialized module|no registered package factory)`,
+  'isu',
+)
+
+function startupErrorChain(error: unknown): string {
+  const messages: string[] = []
+  const seen = new Set<unknown>()
+  let current = error
+  while (!seen.has(current)) {
+    seen.add(current)
+    if (current instanceof Error) {
+      messages.push(current.message)
+      current = current.cause
+      if (current === undefined) break
+      continue
+    }
+    if (typeof current === 'string') messages.push(current)
+    break
+  }
+  return messages.join('\n')
+}
+
+/**
+ * Attribute a synchronous client module-table failure to its Loader entry.
+ * @param error - startup exception and optional cause chain.
+ * @returns the Loader identity only when the diagnostic proves a missing client module supplier.
+ */
+export function loaderClientModuleFailure(
+  error: unknown,
+): { readonly entryId: string; readonly moduleName: string } | undefined {
+  const diagnostic = startupErrorChain(error)
+  if (!CLIENT_MODULE_UNAVAILABLE.test(diagnostic)) return undefined
+  const match = LOADER_IMPORT_FAILURE.exec(diagnostic)
+  if (match?.[1] === undefined || match[2] === undefined) return undefined
+  return { entryId: match[1], moduleName: match[2] }
 }
 
 function deduplicateStartupIssues(issues: readonly ProfileDiagnostic[]): ProfileDiagnostic[] {
@@ -522,23 +565,59 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   try {
     return await runProfileAttempt(options)
   } catch (error) {
+    const loaderFailure = options.safeMode === true ? undefined : loaderClientModuleFailure(error)
+    const externalBundle = loaderFailure !== undefined
+      && configuredExternalBundles(options.profile).includes(loaderFailure.moduleName)
+      ? loaderFailure.moduleName
+      : undefined
     const issue = classifyProfileDiagnostic({
       source: options.safeMode === true ? 'runtime' : 'profile',
       phase: startupFailurePhase(error),
       value: error,
       home: resolveDshHome(),
+      ...(loaderFailure === undefined
+        ? {}
+        : {
+          attribution: {
+            entryId: loaderFailure.entryId,
+            moduleName: loaderFailure.moduleName,
+            ...(externalBundle === undefined ? {} : { rootPackage: externalBundle }),
+          },
+        }),
     })
+    let quarantined = false
+    if (options.safeModeOnFailure === true && externalBundle !== undefined) {
+      const profileDir = resolveProfileDir(options.profile)
+      const outcome = quarantineProfilePluginAfterLoadFailure({
+        binName: NAME,
+        profile: options.profile,
+        installAnchor: INSTALL_ANCHOR,
+        runPackageManager: args => runProfilePackageManager(profileDir, args),
+      }, externalBundle, issue)
+      quarantined = outcome.status === 'quarantined'
+      if (quarantined) {
+        process.stderr.write(`${NAME}: quarantined startup-incompatible plugin ${JSON.stringify({
+          schema: 'dsh/profile-diagnostic/v2',
+          packageName: externalBundle,
+          entryId: loaderFailure?.entryId,
+          code: issue.code,
+        })}\n`)
+      }
+    }
     let previous: readonly ProfileDiagnostic[] = []
     try {
       previous = readProfileDiagnosticReport(options.profile)?.issues ?? []
     } catch {
       // The fresh report below replaces an unreadable diagnostic file; user Profile data is untouched.
     }
-    writeProfileDiagnosticReport(createProfileDiagnosticReport(
-      options.profile,
-      deduplicateStartupIssues([...previous, issue]),
-    ))
-    if (options.safeMode !== true
+    if (!quarantined) {
+      writeProfileDiagnosticReport(createProfileDiagnosticReport(
+        options.profile,
+        deduplicateStartupIssues([...previous, issue]),
+      ))
+    }
+    if (!quarantined
+      && options.safeMode !== true
       && options.safeModeOnFailure === true
       && isDeterministicSafeModeFailure(issue)) {
       process.stderr.write(`${NAME}: profile safe mode eligible ${JSON.stringify({

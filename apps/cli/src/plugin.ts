@@ -24,6 +24,7 @@ import {
   orphanedBundleDiagnostic,
   PROFILE_TEMPLATES,
   profileDependencyConflictDiagnostic,
+  quarantineProfilePluginAfterLoadFailure,
   readProfileManifest,
   readProfileDiagnosticReport,
   repairProfileDependencies,
@@ -43,6 +44,7 @@ export { resolvePnpmCommand } from './profile-package-manager.ts'
 
 const NAME = 'dsh'
 const REGISTRY_ADD_SPEC = /^(?<name>(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*))(?:@[a-z0-9][a-z0-9._+~-]*)?$/iu
+const REGISTRY_PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)$/iu
 
 /** Initialize one named profile with the official template shape. */
 function initializeProfile(dir: string, profile: string): void {
@@ -231,11 +233,18 @@ export function runPlugin(profile: string, args: readonly string[]): number {
   if (args[0] === 'doctor') {
     const repair = args.length === 2 && args[1] === '--repair'
     const retryId = args.length === 3 && args[1] === '--retry' ? args[2] : undefined
-    if (args.length !== 1 && !repair && retryId === undefined) {
-      process.stderr.write(`${NAME}: usage: dsh plugin --profile ${profile} doctor [--repair | --retry <quarantine-id>]\n`)
+    const clientLoadFailure = args.length === 5 && args[1] === '--quarantine-client-module'
+      && args[2] !== undefined && args[3] !== undefined && args[4] !== undefined
+      ? { packageName: args[2], entryId: args[3], requestedModule: args[4] }
+      : undefined
+    if (args.length !== 1 && !repair && retryId === undefined && clientLoadFailure === undefined) {
+      process.stderr.write(
+        `${NAME}: usage: dsh plugin --profile ${profile} doctor `
+        + '[--repair | --retry <quarantine-id> | --quarantine-client-module <package> <entry-id> <requested-module>]\n',
+      )
       return 1
     }
-    const mutatesProfile = repair || retryId !== undefined
+    const mutatesProfile = repair || retryId !== undefined || clientLoadFailure !== undefined
     if (!existsSync(join(dir, 'package.json'))) {
       if (!mutatesProfile) {
         process.stderr.write(`${NAME}: profile ${profile} is not initialized at ${dir}\n`)
@@ -245,7 +254,27 @@ export function runPlugin(profile: string, args: readonly string[]): number {
       process.stderr.write(`${NAME}: initialized profile ${profile} at ${dir}\n`)
     }
     let outcome: ProfileRepairReport
-    if (retryId !== undefined) {
+    if (clientLoadFailure !== undefined) {
+      const { packageName, entryId, requestedModule } = clientLoadFailure
+      if (!REGISTRY_PACKAGE_NAME.test(packageName)
+        || !/^[A-Za-z0-9._~-]{1,128}$/u.test(entryId)
+        || !/^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)(?:\/[a-z0-9._~/-]+)?$/iu.test(requestedModule)) {
+        process.stderr.write(`${NAME}: invalid client module quarantine attribution\n`)
+        return 1
+      }
+      const issue = classifyProfileDiagnostic({
+        source: 'loader',
+        phase: 'import',
+        attribution: { entryId, moduleName: packageName, rootPackage: packageName },
+        value: `failed to import loader entry ${entryId} (${packageName}): client-modules: require(${JSON.stringify(requestedModule)}) missed the module table — not a platform seed word, not a materialized module, and no registered package factory`,
+      })
+      outcome = quarantineProfilePluginAfterLoadFailure({
+        binName: NAME,
+        profile,
+        installAnchor: INSTALL_ANCHOR,
+        runPackageManager: pnpmArgs => runProfilePackageManager(dir, pnpmArgs),
+      }, packageName, issue)
+    } else if (retryId !== undefined) {
       outcome = retryQuarantinedProfilePlugin({
         binName: NAME,
         profile,

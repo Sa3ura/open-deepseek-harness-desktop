@@ -1,5 +1,6 @@
 /** Host plugin inventory and controlled profile-plugin installation. */
 
+import { randomUUID } from 'node:crypto'
 import { extname } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import type { Context, FiberState } from '@deepseek-ai/cordis'
@@ -32,6 +33,8 @@ import type {
   PluginDoctorSnapshot,
   PluginBuildApprovalRequest,
   PluginDiagnosticBuildApprovalRequest,
+  PluginClientLoadFailureRequest,
+  PluginClientLoadRecoveryResult,
   PluginDiagnosticExport,
   PluginFiberPhase,
   PluginInventoryEntry,
@@ -100,6 +103,9 @@ interface InstallJob {
   }[]
   quarantineId?: string
 }
+
+const CLIENT_LOADER_ENTRY_ID = /^[A-Za-z0-9._~-]{1,128}$/u
+const CLIENT_MODULE_REQUEST = /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*)(?:\/[a-z0-9._~/-]+)?$/iu
 
 /** Mutable doctor process retained until the client finishes polling it. */
 interface DoctorJob {
@@ -341,6 +347,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
   private readonly jobs = new Map<PluginInstallId, InstallJob>()
   private readonly doctorJobs = new Map<PluginDoctorId, DoctorJob>()
   private readonly activeTargets = new Map<string, PluginInstallId>()
+  private readonly clientLoadRecoveries = new Map<string, Promise<PluginClientLoadRecoveryResult>>()
   private readonly outputMaxBytes: number
   private readonly terminationGraceMs: number
   private readonly profile: string
@@ -449,6 +456,36 @@ export class PluginInventoryGateway extends TypertRemoteService {
   }
 
   /**
+   * Quarantine one directly configured Profile bundle after the browser kernel proves a
+   * module-table invariant failure, then request a bounded Host restart. The request is
+   * intentionally narrower than the ordinary installer: the caller cannot supply a path,
+   * package specifier, command, or arbitrary diagnostic text.
+   * @param request - parsed client Loader attribution and closed failure code.
+   * @returns durable quarantine outcome and whether the launcher accepted a restart request.
+   */
+  @Remote('recoverClientLoadFailure')
+  async recoverClientLoadFailure(
+    request: PluginClientLoadFailureRequest,
+  ): Promise<PluginClientLoadRecoveryResult> {
+    if (request.code !== 'client-module-unavailable'
+      || !REGISTRY_PACKAGE_NAME.test(request.packageName)
+      || !CLIENT_LOADER_ENTRY_ID.test(request.entryId)
+      || !CLIENT_MODULE_REQUEST.test(request.requestedModule)) {
+      throw new TypeError('pluginInventory: invalid client Loader recovery request')
+    }
+    const target = `client-load\0${this.profile}\0${request.packageName}`
+    const current = this.clientLoadRecoveries.get(target)
+    if (current !== undefined) return current
+    const recovery = this.runClientLoadRecovery(target, request)
+    this.clientLoadRecoveries.set(target, recovery)
+    try {
+      return await recovery
+    } finally {
+      if (this.clientLoadRecoveries.get(target) === recovery) this.clientLoadRecoveries.delete(target)
+    }
+  }
+
+  /**
    * Remove one quarantined plugin after it has left the active profile.
    * @param request - opaque durable quarantine id.
    * @returns true when the plugin and record were removed.
@@ -476,7 +513,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const activeId = this.activeTargets.get(target)
     if (activeId !== undefined) return this.expectJob(activeId).snapshot
 
-    const installId = pluginInstallId(crypto.randomUUID())
+    const installId = pluginInstallId(randomUUID())
     const snapshot: PluginInstallSnapshot = {
       installId,
       profile: record.profile,
@@ -514,7 +551,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const activeId = this.activeTargets.get(target)
     if (activeId !== undefined) return this.expectJob(activeId).snapshot
 
-    const installId = pluginInstallId(crypto.randomUUID())
+    const installId = pluginInstallId(randomUUID())
     const snapshot: PluginInstallSnapshot = {
       installId,
       profile: record.profile,
@@ -562,7 +599,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const activeId = this.activeTargets.get(target)
     if (activeId !== undefined) return this.expectJob(activeId).snapshot
 
-    const installId = pluginInstallId(crypto.randomUUID())
+    const installId = pluginInstallId(randomUUID())
     const snapshot: PluginInstallSnapshot = {
       installId,
       profile: this.profile,
@@ -625,7 +662,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const activeId = this.activeTargets.get(target)
     if (activeId !== undefined) return this.expectJob(activeId).snapshot
 
-    const installId = pluginInstallId(crypto.randomUUID())
+    const installId = pluginInstallId(randomUUID())
     const snapshot: PluginInstallSnapshot = {
       installId,
       profile: request.profile,
@@ -652,7 +689,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const activeId = this.activeTargets.get(target)
     if (activeId !== undefined) return this.expectJob(activeId).snapshot
 
-    const installId = pluginInstallId(crypto.randomUUID())
+    const installId = pluginInstallId(randomUUID())
     const snapshot: PluginInstallSnapshot = {
       installId,
       profile: request.profile,
@@ -680,7 +717,7 @@ export class PluginInventoryGateway extends TypertRemoteService {
     const existing = [...this.doctorJobs.values()].find(job => job.target === target && job.snapshot.phase === 'running')
     if (existing !== undefined) return existing.snapshot
 
-    const doctorId = pluginDoctorId(crypto.randomUUID())
+    const doctorId = pluginDoctorId(randomUUID())
     const snapshot: PluginDoctorSnapshot = {
       doctorId,
       profile: request.profile,
@@ -788,6 +825,43 @@ export class PluginInventoryGateway extends TypertRemoteService {
     } finally {
       this.activeTargets.delete(job.target)
     }
+  }
+
+  /** Run the product-owned quarantine command and restart only after its record is durable. */
+  private async runClientLoadRecovery(
+    target: string,
+    request: PluginClientLoadFailureRequest,
+  ): Promise<PluginClientLoadRecoveryResult> {
+    const installId = pluginInstallId(randomUUID())
+    const snapshot: PluginInstallSnapshot = {
+      installId,
+      profile: this.profile,
+      packageSpec: request.packageName,
+      command: `dsh plugin --profile ${this.profile} doctor --quarantine-client-module ${request.packageName}`,
+      phase: 'running',
+    }
+    const job: InstallJob = {
+      snapshot,
+      target,
+      steps: [{
+        args: [
+          'doctor', '--quarantine-client-module',
+          request.packageName, request.entryId, request.requestedModule,
+        ],
+      }],
+    }
+    this.jobs.set(installId, job)
+    this.activeTargets.set(target, installId)
+    await this.runInstall(job)
+    if (job.snapshot.phase !== 'quarantined') {
+      return { packageName: request.packageName, status: 'failed', restartScheduled: false }
+    }
+    const exit = this.ctx.get('appExit') as ((code: number) => void) | undefined
+    if (exit === undefined) {
+      return { packageName: request.packageName, status: 'quarantined', restartScheduled: false }
+    }
+    setTimeout(() => { exit(0) }, 150)
+    return { packageName: request.packageName, status: 'quarantined', restartScheduled: true }
   }
 
   /** Run the built-in doctor through the same managed subprocess boundary as plugin mutations. */
