@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 /** Conversation Header Session actions: transcript copy and persistence-backed confirmations. */
 
+import type { ComponentProps } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import {
-  createSnapshotStore, EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { ConversationSnapshot, SessionId, WorkspaceId } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { EMPTY_CHAT_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locales.ts'
 import {
@@ -18,53 +21,46 @@ const SID = 'session-actions' as SessionId
 const WID = 'workspace-actions' as WorkspaceId
 const t = makeTranslate(zh, commonZh)
 
-function snapshot(overrides: Partial<ConversationSnapshot> = {}): ConversationSnapshot {
+const nodes = [
+  { kind: 'user', seq: 1, time: 1, content: [{ type: 'text', text: '检查项目' }], source: null },
+  {
+    kind: 'assistant', seq: 2, time: 2, turn: 1, step: 1,
+    blocks: [{ kind: 'text', text: '已经完成检查。' }],
+  },
+] as const
+
+function snapshot(partial: typeof EMPTY_CHAT_SNAPSHOT.legacy.partial = null): ConversationSnapshot {
+  const chat = { ...EMPTY_CHAT_SNAPSHOT, legacy: { ...EMPTY_CHAT_SNAPSHOT.legacy, nodes, partial } }
   return {
-    sessionId: SID,
-    views: EMPTY_CONVERSATION_VIEWS,
-    chat: EMPTY_CHAT_SNAPSHOT,
-    nodes: [
-      { kind: 'user', seq: 1, time: 1, content: [{ type: 'text', text: '检查项目' }], source: null },
-      {
-        kind: 'assistant', seq: 2, time: 2, turn: 1, step: 1,
-        blocks: [{ kind: 'text', text: '已经完成检查。' }],
-      },
-    ],
-    turnTimings: new Map(),
-    turnEnds: new Map(),
-    partial: null,
-    runningCalls: [],
-    pending: [],
-    queue: [],
-    running: false,
-    subagent: null,
-    composerPhase: 'active',
-    removed: false,
-    openState: 'open',
-    openError: null,
-    hasMore: false,
-    loadingOlder: false,
-    promptError: null,
-    blank: false,
-    lastAgentError: null,
-    ...overrides,
+    views: { get: (target: string) => target === 'chat' ? chat : undefined } as unknown as ConversationSnapshot['views'],
+    activeTargets: new Set(['chat']),
   }
 }
 
-function mount(overrides: Partial<ConversationSnapshot> = {}) {
-  const store = createSnapshotStore(snapshot(overrides))
+function sessionSnapshot(running = false): SessionSnapshot {
+  return {
+    sessionId: SID, queue: [], pendingSubmissions: [], running, subagent: null,
+    removed: false, openState: 'open', openError: null, hasMore: false,
+    loadingOlder: false, promptError: null, blank: false, lastAgentError: null,
+    promptAttempted: true, awaitingFirstTurn: false,
+  }
+}
+
+function mount(running = false) {
+  const conversation = createSnapshotStore(snapshot())
+  const session = createSnapshotStore(sessionSnapshot(running))
   const archive = vi.fn(() => Promise.resolve())
   const clearAndRestart = vi.fn(() => Promise.resolve())
-  render(
-    <SessionActions
-      sessionId={SID}
-      useSession={bindSnapshotSelector(store)}
-      workspaceId={WID}
-      archive={archive}
-      clearAndRestart={clearAndRestart}
-      t={t}
-    />,
-  )
+  const props = {
+    sessionId: SID,
+    useConversation: bindSnapshotSelector(conversation),
+    useSession: bindSnapshotSelector(session),
+    workspaceId: WID,
+    archive,
+    clearAndRestart,
+    t,
+  } as unknown as ComponentProps<typeof SessionActions>
+  render(<SessionActions {...props} />)
   return { archive, clearAndRestart }
 }
 
@@ -109,7 +105,7 @@ describe('SessionActions', () => {
   })
 
   it('disables lifecycle actions while the agent is running', () => {
-    mount({ running: true })
+    mount(true)
     fireEvent.click(screen.getByRole('button', { name: '更多会话操作' }))
     expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: '清空并新建会话' }).disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: '删除会话' }).disabled).toBe(true)
@@ -119,14 +115,12 @@ describe('SessionActions', () => {
 describe('conversationTranscript', () => {
   it('omits private reasoning and includes the active visible response', () => {
     const source = snapshot({
-      partial: {
-        turn: 2,
-        step: 1,
-        blocks: [
-          { kind: 'reasoning', text: 'private' },
-          { kind: 'text', text: '正在处理' },
-        ],
-      },
+      turn: 2,
+      step: 1,
+      blocks: [
+        { kind: 'reasoning', text: 'private' },
+        { kind: 'text', text: '正在处理' },
+      ],
     })
     expect(conversationTranscript(source, { user: 'User', assistant: 'Agent' }))
       .toBe('User:\n检查项目\n\nAgent:\n已经完成检查。\n\nAgent:\n正在处理')

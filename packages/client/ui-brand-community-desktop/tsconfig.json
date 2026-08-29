@@ -4,7 +4,7 @@
   "include": ["src"],
   "references": [
     { "path": "../../runtime-diagnostics/invariants" },
-    { "path": "../runtime" },
+    { "path": "../ui-renderer" },
     { "path": "../ui-conversation" },
     { "path": "../ui-primitives" },
     { "path": "../ui-sidebar" },

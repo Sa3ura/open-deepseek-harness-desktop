@@ -17,6 +17,7 @@ import {
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
   listQuarantinedProfilePlugins,
+  quarantineProfilePluginAfterLoadFailure,
   readProfileManifest,
   repairProfileDependencies,
   retryQuarantinedProfilePlugin,
@@ -424,6 +425,87 @@ describe('profile composition inspection', () => {
 })
 
 describe('profile shared Host dependency repair', () => {
+  it('quarantines an active external bundle after a client module-table import failure', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir, pluginDir } = stageProfile(home, {})
+    const issue = {
+      diagnosticId: 'diagnostic-fixture',
+      code: 'profile.module-resolution' as const,
+      source: 'profile' as const,
+      phase: 'import' as const,
+      severity: 'blocked' as const,
+      attribution: { entryId: '71626ed6', moduleName: 'fixture-plugin', rootPackage: 'fixture-plugin' },
+      actions: ['repair', 'isolate', 'export'] as const,
+      evidence: ['client module supplier is unavailable'],
+    }
+
+    const result = quarantineProfilePluginAfterLoadFailure({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      now: () => new Date('2026-08-28T03:00:00.000Z'),
+      runPackageManager: () => {
+        rmSync(pluginDir, { recursive: true, force: true })
+        return { exitCode: 0 }
+      },
+    }, 'fixture-plugin', issue)
+
+    expect(result).toMatchObject({
+      status: 'quarantined',
+      quarantined: [{
+        packageName: 'fixture-plugin',
+        packageSpec: '^2.3.0',
+        bundleIndex: 1,
+        reason: 'client-module-unavailable',
+      }],
+      issues: [{
+        code: 'profile.module-resolution',
+        attribution: { rootPackage: 'fixture-plugin', entryId: '71626ed6' },
+      }],
+    })
+    expect(readProfileManifest('test', profileDir).dependencies?.['fixture-plugin']).toBeUndefined()
+    expect(readProfileManifest('test', profileDir).dsh?.profile?.bundles).not.toContain('fixture-plugin')
+    expect(listQuarantinedProfilePlugins(home)).toEqual([
+      expect.objectContaining({ packageName: 'fixture-plugin', reason: 'client-module-unavailable' }),
+    ])
+  })
+
+  it('refuses to quarantine a Loader module that is not a direct active Profile bundle', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir } = stageProfile(home, {})
+    const before = readFileSync(join(profileDir, 'package.json'), 'utf8')
+    let installs = 0
+
+    const result = quarantineProfilePluginAfterLoadFailure({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => {
+        installs += 1
+        return { exitCode: 0 }
+      },
+    }, 'transitive-client-module', {
+      diagnosticId: 'diagnostic-fixture',
+      code: 'profile.module-resolution',
+      source: 'profile',
+      phase: 'import',
+      severity: 'blocked',
+      attribution: { moduleName: 'transitive-client-module' },
+      actions: ['repair', 'isolate', 'export'],
+      evidence: [],
+    })
+
+    expect(result.status).toBe('failed')
+    expect(result.diagnostic).toContain('not a direct active Profile bundle')
+    expect(installs).toBe(0)
+    expect(readFileSync(join(profileDir, 'package.json'), 'utf8')).toBe(before)
+    expect(listQuarantinedProfilePlugins(home)).toEqual([])
+  })
+
   it('relinks undeclared Host residue to the running installation without invoking pnpm', () => {
     const { anchor, packageDirs } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')

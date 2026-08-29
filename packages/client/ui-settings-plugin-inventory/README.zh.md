@@ -1,35 +1,99 @@
+---
+description: "dsh Web 客户端设置中的只读 Cordis Loader 清单标签页：可搜索的插件目录，含启停状态与配置。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-plugin-inventory
 
 [English](README.md) | 中文
 
-当清单包含 `dshmarket` 时，展开卡片会显示由核心 Host Remote 支持的风险确认卸载操作。打包应用会尊重成功移除，不会重新预装市场。
+## 概述
 
-Web 插件清单、诊断、外部工具连接与发现界面。浏览器插件注册 id 为 `all` 的本地化 `settings.plugins.tab` 贡献，以及 id 分别为 `external-tools` 与 `diagnostics` 的根 `settings.section` 贡献；“插件”分区继续只拥有清单标签栏。它还会向新会话主页贡献根作用域 `conversation.hero.pluginDiscovery` 入口。该入口打开一个社区项目精选指引，所列项目都明确记录了官方 `dsh plugin --profile ... add ...` 流程。每张卡片会标明第三方来源与许可证、显示带日期的 Star 档位、链接到源码仓库、复制项目记录的命令，并通过结构化 Host Remote 提供受保护安装。安装需要明确确认风险，展示后台进度与有界诊断，并说明重启后新 bundle 才会生效。界面不会转发任意 shell 文本，也不会在运行时请求 GitHub。底部链接进入完整 GitHub `dsh-plugin` 专题以继续发现；进入专题和 Star 数量都不代表安全审核或 DeepSeek 官方背书。
+`dsh-client-ui-settings-plugin-inventory` 向 Web 设置的「插件」分区贡献只读的**插件列表**标签页。该标签页在首次被选择时懒调用 `ctx.remote.pluginInventory.list()`，并以可搜索的双列紧凑折叠卡片展示清单：每张收起的卡片显示模块短名称、有效启停标签，以及（对已启用条目）彩色根 fiber 状态圆点；展开卡片会显示 Loader 树条目 id、有效配置与 Cordis 状态。加载、空结果、无匹配与通用失败状态只属于已挂载组件，读取失败后可以重试，且不会暴露传输细节。
 
-打包桌面桥接继续保留精确白名单的延后安装任务、校验/解压/配置进度、重试、固定日志和重启能力，供用户明确触发的恢复流程复用。Better Sidebar 本身改为随启动预设安装，进入主界面后不再自动注册 `shell.overlay` 任务。可复用的卡片实现仍保留，未来可以用于导入插件恢复界面，同时不会向渲染进程暴露任意安装器。
+## 目录
 
-导入到独立数据 home 后，本包会贡献一次性恢复弹窗，并在现有“插件”页面保留恢复卡片。桌面宿主提供有序且预先校验的清单；浏览器只能选择不透明恢复 id，不能提供软件包说明符或路径。普通可迁移插件默认选中，外部工具依据导入的连接状态决定默认值，客户端已提供的预置项不会重复安装，不支持的本地来源或带凭据来源仍会显示原因。宿主通过标准插件 CLI 串行安装所选条目，因此依赖修复、供应链等待期、构建授权、bundle 收敛、隔离与诊断仍由同一套能力负责。“稍后”保留清单；明确忽略只结束剩余条目。
+- [使用本包](#use-this-package)
+- [理解实现](#understand-the-implementation)
+- [进一步探索](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与延期工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
 
-“外部工具”分区为 Codex 与 Claude Code 提供一处易发现的连接流程：安装精确版本的官方 Provider bundle，重启使其挂载，再为完整模式连接或断开该产品。Host 独立于 Agent Preset 保存连接状态，并在 Agent 发布、idle 或从 idle 同步进入 running 的边界把启用工具投影到 Agent 自己的 scope。因此已有历史会话会从下一轮获得新连接；运行中的回合保持当前工具直到回到 idle，`minimal` 继续保持精简。当前 Harness 版本没有 Hermes 与 Trae 的官方 Provider bundle，因此两者仍显示为不可操作的占位项。
+-----
 
-插件清单标签页在插件激活期间不会读取 Remote；首次选择该标签页时才挂载组件，并通过 [`api-remotes`](../../api/remotes/README.zh.md) 懒调用 `ctx.remote.pluginInventory.list()`。
+<a id="use-this-package"></a>
+## 使用本包
 
-独立的“诊断”分区会运行核心 profile doctor，而不是从市场插件输出推断依赖健康状态。“立即检查”始终只读；“检查并修复”调用受保护的收敛与隔离策略。页面只渲染当前 `dsh/profile-diagnostic/v2` 问题，并分别统计问题、依赖冲突、装载失败、配置错误和隔离数量，因此隔离数字不会取代根因分析。每个问题都会展示来源、阶段、归属根或 Loader entry、脱敏证据、允许操作和风险，但不暴露文件系统路径。精确 pnpm 构建键授权会打开白色弹窗，保留红色警告图标和黑色确认按钮；取消不会改变策略。安全模式启动会标明跳过的 bundle 与用户层。脱敏导出会下载运行时事实、当前问题、隔离记录和 Loader 摘要。冲突所指向的活动根插件在用户明确确认风险后，会通过与清单界面相同的结构化 `startUninstall` 任务移除；界面轮询进度，并在任务结束后刷新下次启动清单。失管 Loader 条目已经不属于 profile 依赖，因此不会伪装成包管理器可卸载项。启动时保留的修复通知仍可关闭，但不会删除隔离历史。每个隔离插件都支持按记录中的说明符重试，或在风险确认后物理移除处于停用状态的残留软件包与持久记录。该实现完全属于本包，不修改也不依赖 `dshmarket` 自带的诊断标签。完整策略见 [Profile 诊断规则总表](../../../docs/profile-diagnostics.zh.md)。
+打开设置中的「插件」分区并选择**插件列表**标签页，即可查看宿主的插件清单。插件激活期间不会读取 Remote——首次选择该标签页时才挂载组件，并通过 `api-remotes` 懒调用 `ctx.remote.pluginInventory.list()`。
 
-每张收起的清单卡片使用模块短名称作为标题，以小标签表示有效启停状态；已启用的条目还会以彩色圆点表示根 fiber 状态。展开卡片后会直接展示 Loader 树条目 id，不附加重复的字段标题，并列出有效配置状态；已启用的条目还会列出 Cordis 状态，已停用的条目则省略重复的“未挂载”运行状态。条目 id 仍作为 React key、展开标识、详情值与额外的搜索目标；代码不按字符串形状对它分类。加载、空结果、无匹配结果与通用失败状态只属于已挂载组件；读取失败后可以重试，且不会暴露传输细节。注册使用 `ctx.slots.inject()`，因此能跟随标签 slot 的延迟声明、重新声明、本地化变化与 teardown，而无需 import 分区拥有方。
+### 阅读卡片
 
+每张收起的卡片使用模块短名称作为标题，并以小标签表示有效启停状态；已启用的条目还会显示彩色根 fiber 状态圆点。展开卡片后会直接展示 Loader 树条目 id、有效配置，已启用条目还会显示 Cordis 状态；已停用条目省略重复的「未挂载」运行状态。搜索按名称与条目 id 过滤目录。
+
+### 重试失败的读取
+
+读取失败会在标签页内渲染通用失败状态；重试会重新执行懒 `list()` 调用，且不会暴露传输细节。
+
+-----
+
+<a id="understand-the-implementation"></a>
+## 理解实现
+
+<details>
+<summary>实现细节——点击展开</summary>
+
+该标签页是宿主拥有快照的只读投影；插件激活期间不执行任何 Remote 读取，首次选择时才取快照。
+
+### 注册
+
+浏览器插件注册一个 id 为 `all` 的本地化 `settings.plugins.tab` 贡献；「插件」分区拥有导航入口与标签栏。注册使用 `ctx.slots.inject()`，因此能跟随标签 slot 的延迟声明、重新声明、本地化变化与 teardown，而无需 import 分区拥有方。
+
+### 渲染
+
+条目 id 仍作为 React key、展开标识、详情值与额外的搜索目标；代码不按字符串形状对它分类。
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## 进一步探索
+
+以下页面覆盖设置分区、Remote 调用与宿主侧投影。
+
+- [ui-settings-plugins](../ui-settings-plugins/README.zh.md)——本标签页注册进的「插件」分区。
+- [ui-settings](../ui-settings/README.zh.md)——声明 `settings.plugins.tab` 的领域底座。
+- [api-remotes](../../api/remotes/README.zh.md)——`pluginInventory.list()` 背后的 Remote BFF 表面。
+- [plugin-inventory](../../host/plugin-inventory/README.zh.md)——本标签页所渲染的宿主侧只读 Loader 投影。
+
+-----
+
+<a id="model-experience"></a>
 ## 模型体验
 
-无，因为本包在浏览器界面展示 Host 拥有的部署状态并启动用户确认的 profile 安装，不注册任何模型接口。
+无。该包是浏览器端清单投影，不注册任何面向模型的内容。
 
 #### KV Cache 影响
 
-无；本包既不组装也不发送提供方请求。
+无；该包既不组装也不发送提供方请求。
 
-## 已知限制与暂缓事项
+## 已知限制与延期工作
 
-- **每次 Settings 挂载或重试只读取一份快照** —— 标签页不订阅 Loader 变化，也不会在重连后自动重新读取；切换标签页会保留当前快照，重新打开 Settings 则会取得新快照。
-- **只读 Loader 视图** —— 本地搜索不会额外引入来源、按来源分组、当前浏览器激活诊断或实时 Loader 修改控件。
-- **带日期的发现元数据** —— 精选卡片是 2026-08-16 采集并检查来源的指引，不是实时榜单。链接的 GitHub 专题用于查看更广、持续变化的目录。
-- **精选发现使用 registry 来源** —— 发现操作接受经过审阅的 npm registry 软件包说明符。桌面导入恢复还接受官方 Profile 中经过预校验的 npm alias 与不含凭据的 Git 来源；tarball 与本地路径不会通过浏览器界面执行。
-- **仅官方 Provider** —— Codex 与 Claude Code 可按需从 npm 安装经过审核的官方 Bundle，桌面安装包本身不携带这两个 Bundle；Hermes 与 Trae 在正式 Provider 契约出现前只作信息展示。
+<a id="known-limitations-and-deferred-work"></a>
+
+
+这些限制定义清单视图的新鲜度与触达范围；它们是当前包约束。
+
+- **每次 Settings 挂载或重试只读取一份快照**：标签页不订阅 Loader 变化，也不会在重连后自动重新读取；切换标签页会保留当前快照，重新打开 Settings 则会取得新快照。
+- **只读 Loader 视图**：本地搜索不会额外引入来源、按来源分组、当前浏览器激活诊断或插件修改控件。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者的工作上下文——点击展开</summary>
+
+无。
+
+</details>

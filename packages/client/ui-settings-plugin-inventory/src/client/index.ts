@@ -1,15 +1,17 @@
 /** Host plugin inventory and controlled installation registered into Web UI. */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { PluginInventorySettingsTab, type PluginInventorySettingsTabInjected } from './PluginInventorySettingsTab.tsx'
 import { PluginDiagnosticsSection, type PluginDiagnosticsSectionInjected } from './PluginDiagnosticsSection.tsx'
 import { PluginDiscovery } from './PluginDiscovery.tsx'
 import type { PluginDiscoveryInjected } from './PluginDiscovery.tsx'
 import { ExternalToolsSection, type ExternalToolsSectionInjected } from './ExternalToolsSection.tsx'
+import { DiagnosticLabProgressCard } from './DiagnosticLabProgressCard.tsx'
 import {
   ImportedPluginRestoreSection,
   importedPluginRestoreInjected,
@@ -17,8 +19,16 @@ import {
 import { readImportedPluginRestoreBridge } from './imported-restore-bridge.ts'
 import { en, zh, type PluginInventoryLocaleKey } from './locales.ts'
 import {
+  cancelDesktopDiagnosticLabRun,
+  restoreAllDesktopDiagnosticLabRun,
+  desktopDiagnosticLabAvailable,
+  exportDesktopDiagnosticLabRun,
+  getCurrentDesktopDiagnosticLabRun,
+  getDesktopDiagnosticLabRun,
   getPluginInstall,
-  installDesktopDiagnosticFixture,
+  listDesktopDiagnosticLabScenarios,
+  startDesktopDiagnosticLab,
+  subscribeDesktopDiagnosticLab,
   startPluginInstall,
 } from './bundled-install-bridge.ts'
 
@@ -77,11 +87,23 @@ export function apply(ctx: ClientContext): void {
     getInstall,
     startUninstall,
   })
+  const diagnosticLab = desktopDiagnosticLabAvailable()
+    ? {
+      listScenarios: listDesktopDiagnosticLabScenarios,
+      current: getCurrentDesktopDiagnosticLabRun,
+      start: startDesktopDiagnosticLab,
+      getRun: getDesktopDiagnosticLabRun,
+      cancel: cancelDesktopDiagnosticLabRun,
+      restoreAll: restoreAllDesktopDiagnosticLabRun,
+      exportReport: exportDesktopDiagnosticLabRun,
+      subscribe: subscribeDesktopDiagnosticLab,
+    }
+    : undefined
   const diagnosticsInjected = (): PluginDiagnosticsSectionInjected => ({
     list,
     getInstall,
     startUninstall,
-    installDiagnosticFixture: installDesktopDiagnosticFixture,
+    ...(diagnosticLab === undefined ? {} : { diagnosticLab }),
     startDependencyDoctor: async (request) => {
       const result = await ctx.remote.pluginInventory.startDependencyDoctor(request)
       if (!result.ok) throw new Error(`pluginInventory.startDependencyDoctor failed: ${result.error.code}: ${result.error.message}`)
@@ -182,6 +204,15 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     inject: diagnosticsInjected,
   }, PluginDiagnosticsSection))
+  if (diagnosticLab !== undefined) {
+    ctx.slots.inject('shell.overlay', () => ctx.slots.register({
+      name: 'shell.overlay',
+      id: 'diagnostic-lab-progress',
+      order: 80,
+      locale: NS,
+      inject: () => diagnosticLab,
+    }, DiagnosticLabProgressCard))
+  }
   ctx.slots.inject('conversation.hero.pluginDiscovery', () => ctx.slots.register({
     name: 'conversation.hero.pluginDiscovery',
     locale: NS,

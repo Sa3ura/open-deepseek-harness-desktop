@@ -1,11 +1,15 @@
 /** Browser plugin for selected-text actions in read-only conversation surfaces. */
 
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { SelectionActions, type SelectionActionsInjected } from './SelectionActions.tsx'
 import { appendSelectionToDraft } from './selection.ts'
 import { en, NS, zh, type SelectionActionsKey } from './locales.ts'
@@ -20,23 +24,24 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 }
 
 /** Required client services. */
-export const inject = ['slots', 'sessions', 'workspaces', 'conversation', 'locale']
+export const inject = ['slots', 'sessions', 'uiSession', 'uiWorkspace', 'conversation', 'locale']
 
-function appendAvailable(ctx: ClientContext, sessionId: SessionId | undefined): boolean {
+function appendAvailable(ctx: Context, sessionId: SessionId | undefined): boolean {
   if (sessionId === undefined) return false
   const summary = ctx.sessions.list.getSnapshot().byId[sessionId]
-  if (summary === undefined || summary.pendingInteraction !== undefined) return false
+  if (summary === undefined || ctx.uiSession.pendingInteractions.getSnapshot().has(sessionId)) return false
   const actx = ctx.sessions.scope(sessionId)
   if (actx === undefined) return false
   const session = ctx.sessions.sessionOf(actx)?.getSnapshot()
-  if (session === undefined || session.removed || session.openState !== 'open' || session.pending.length > 0) return false
+  if (session === undefined || session.removed || session.openState !== 'open'
+    || session.pendingSubmissions.length > 0) return false
   if (session.subagent?.address.mode === 'continuable' && !session.subagent.parentAvailable) return false
   if (ctx.conversation.blocks.storeFor(sessionId).getSnapshot() !== undefined) return false
   const phase = ctx.conversation.input.for(actx).state.getSnapshot().phase
   return phase !== 'adjudicating' && phase !== 'submitting'
 }
 
-function createAppendAvailability(ctx: ClientContext): HostObservable<boolean> {
+function createAppendAvailability(ctx: Context): HostObservable<boolean> {
   return {
     getSnapshot: () => appendAvailable(ctx, ctx.sessions.list.getSnapshot().current),
     subscribe: (listener) => {
@@ -55,6 +60,7 @@ function createAppendAvailability(ctx: ClientContext): HostObservable<boolean> {
         if (session === undefined) return
         nestedStops = [
           session.subscribe(listener),
+          ctx.uiSession.pendingInteractions.subscribe(listener),
           ctx.conversation.input.for(actx).state.subscribe(listener),
           ctx.conversation.blocks.storeFor(sessionId).subscribe(listener),
         ]
@@ -73,14 +79,14 @@ function createAppendAvailability(ctx: ClientContext): HostObservable<boolean> {
 }
 
 /** Register the localized root-overlay contribution. */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-selection-actions: dictionaries')
   const availability = createAppendAvailability(ctx)
   const injected = (): SelectionActionsInjected => ({
     hooks: { appendAvailable: availability },
     copy: writeClipboard,
     askInNewConversation: async (workspaceId, draft) => {
-      const sessionId = await ctx.workspaces.connectWorkspace(workspaceId)
+      const sessionId = await ctx.uiWorkspace.connectWorkspace(workspaceId)
       const actx = ctx.sessions.scope(sessionId)
       if (actx === undefined) throw new Error(`selection actions: session "${sessionId}" has no scope`)
       ctx.conversation.input.for(actx).setDraft(draft)

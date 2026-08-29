@@ -1,10 +1,10 @@
 /** Session-level copy, clear, and removal controls for the conversation Header. */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type {
-  ConversationNode, ConversationSnapshot, SessionId, WorkspaceId,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
+import type { ConversationNode, PartialAssistant } from '../contract/records.ts'
+import type { ConversationSnapshot } from '../contract/snapshot.ts'
+import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   Button, IconCheckOutline16, IconCopyOutline16, IconEllipsisOutline16,
   IconRefreshOutline16, IconTrashOutline16, Menu, Modal, Tooltip, writeClipboard,
@@ -21,10 +21,9 @@ export interface SessionActionsInjected {
   workspaceId?: WorkspaceId | undefined
 }
 
-interface SessionActionsProps extends SessionActionsInjected, PropsLocale<'conversation'> {
-  sessionId: SessionId
-  useSession: <T>(selector: (snapshot: ConversationSnapshot) => T) => T
-}
+type SessionActionsProps = SessionActionsInjected
+  & PropsLocale<'conversation'>
+  & PropsRuntime<'conversation.session.header.utilities'>
 
 type ConfirmAction = 'clear' | 'remove'
 
@@ -55,8 +54,11 @@ export function conversationTranscript(
   snapshot: ConversationSnapshot,
   labels: { readonly user: string; readonly assistant: string },
 ): string {
+  const chat = (snapshot.views as { get(target: string): unknown }).get('chat') as {
+    legacy?: { nodes?: readonly ConversationNode[]; partial?: PartialAssistant | null }
+  } | undefined
   const lines: string[] = []
-  for (const node of snapshot.nodes) {
+  for (const node of chat?.legacy?.nodes ?? []) {
     if (node.kind === 'user' || node.kind === 'steering') {
       const text = contentText(node.content).trim()
       if (text !== '') lines.push(`${labels.user}:\n${text}`)
@@ -70,8 +72,9 @@ export function conversationTranscript(
       if (text !== '') lines.push(`${labels.assistant}:\n${text}`)
     }
   }
-  if (snapshot.partial !== null) {
-    const text = snapshot.partial.blocks.flatMap((block) => {
+  const partial = chat?.legacy?.partial
+  if (partial !== undefined && partial !== null) {
+    const text = partial.blocks.flatMap((block) => {
       if (block.kind === 'text') return [block.text]
       if (block.kind === 'image') return ['[Image]']
       if (block.kind === 'tool-call') return [`[Tool: ${block.name}]`]
@@ -88,9 +91,10 @@ export function conversationTranscript(
  * @returns Header actions and the active confirmation dialog.
  */
 export function SessionActions({
-  useSession, archive, clearAndRestart, workspaceId, t,
+  useConversation, useSession, archive, clearAndRestart, workspaceId, t,
 }: SessionActionsProps): ReactNode {
-  const snapshot = useSession(value => value)
+  const snapshot = useConversation(value => value)
+  const running = useSession(value => value.running)
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmation, setConfirmation] = useState<ConfirmAction | null>(null)
   const [busy, setBusy] = useState(false)
@@ -178,7 +182,7 @@ export function SessionActions({
             id: 'clear',
             label: t('session.actions.clear'),
             icon: <IconRefreshOutline16 />,
-            disabled: snapshot.running,
+            disabled: running,
           },
           { type: 'separator', id: 'danger-separator' },
           {
@@ -186,7 +190,7 @@ export function SessionActions({
             label: t('session.actions.remove'),
             icon: <IconTrashOutline16 />,
             danger: true,
-            disabled: snapshot.running,
+            disabled: running,
           },
         ]}
         onSelect={(id) => {

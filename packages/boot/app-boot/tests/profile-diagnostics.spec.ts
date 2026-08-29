@@ -59,6 +59,24 @@ describe('profile diagnostic v2', () => {
     expect(issue.evidence[1]).toContain('value for "version"')
   })
 
+  it('attributes a missing client module supplier to the importing Loader entry', () => {
+    const issue = classifyProfileDiagnostic({
+      source: 'profile',
+      phase: 'import',
+      value: 'failed to import loader entry 71626ed6 (dsh-font): client-modules: require("@deepseek-ai/dsh-client-runtime/client") missed the module table — not a platform seed word, not a materialized module, and no registered package factory',
+    })
+    expect(issue).toMatchObject({
+      code: 'profile.module-resolution',
+      source: 'profile',
+      phase: 'import',
+      attribution: {
+        entryId: '71626ed6',
+        moduleName: 'dsh-font',
+      },
+      actions: ['repair', 'isolate', 'export'],
+    })
+  })
+
   it('redacts credentials and user paths while retaining an exact reviewed build key', () => {
     const home = '/Users/alice/Library/Application Support/dsh'
     const raw = [

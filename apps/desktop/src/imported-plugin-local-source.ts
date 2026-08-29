@@ -5,8 +5,8 @@ import { tmpdir } from 'node:os'
 import { basename, join, resolve, sep } from 'node:path'
 import { list } from 'tar'
 
-export const IMPORTED_PLUGIN_ARCHIVE_LIMIT = 200 * 1024 * 1024
-export const IMPORTED_PLUGIN_MANIFEST_LIMIT = 1024 * 1024
+const IMPORTED_PLUGIN_ARCHIVE_LIMIT = 200 * 1024 * 1024
+const IMPORTED_PLUGIN_MANIFEST_LIMIT = 1024 * 1024
 
 export interface ImportedPluginPackageManifest {
   readonly name: string

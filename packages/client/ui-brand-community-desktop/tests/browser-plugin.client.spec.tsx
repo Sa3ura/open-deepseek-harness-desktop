@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, render } from '@testing-library/react'
 import { Context } from '@deepseek-ai/cordis'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CommunityBrandMark, CommunityBrandName } from '../src/client/Brand.tsx'
 import { apply, inject } from '../src/client/index.ts'

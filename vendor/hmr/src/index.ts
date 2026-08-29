@@ -3,7 +3,7 @@ import type { Dict } from '@deepseek-ai/cosmokit'
 import { ModuleLoader, type ModuleJob, type ResolveResult } from '@deepseek-ai/cordis-plugin-loader'
 import type { Include } from '@deepseek-ai/cordis-plugin-include'
 import { FSWatcher, watch, type ChokidarOptions } from 'chokidar'
-import { dirname, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { realpath, stat } from 'node:fs/promises'
 import { handleError } from './error.ts'
 import type {} from '@deepseek-ai/cordis-plugin-timer'
@@ -145,11 +145,18 @@ class Hmr extends Service {
       depth,
       ignored: undefined,
       ignoreInitial: false,
+      // Exact Profile config watches are few and long-lived. Polling avoids
+      // exhausting the process file-watcher limit after large workspace
+      // builds while still respecting an explicit caller choice.
+      usePolling: this.config.usePolling ?? true,
     })
     const registration = { watcher }
     this.configs.set(watchFilename, registration)
     const onChange = (path: string) => {
-      const observed = resolve(path)
+      // Chokidar may emit a root-relative path for a dedicated watcher even
+      // when the watched root itself is absolute. Resolve that spelling from
+      // the watch root, never from the process working directory.
+      const observed = isAbsolute(path) ? resolve(path) : resolve(root, path)
       if (observed !== filename && observed !== watchFilename) return
       this.refreshConfig(registration, filename, refresh)
     }

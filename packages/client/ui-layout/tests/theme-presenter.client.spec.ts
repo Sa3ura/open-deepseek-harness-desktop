@@ -1,8 +1,4 @@
 // @vitest-environment jsdom
-// ThemePresenter behavior account: root color-scheme and the palette attribute
-// follow active.colorScheme only, token variables replace the previous apply's
-// set, theme-color metadata follows the rendered body background, and dispose
-// retracts everything the presenter wrote.
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -18,10 +14,11 @@ function snapshot(
   tokens: Record<string, string> = {},
   background: ThemeSnapshot['background'] = { id: 'none' },
   preference: ThemeSnapshot['preference'] = colorScheme,
+  fontSize = 14,
 ): ThemeSnapshot {
   // The presenter must key off colorScheme, not the id — keep them distinct.
   const active = { id: `${colorScheme}-test`, colorScheme, tokens }
-  return { preference, active, themes: [active], background, revision: 1 }
+  return { preference, fontSize, active, themes: [active], background, revision: 1 }
 }
 
 function clearThemePresentation(): void {
@@ -107,7 +104,15 @@ describe('ThemePresenter', () => {
     expect(document.body.style.getPropertyValue('--dsh-chat-background-image')).toBe('')
   })
 
-  it('dispose removes color-scheme, the attribute, and every applied variable, sparing foreign inline styles', () => {
+  it('publishes the content font size and follows changes', () => {
+    const presenter = new ThemePresenter()
+    presenter.apply(snapshot('light'))
+    expect(document.body.style.getPropertyValue('--dsh-content-font-size')).toBe('14px')
+    presenter.apply(snapshot('light', {}, { id: 'none' }, 'light', 17))
+    expect(document.body.style.getPropertyValue('--dsh-content-font-size')).toBe('17px')
+  })
+
+  it('dispose removes color-scheme, background, font-size, and applied variables while sparing foreign inline styles', () => {
     document.body.style.setProperty('--foreign', 'kept')
     const presenter = new ThemePresenter()
     presenter.apply(snapshot('dark', { '--dsw-alias-bg': '#111' }))
@@ -117,6 +122,7 @@ describe('ThemePresenter', () => {
     expect(document.documentElement.hasAttribute(COLOR_SCHEME_SOURCE_ATTRIBUTE)).toBe(false)
     expect(document.body.hasAttribute(DARK_ATTRIBUTE)).toBe(false)
     expect(document.body.style.getPropertyValue('--dsw-alias-bg')).toBe('')
+    expect(document.body.style.getPropertyValue('--dsh-content-font-size')).toBe('')
     expect(document.body.style.getPropertyValue('--foreign')).toBe('kept')
     expect(meta?.isConnected).toBe(false)
   })

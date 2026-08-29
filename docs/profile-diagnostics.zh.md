@@ -33,6 +33,7 @@
 | `pnpm.registry-auth` | `ERR_PNPM_FETCH_401`、`ERR_PNPM_FETCH_403`、registry 401/403 | 保留插件，并要求正确的 registry 凭据或 scope 配置。 |
 | `profile.host-dependency-conflict` | Profile 根插件把身份敏感 Host 包解析到另一份物理副本 | 展示完整依赖链。只有版本范围和已安装身份能证明安全收敛时才重连，否则隔离责任根插件。 |
 | `profile.orphaned-bundle` | 软件包不再是可管理依赖，但仍存在于 `dsh.profile.bundles` | 移除失效 bundle 引用，不重新安装用户已经卸载的插件。 |
+| `profile.module-resolution` | `failed to import loader entry`、`missed the module table`、模块未实体化或缺少 package factory | 归属 Loader entry 与模块。只有有界清理能证明其余依赖图健康时，才从活动 Profile 移除直接配置的外部 bundle；否则进入诊断安全模式。 |
 | `loader.duplicate-entry` 与 `loader.duplicate-registration` | Loader id、配置路径、persona、route、prompt section、service 或进程全局单例重复 | 身份能证明是旧行时移除；否则标明冲突双方并隔离外部根，或要求手动修复配置。 |
 | `loader.lifecycle-failed` | `failed to apply loader entry`、import、mount、apply、activate 或 fiber 失败 | 沿 `cause` 走到最内层，归属 entry 与模块；只有重试或收敛无法修复外部根时才隔离。 |
 | `config.credentials-invalid` | `.credentials.yaml` 解析或字段类型错误，包括非字符串 `version` | 报告字段路径和期望类型，保持用户凭据文档不变；阻断启动时进入诊断安全模式。 |
@@ -59,7 +60,7 @@
 | 产品诊断码 | 覆盖的 Profile 与 Loader 规则 |
 |---|---|
 | `profile.bundle-invalid` | bundle 包缺少 `dsh.bundle.patch`、bundle patch 声明无效，或依赖不是有效 bundle |
-| `profile.module-resolution` | 相对模块越过允许基准、裸模块无法从安装/Profile 锚点解析，或已启用模块始终没有 Fiber |
+| `profile.module-resolution` | 相对模块越过允许基准、裸模块无法从安装/Profile 锚点解析、客户端请求未进入模块表，或已启用模块始终没有 Fiber |
 | `profile.patch-invalid` | patch 目标不存在、patch 文档为空、顶层类型无效、`!!js` 插值失败，或 Profile/home patch 损坏 |
 | `loader.unresolved-injection` | 必需服务一直不可用，Fiber 在结算后仍处于 pending |
 | `loader.rollback-failed` | Loader update、remove、move、HMR 或事务回滚失败 |
@@ -69,7 +70,7 @@
 
 ## 诊断安全模式
 
-桌面启动会设置允许安全恢复的显式策略。正常启动在 ready 前报告确定性的 Profile、Loader、Cordis、凭据或运行时配置 incident 时，CLI 写入脱敏 v2 incident 并输出一个稳定的可恢复标记。监督器随后立即重启一次，使用安装包自带的诊断 Profile；该 Profile 只加载随产品发布的模板 bundle，跳过外部 bundle 与用户 patch 层。
+桌面启动会设置允许受保护恢复的显式策略。客户端模块表导入失败会先归属到 Loader entry 与精确的直接外部 bundle。由于该故障发生在 Host ready 之后、客户端插件树建立之前，无框架浏览器内核会调用一个经过认证、参数封闭的恢复 Remote，并让加载页保持可见。Host 再次验证归属、活动 manifest 条目、软件包移除和最终依赖图后，CLI 保留可重试隔离记录，监督器在不加载该 bundle 的情况下重启普通 Profile。用户随后无感进入主界面，并能在诊断页看到被隔离插件及根因。其他确定性的 Profile、Loader、Cordis、凭据或运行时配置 incident 会写入脱敏 v2 incident，并输出一个稳定的可恢复标记。监督器随后立即重启一次，使用安装包自带的诊断 Profile；该 Profile 只加载随产品发布的模板 bundle，跳过外部 bundle 与用户 patch 层。
 
 安全模式记录进入时间、跳过的 bundle 名称，以及是否跳过用户层。主界面的“诊断”页面保持可用，展示根因、证据、风险和受保护操作。修复成功后重新启动正常 Profile。进程标记会阻止安全模式递归请求自身。如果安装自带的诊断 Profile 也启动失败，监督器回到普通的三次尝试终止页，并提供日志目录和导出路径。
 

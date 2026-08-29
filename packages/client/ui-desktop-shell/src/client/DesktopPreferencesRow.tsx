@@ -257,6 +257,7 @@ export function DesktopPreferencesRow({ controller, t }: DesktopPreferencesRowPr
         open={confirmingCommandLine}
         title={t('cli.conflict.title')}
         description={t('cli.conflict.description', { path: commandLine?.conflictPath ?? '' })}
+        closeLabel={t('cli.conflict.cancel')}
         onClose={() => { setConfirmingCommandLine(false) }}
       >
         <div className={css.modalActions}>

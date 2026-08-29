@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { classifyProfileDiagnostic } from '@deepseek-ai/dsh-app-boot'
-import { isDeterministicSafeModeFailure } from '../src/profile-boot.ts'
+import { isDeterministicSafeModeFailure, loaderClientModuleFailure } from '../src/profile-boot.ts'
 
 describe('Profile diagnostic recovery policy', () => {
   it('does not divert transient, waiting-period, unknown, or broken-runtime failures into safe mode', () => {
@@ -25,5 +25,17 @@ describe('Profile diagnostic recovery policy', () => {
       const issue = classifyProfileDiagnostic({ source: 'loader', phase: 'apply', value })
       expect(isDeterministicSafeModeFailure(issue), issue.code).toBe(true)
     }
+  })
+
+  it('extracts only proven client module-table Loader import failures', () => {
+    const cause = new Error('client-modules: require("@deepseek-ai/dsh-client-runtime/client") missed the module table — not a platform seed word, not a materialized module, and no registered package factory')
+    const error = new Error('failed to import loader entry 71626ed6 (dsh-font)', { cause })
+    expect(loaderClientModuleFailure(error)).toEqual({
+      entryId: '71626ed6',
+      moduleName: 'dsh-font',
+    })
+    expect(loaderClientModuleFailure(
+      new Error('failed to import loader entry 71626ed6 (dsh-font): plugin apply threw'),
+    )).toBeUndefined()
   })
 })

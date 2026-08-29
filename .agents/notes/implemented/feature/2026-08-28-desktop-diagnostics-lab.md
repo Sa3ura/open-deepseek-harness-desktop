@@ -1,0 +1,45 @@
+# Agent Note: Desktop Diagnostics Lab
+
+Status: implemented
+
+English | [中文](2026-08-28-desktop-diagnostics-lab.zh.md)
+
+## Problem
+
+The production Profile doctor protects startup, but support still needs a repeatable way to show how dependency conflicts, orphaned Bundles, Loader failures, and blocked builds are detected and handled. A transient pressure test is not useful for that demonstration: once one pass succeeds, repeating the same fixed fixture adds little evidence, and automatic cleanup removes the issues before the normal Diagnostics summary or quarantine actions can be inspected.
+
+The exercise must remain safe. The renderer must not gain an arbitrary package manager, path, script, or filesystem capability, and a deliberately retained exercise must not be confused with an interrupted write that should be rolled back before startup.
+
+## Decision
+
+The desktop host owns a versioned Diagnostics Lab behind a narrow Electron bridge. Its catalog contains ten fixed scenario identifiers and fixed fixture bytes: compatible and incompatible Host shadows, orphaned Bundles, the packaged `dsh-font` client incompatibility, missing modules, invalid patches, duplicate Loader rows, lifecycle failures, blocked build approval, and interrupted repair. The renderer can select only those identifiers and either an isolated sandbox or an explicitly confirmed current-Profile target.
+
+Every selected scenario is injected exactly once. A successful run ends in the durable `active` phase rather than cleaning itself. The run-specific files, package-manager state, repair disposition, and quarantine records remain available until the user chooses **Restore all**. Reports retain expected and actual product codes, repair disposition, duration, and bounded redacted diagnostics.
+
+The default sandbox uses a run-specific home under Electron `userData`. It exercises the production Doctor boundary and retains its runtime, but it cannot affect the active Profile summary. This is intentional: sandbox evidence is visible in the Lab card and report, not presented as a real user Profile problem.
+
+Current-Profile mode is restricted to four scenarios backed by real product paths: compatible Host shadow, incompatible Host dependency, orphaned Bundle, and the packaged `dsh-font 1.1.0` client incompatibility. Harness pauses while the desktop host backs up the allowlisted Profile manifest, Workspace policy, lockfile, patch, quarantine record, and retained health reports. The first three fixtures use bundled pnpm plus `dsh plugin --profile web doctor --repair`. The `dsh-font` fixture is an integrity-pinned `diagnostic` resource: normal startup and manual bundled-plugin flows never seed it. The Lab alone installs it through `dsh plugin add`, resumes the real browser, and waits for the client Loader recovery to record `profile.module-resolution`, remove the active Bundle, and quarantine the plugin. The ordinary Diagnostics summary therefore observes the same record that protects a real user startup.
+
+The recovery journal distinguishes four states. `injecting` and `restoring` are incomplete transactions and are rolled back before Profile plugins load after a process interruption. `active` is an intentional retained exercise and is reattached to the UI after restart. `clean` means Restore all completed. This prevents crash recovery from erasing a deliberate demonstration while still failing closed on a half-written mutation.
+
+Restore all is an explicit transaction. For the current Profile it pauses Harness again, restores the backed-up managed files, removes only the Lab namespace and fixed fixture source directory, runs the bundled package manager to prune the diagnostic packages, re-applies the exact backed-up bytes, and then resumes Harness. For a sandbox it removes only that run's runtime. Cancellation or an assertion failure rolls back automatically because no valid exercise state was established.
+
+## Alternatives considered
+
+**Keep quick, standard, and soak presets.** Rejected because repeating immutable fixtures one, three, or ten times does not improve the user-facing diagnosis after the first successful pass and makes the exercise feel like an unrelated benchmark.
+
+**Always auto-clean after verification.** Rejected because users cannot inspect the quarantine count, try the ordinary repair or uninstall actions, or capture the actual diagnosed state.
+
+**Project sandbox issues into the active summary.** Rejected because that would make synthetic sandbox state look like a real Profile fault. Only current-Profile mode may change the ordinary summary.
+
+**Offer every fixture against the current Profile.** Rejected because malformed patches, lifecycle failures, and controlled interruptions are classifier/recovery fixtures rather than package-manager-owned Profile plugins. They remain sandbox-only.
+
+**Expose arbitrary packages or scripts to make more examples.** Rejected because it would turn a diagnostics UI into a general code-execution bridge. The catalog, bytes, package names, and target paths remain desktop-owned.
+
+## Consequences
+
+The Lab now demonstrates a persistent state rather than a pressure loop. Users can see real quarantine counts in current-Profile mode, use the existing Diagnostics actions on those plugins, restart the application without losing the exercise, and return to the exact pre-exercise managed configuration through Restore all. Sandbox runs remain fully isolated and therefore do not pollute the top summary.
+
+The Electron main process owns the active run and a schema-2 journal/report. The `current` bridge operation reconnects a reloaded renderer, and the root `shell.overlay` card shows injection progress, retained state, pass/failure counts, and Restore all. Hiding the card changes only presentation.
+
+Focused coverage pins single injection, durable sandbox state, real current-Profile quarantine visibility, explicit restoration, restart reattachment, cancellation rollback, report redaction, the restricted preload bridge, Settings presentation, and type-safe locale ownership. Browser replay and Playwright are not part of this desktop capability's verification lane.

@@ -1,20 +1,60 @@
+---
+description: "Electron 专用的桌面偏好、命令行注册与 Release 发现客户端设置。"
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-desktop-shell
 
 [English](README.md) | 中文
 
-桌面宿主偏好与 Release 发现功能的 Electron 专属浏览器 UI。存在 `window.deepSeekHarnessDesktop` 时，插件向“通用设置”贡献关闭行为、原生通知、macOS 登录启动和“检查更新”设置行。Release 状态与下载页面入口只显示在设置内，不再占用侧边栏底部。普通 `dsh web` 浏览器不会收到任何贡献。
+## 概述
 
-所有高权限操作均由 preload bridge（预加载桥）持有。本包接收规范化偏好与 Release 状态，请求受白名单限制的偏好更改，并可要求主进程打开选定的 `flaqai/open-deepseek-harness-desktop` Release 页面。它不能读取任意文件、运行命令、选择任意外部 URL、下载安装程序或更新应用。
+本包向“通用设置”贡献 Electron 专用的关闭行为、原生通知、登录启动、受管 `dsh` 命令行入口和 Release 发现设置行。普通 `dsh web` 浏览器不会收到任何贡献。
 
-## Model Experience
+## 目录
+
+- [使用方式](#use-this-package)
+- [安全边界](#understand-the-security-boundary)
+- [模型体验](#model-experience)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## 使用方式
+
+将本包挂载到桌面客户端 Bundle。它只在窄权限的 `window.deepSeekHarnessDesktop` 预加载桥存在时激活，并严格反映 Electron 主进程报告的能力。
+
+-----
+
+<a id="understand-the-security-boundary"></a>
+## 安全边界
+
+所有高权限操作都由预加载桥持有。本包只接收规范化状态并请求白名单操作；它不能读取任意文件、运行任意命令、选择任意外部 URL 或替换应用运行时。
+
+<a id="model-experience"></a>
+## 模型体验
 
 无，因为本插件只改变桌面界面与应用偏好，不增加会话事件、模型上下文、工具或模型可见输出。
 
 #### KV Cache 影响
 
-无；该包既不组装也不发送提供方请求。
+无；本包既不组装也不发送提供方请求。
 
-## Known Limitations and Deferred Work
+## 已知限制与后续工作
 
-- 登录启动仅在已打包的 macOS 应用中可用；Windows 与 Linux 会把该能力报告为不可用。
-- Release 发现只提供下载页面链接；已签名的自动下载、安装、回退与深链接留待后续实现。
+<a id="known-limitations-and-deferred-work"></a>
+
+- 平台能力存在差异：登录启动和 Shell Profile 集成由桌面宿主报告，浏览器层不作假设。
+- Release 安装仍由宿主控制并要求已验证的产物；客户端包本身不执行安装程序。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作上下文 — 点击展开</summary>
+
+保持 IPC 窄权限且基于能力。渲染层 props 不得接受任意文件系统路径、命令或 URL。
+
+</details>

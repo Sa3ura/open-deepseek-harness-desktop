@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconCloseOutline16,

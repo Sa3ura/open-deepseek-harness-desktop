@@ -1,6 +1,6 @@
 /** Harness stdout framing and readiness parsing for the desktop supervisor. */
 
-const READY_LINE = /^dsh web: (http:\/\/127\.0\.0\.1:\d+)(?: \(LAN: http:\/\/[^)]+\))?$/
+const READY_LINE = /^dsh web: (http:\/\/127\.0\.0\.1:\d+(?:\/?\?token=[A-Za-z0-9_-]+)?)(?: \(LAN: http:\/\/[^)]+\))?$/
 
 /**
  * Parse the canonical URL from one complete Harness output line.

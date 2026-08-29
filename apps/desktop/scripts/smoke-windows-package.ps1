@@ -193,7 +193,7 @@ $bundledManifestPath = Join-Path $installRoot 'resources/bundled-plugins/manifes
 $bundledManifest = Get-Content $bundledManifestPath -Raw | ConvertFrom-Json
 $bundledPlugins = @($bundledManifest.plugins)
 foreach ($packageName in @(
-  'dshmarket', '@xmanrui/dsh-im', 'dsh-skill-picker', 'dsh-font',
+  'dshmarket', '@xmanrui/dsh-im', 'dsh-skill-picker',
   'dsh-pocket', 'dsh-better-sidebar'
 )) {
   if ($bundledPlugins.PackageName -notcontains $packageName) {

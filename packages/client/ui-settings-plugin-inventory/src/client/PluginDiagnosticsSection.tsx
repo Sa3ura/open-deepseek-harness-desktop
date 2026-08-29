@@ -16,16 +16,16 @@ import {
   IconWarningOutline16,
   Modal,
   RiskConfirmation,
-  Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
+import { DiagnosticLabPanel, type DiagnosticLabInjected } from './DiagnosticLabPanel.tsx'
 import css from './PluginDiagnosticsSection.module.css'
 
 /** Remote operations owned by the dedicated Diagnostics settings page. */
 export interface PluginDiagnosticsSectionInjected {
-  /** Install the fixed incompatible test plugin; present only in Electron source mode. */
-  readonly installDiagnosticFixture?: () => Promise<string | undefined>
+  /** Restricted offline exercise runner; present only in Electron Desktop. */
+  readonly diagnosticLab?: DiagnosticLabInjected
   /** Read retained repair and quarantine state. */
   list: () => Promise<PluginInventorySnapshot>
   /** Start a current dependency-tree check or repair. */
@@ -92,6 +92,7 @@ const QUARANTINE_REASON_KEYS = {
   'convergence-failed': 'health.quarantine.reason.convergenceFailed',
   'orphaned-bundle': 'health.quarantine.reason.orphanedBundle',
   'build-script-blocked': 'health.quarantine.reason.buildScriptBlocked',
+  'client-module-unavailable': 'health.quarantine.reason.clientModuleUnavailable',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 type DiagnosticIssue = PluginInventorySnapshot['dependencyHealth']['issues'][number]
@@ -142,7 +143,7 @@ function uninstallSucceeded(snapshot: PluginInstallSnapshot | undefined): boolea
 
 /** Dedicated profile dependency diagnosis and recovery page. */
 export function PluginDiagnosticsSection({
-  installDiagnosticFixture,
+  diagnosticLab,
   list,
   startDependencyDoctor,
   getDependencyDoctor,
@@ -159,8 +160,6 @@ export function PluginDiagnosticsSection({
   const [revision, setRevision] = useState(0)
   const [inventory, setInventory] = useState<InventoryState>({ status: 'loading' })
   const [doctor, setDoctor] = useState<PluginDoctorSnapshot | null>(null)
-  const [diagnosticFixtureConfirmOpen, setDiagnosticFixtureConfirmOpen] = useState(false)
-  const [diagnosticFixtureInstalling, setDiagnosticFixtureInstalling] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
   const [quarantineInstall, setQuarantineInstall] = useState<{
     quarantineId: string
@@ -273,23 +272,6 @@ export function PluginDiagnosticsSection({
       (error: unknown) => { setActionError(errorMessage(error)) },
     )
   }
-  const confirmDiagnosticFixture = (): void => {
-    if (installDiagnosticFixture === undefined) return
-    setDiagnosticFixtureConfirmOpen(false)
-    setActionError(null)
-    setDiagnosticFixtureInstalling(true)
-    void installDiagnosticFixture().then(
-      () => {
-        setDiagnosticFixtureInstalling(false)
-        setDoctor(null)
-        setRevision(value => value + 1)
-      },
-      (error: unknown) => {
-        setDiagnosticFixtureInstalling(false)
-        setActionError(errorMessage(error))
-      },
-    )
-  }
   const confirmUninstall = (): void => {
     if (uninstallTarget === null) return
     const target = uninstallTarget
@@ -396,23 +378,6 @@ export function PluginDiagnosticsSection({
           <Button variant="outline" onClick={downloadDiagnostics}>
             {t('diagnostics.export')}
           </Button>
-          {installDiagnosticFixture !== undefined ? (
-            <Tooltip
-              label={t('diagnostics.fixture.description')}
-              side="bottom"
-              delayMs={250}
-              maxWidth={320}
-            >
-              <Button
-                variant="outline"
-                disabled={diagnosticFixtureInstalling}
-                onClick={() => { setDiagnosticFixtureConfirmOpen(true) }}
-              >
-                <IconWarningOutline16 size={14} />
-                {t(diagnosticFixtureInstalling ? 'diagnostics.fixture.installing' : 'diagnostics.fixture.install')}
-              </Button>
-            </Tooltip>
-          ) : null}
           <Button variant="outline" disabled={doctor?.phase === 'running'} onClick={() => { runDoctor(false) }}>
             <IconRefreshOutline16 size={14} />
             {t('diagnostics.check')}
@@ -458,6 +423,8 @@ export function PluginDiagnosticsSection({
           </div>
         ) : null}
       </div>
+
+      {diagnosticLab === undefined ? null : <DiagnosticLabPanel {...diagnosticLab} t={t} />}
 
       {safeMode !== null ? (
         <article className={css.safeModeNotice} role="status">
@@ -563,7 +530,7 @@ export function PluginDiagnosticsSection({
               <article className={css.finding} key={`${conflict.dependencyChain.join('>')}:${conflict.declaredIn}`}>
                 <div><strong>{conflict.rootPackage}</strong><span>{conflict.compatible ? t('diagnostics.compatible') : t('diagnostics.incompatible')}</span></div>
                 <code>{conflict.dependencyChain.join(' → ')}</code>
-                <p>{conflict.dependency}@{conflict.declaredRange} · Host {conflict.hostVersion} · {conflict.declaredIn}</p>
+                <p>{conflict.dependency}@{conflict.declaredRange} · {t('diagnostics.host')} {conflict.hostVersion} · {conflict.declaredIn}</p>
                 {firstForPackage ? (
                   <div className={css.actions}>
                     <Button
@@ -701,31 +668,9 @@ export function PluginDiagnosticsSection({
           </div>
         </div>
       </Modal>
-      <Modal
-        open={diagnosticFixtureConfirmOpen}
-        onClose={() => { setDiagnosticFixtureConfirmOpen(false) }}
-        title={t('diagnostics.fixture.title')}
-        className={css.fixtureDialog ?? ''}
-        headless
-      >
-        <div className={css.fixtureDialogContent}>
-          <IconWarningOutline16 size={22} />
-          <div className={css.fixtureDialogCopy}>
-            <strong>{t('diagnostics.fixture.title')}</strong>
-            <p>{t('diagnostics.fixture.description')}</p>
-          </div>
-          <div className={css.fixtureDialogActions}>
-            <button type="button" className={css.fixtureCancel} onClick={() => { setDiagnosticFixtureConfirmOpen(false) }}>
-              {t('diagnostics.fixture.cancel')}
-            </button>
-            <button type="button" className={css.fixtureConfirm} onClick={confirmDiagnosticFixture}>
-              {t('diagnostics.fixture.confirm')}
-            </button>
-          </div>
-        </div>
-      </Modal>
       <RiskConfirmation
         open={uninstallTarget !== null}
+        closeLabel={t('diagnostics.uninstall.confirm.cancel')}
         title={t(uninstallTarget?.kind === 'quarantine' ? 'health.uninstall.confirm.title' : 'diagnostics.uninstall.confirm.title')}
         description={t(uninstallTarget?.kind === 'quarantine' ? 'health.uninstall.confirm.description' : 'diagnostics.uninstall.confirm.description')}
         acknowledgeLabel={t(uninstallTarget?.kind === 'quarantine' ? 'health.uninstall.confirm.acknowledge' : 'diagnostics.uninstall.confirm.acknowledge')}

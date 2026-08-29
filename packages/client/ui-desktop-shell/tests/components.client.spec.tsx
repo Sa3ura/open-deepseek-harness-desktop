@@ -53,6 +53,7 @@ function setup(releaseStatus: DesktopReleaseStatus = {
       removeCommandLine: vi.fn(() => Promise.resolve({
         phase: 'uninstalled' as const, commandPath: '/desktop/cli/bin/dsh', dataHome: '/desktop/dsh-home',
       })),
+      reportReadiness: vi.fn(),
     },
     releases: {
       getStatus: () => Promise.resolve(releaseStatus),

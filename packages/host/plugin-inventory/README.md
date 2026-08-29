@@ -1,28 +1,106 @@
+---
+description: "Read-only projection of the current Cordis Loader plugin state: the pluginInventory service and its pluginInventory/list Remote for web GUI host clients."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-host-plugin-inventory
 
 English | [中文](README.zh.md)
 
-Host projection of the current Cordis Loader tree plus controlled profile-plugin management and shared-dependency health. `PluginInventoryGateway` registers the `pluginInventory` service and publishes direct Remotes for listing, install/uninstall jobs, current dependency-doctor checks and repair, quarantine retry and residual uninstall, exact build approval, redacted diagnostic export, and retained repair-notice dismissal. A quarantine uninstall rejects plugins still present in profile dependencies or bundle order, removes the inactive top-level package directory, and clears its durable record only after removal. Every list call reads `ctx.loader.entries()` directly, skips structural group rows, and returns the remaining entries in Loader order with their Loader entry id, module specifier, effective enablement, and current root Fiber phase. The same snapshot projects current `dsh/profile-diagnostic/v2` issues, safe-mode state, the latest material repair report, and durable quarantine records without exposing filesystem paths; failed and unresolved live Fibers become current Loader issues rather than a second history store.
+## Summary
 
-`externalTools` projects Host connection settings, and `setExternalTool` changes one supported product through `AgentPresets`. The Host accepts only the closed `codex` and `claude-code` ids and registers the product-specific projector that mounts fixed `dsh-tool-subagent` bindings into eligible Agent scopes. Each binding also supplies a product-specific usage hint, so an explicit user request to use Codex or Claude Code selects the delegation tool instead of searching for a similarly named shell executable. The roster owns persistence, complete-mode eligibility, safe idle/turn-boundary timing, and durable per-step capability records rather than exposing those controls to the browser.
+Clients and settings pages can show what is currently composed in the host: calling `pluginInventory/list` returns the current non-group Loader entries in Loader order — entry id, module specifier, effective enablement, and root Fiber phase (`pending`, `loading`, `active`, `failed`, or `unloading`, or `null` when an entry has no live root Fiber). The snapshot is point-in-time: the Loader is the sole lifecycle authority, and this package owns no cache, history, provenance model, event stream, or mutation path. Client packages consume the Remote through the explicit [`api-remotes`](../../api/remotes/README.md) assembly rather than importing the Host implementation.
 
-`startInstall` accepts a structured profile name and npm registry package specifier. It rejects paths, URLs, flags, and shell text, requires the managed subprocess capability, and starts the running product launcher's `dsh plugin --profile <name> add <package>` mode without shell interpolation. `startUninstall` applies the same boundary to an exact registry package name. `startDependencyDoctor` executes the core read-only `doctor` command or its explicit `--repair` mode; `getDependencyDoctor` returns structured `healthy`, `issues`, `repaired`, `quarantined`, or `failed` state and projects conflicts and orphaned bundles without local paths. Quarantine retry invokes `doctor --retry` for the selected durable id, preserving the recorded dependency specifier and bundle position rather than synthesizing a registry install. `approveQuarantineBuild` and `approveDiagnosticBuild` accept only an opaque retained incident id, resolve the exact pnpm build key on the Host, write that one key, and retry the retained operation once. `exportDiagnostics` returns `dsh/profile-diagnostic-export/v1` with current redacted issues, runtime facts, quarantine records, and Loader summary. Calls return immediately with a job id; one target has at most one running job. Successful mutations change only the profile's next-boot composition; they never mutate the already-booted Loader tree.
+## Table of Contents
 
-The phase is `pending`, `loading`, `active`, `failed`, or `unloading`; it is `null` when the entry has no live root Fiber. The snapshot is intentionally point-in-time: Loader remains the sole lifecycle authority, while this package owns no inventory cache, history, provenance model, or event stream. Installation mutates only the selected profile's next-boot composition. Its public payload types live under `./types`, and Typert generates the Host and Client Remote artifacts exposed by `./typert` and `./remote`.
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
-The service is Remote-only and deliberately declares no same-process Cordis `Context` merge. Client packages consume it through the explicit [`api-remotes`](../../api/remotes/README.md) assembly rather than importing the Host implementation. Installer output retention and process termination grace are deployment-configurable fields.
+-----
 
+<a id="use-this-package"></a>
+## Use this package
+
+Call `pluginInventory/list` when a client or settings page needs to show what is currently composed in the host — which plugins are loaded, enabled, and alive. The Remote is the only entry point: the service is Remote-only and deliberately declares no same-process Cordis `Context` merge.
+
+### What a snapshot contains
+
+Each row is one non-group Loader entry: its entry id, the exact module specifier, the effective enablement (including disabled ancestor groups), and the current root Fiber phase. `pending` means the entry waits to load, `loading` that it is being read, `active` that it is running, `failed` that its fiber rejected, and `unloading` that it is being torn down; `null` means no live root Fiber exists at all. Structural group rows are skipped.
+
+### What you can and cannot do with it
+
+The inventory is a snapshot for display and diagnostics: a client can render the roster, flag failed entries, and detect changes by comparing snapshots. It cannot enable, disable, add, or remove plugins, and it carries no history — a fiber that already failed and was removed is absent. Because the service reads the Loader on every call, the answer always reflects the current composition rather than a cached view.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+### Design concept
+
+The gateway is a direct projection with no second lifecycle truth: every `list()` call reads `ctx.loader.entries()` and maps each non-group entry to its public row. Cordis's internal plugin/status events already maintain `Entry.fiber` and `Fiber.state`, so a cache would only add another lifecycle truth to keep synchronized.
+
+### The phase mapping
+
+Fiber states map onto the public phase vocabulary, with `disposed` folding into `null` — an entry whose fiber is gone has no live root to report. The phase therefore never distinguishes why no live root exists: the entry may never have started, or its fiber may already have been disposed.
+
+### Source map
+
+| File | Role |
+|---|---|
+| [`src/index.ts`](src/index.ts) | `PluginInventoryGateway`: the `pluginInventory` Remote service and the Loader projection |
+| [`src/types.ts`](src/types.ts) | Public payload types: `PluginInventoryEntry`, `PluginInventorySnapshot`, `PluginFiberPhase` |
+| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; every snapshot projects Loader-owned state) |
+
+Typert generates the Host and Client Remote artifacts exposed by `./typert` and `./remote`.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+Read these when the inventory contract is not enough: how the Remote reaches clients, then the Loader it projects and the surface that renders it.
+
+- [Remote assembly](../../api/remotes/README.md) — how clients consume `pluginInventory/list` without importing the Host implementation.
+- [Cordis plugin loader](../../../vendor/loader/README.md) — the Loader whose entries this package projects.
+- [Plugin inventory settings surface](../../client/ui-settings-plugin-inventory/README.md) — the browser-side projection that renders the inventory.
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as this Host inventory and installer service registers no prompt, tool, message, or provider request.
+None, as the host-side read-only Loader projection registers nothing model-facing.
 
 #### KV Cache effect
 
-None; this package never assembles model input.
+None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
+
 - **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
-- **No live-tree mutation** — the service does not identify which bundle or override introduced an entry and cannot enable, disable, or remove Loader rows. Installation changes a profile for its next boot.
-- **Registry packages only** — Git, URL, tarball, alias, and local-path specs remain CLI-only until a Host request can represent and review each source without becoming arbitrary command execution.
-- **Web profile projection** — the shipped Settings assembly projects the `web` profile; the Host config can select another profile, but one gateway does not aggregate health across profiles.
+- **No provenance or mutation** — the service does not identify which bundle, profile, or override introduced an entry, and it cannot enable, disable, add, or remove plugins.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

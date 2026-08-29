@@ -63,6 +63,7 @@ export interface DesktopShellBridge {
   getCommandLine(): Promise<DesktopCliStatus>
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
   removeCommandLine(): Promise<DesktopCliStatus>
+  reportReadiness(phase: 'client' | 'event-dispatch'): void
 }
 
 /** Release discovery plus verified installer download operations. */

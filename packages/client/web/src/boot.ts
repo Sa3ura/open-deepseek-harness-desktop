@@ -13,10 +13,18 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { BootPage } from './boot-page.ts'
 import { getStaticModules } from './seed.ts'
 import { STATE_LABELS } from './loader-status.ts'
+import {
+  clientLoadFailure,
+  recoverClientLoadFailure,
+  type ClientLoadFailure,
+  type ClientLoadRecoveryResult,
+} from './client-load-recovery.ts'
 import './base.css'
 
 /** Module transport hook replaced by jsdom tests. */
-export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'>
+export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'> & {
+  recoverClientLoadFailure?(request: ClientLoadFailure): Promise<ClientLoadRecoveryResult>
+}
 
 /** Browser boot entry consumed by `apps/web`. */
 export class AppWebEntry {
@@ -45,6 +53,13 @@ export class AppWebEntry {
    */
   async run(): Promise<void> {
     try {
+      // Boot-readiness gate: whichever bootstrap applies the injection table
+      // settles this deferred once every row has taken effect — the served
+      // index resolves it in the rendered tail, so the await returns on the
+      // next microtask; an asynchronous bootstrap resolves it after its last
+      // row, or rejects it into the failure rendering below. An absent global
+      // means no bootstrap owns the document and there is nothing to wait for.
+      await (globalThis as { __DSH_BOOT_READY__?: { promise: Promise<void> } }).__DSH_BOOT_READY__?.promise
       const win = globalThis as DshWindow
       const moduleLoader = win.__ModuleLoader__
       if (moduleLoader === undefined) {
@@ -73,6 +88,24 @@ export class AppWebEntry {
       await this.mountApp(ctx)
     } catch (reason) {
       console.error(reason)
+      const failure = clientLoadFailure(reason)
+      if (failure !== undefined) {
+        const ctx = this.ctx
+        this.ctx = undefined
+        if (ctx !== undefined) await ctx.fiber.dispose()
+        this.page.recover(failure.packageName)
+        try {
+          const outcome = await (this.seams?.recoverClientLoadFailure ?? recoverClientLoadFailure)(failure)
+          if (outcome.status === 'quarantined' && outcome.restartScheduled) return
+          const suffix = outcome.status === 'quarantined'
+            ? 'The plugin was isolated. Restart Harness to finish recovery.'
+            : 'Automatic plugin isolation failed. Open Diagnostics after correcting the Profile.'
+          this.page.fail(`${reason instanceof Error ? reason.message : String(reason)}\n${suffix}`)
+          return
+        } catch (recoveryError) {
+          console.error(recoveryError)
+        }
+      }
       this.page.fail(reason instanceof Error ? reason.message : String(reason))
     }
   }
@@ -93,15 +126,8 @@ export class AppWebEntry {
     await mounted
   }
 
-  /** Prefetch stage-one bundles; their import path owns any eventual failure. */
+  /** Prefetch stage-one bundles and their dynamic requests before concurrent plugin imports. */
   private async prefetchImmediateTier(): Promise<void> {
-    // A transport carrying loadBundle owns the bundle bytes; HTTP prefetch
-    // against its static deployment answers nothing. A transport without
-    // loadBundle leaves bundles on HTTP, prefetch included.
-    const transport = (globalThis as {
-      __DSH_TRANSPORT__?: { loadBundle?: unknown }
-    }).__DSH_TRANSPORT__
-    if (transport?.loadBundle !== undefined) return
     await Promise.all(this.manifest.plugins
       .filter(row => row.immediately)
       .map(row => this.modules.prefetch(row.id).catch((_prefetchError: unknown) => {

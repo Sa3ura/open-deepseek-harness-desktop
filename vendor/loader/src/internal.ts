@@ -101,6 +101,18 @@ export interface ModuleLoaderV2 {
 /** Supported Node internal ESM loader shapes. */
 export type ModuleLoader = ModuleLoaderV1 | ModuleLoaderV2
 
+/**
+ * Detect the internal loader contract by capability instead of Node's major
+ * version. Some Node 24 releases retain the v1 job and resolution surface,
+ * so a version-only guess reverses resolveSync arguments and breaks every
+ * Loader-owned package lookup.
+ */
+export function moduleLoaderVersion(raw: unknown): ModuleLoader['version'] {
+  return typeof (raw as { getOrCreateModuleJob?: unknown } | undefined)?.getOrCreateModuleJob === 'function'
+    ? 'v2'
+    : 'v1'
+}
+
 /** Helpers for locating the current Node internal module loader. */
 export namespace ModuleLoader {
   let _cachedLoader: ModuleLoader | undefined
@@ -123,7 +135,7 @@ export namespace ModuleLoader {
 
     if (major >= 24) {
       const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-      if (raw) return _cachedLoader = Object.assign(raw, { version: 'v2' })
+      if (raw) return _cachedLoader = Object.assign(raw, { version: moduleLoaderVersion(raw) })
     } else if (major >= 22) {
       const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
       if (raw) return _cachedLoader = Object.assign(raw, { version: 'v1' })

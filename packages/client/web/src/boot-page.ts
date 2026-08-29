@@ -74,6 +74,13 @@ export class BootPage {
     this.render()
   }
 
+  /** Keep the kernel page alive while the Host removes one incompatible Profile plugin. */
+  recover(packageName: string): void {
+    this.failure = undefined
+    this.hint.textContent = `Isolating incompatible plugin ${packageName}…`
+    this.card.replaceChildren(this.wordmark, this.spinner, this.hint)
+  }
+
   /** Detach the page before or after the UI renderer takes the mount point. */
   dispose(): void {
     this.root.remove()

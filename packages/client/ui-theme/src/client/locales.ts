@@ -1,4 +1,4 @@
-/** `settings.theme` namespace dictionaries (the Appearance row's copy). */
+/** `settings.theme` namespace dictionaries (the Appearance and font-size rows' copy). */
 
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
@@ -33,6 +33,11 @@ export const zh = {
   'background.unsupported': '请选择 PNG、JPEG 或 WebP 图片。',
   'background.tooLarge': '图片过大，请选择 12 MB 以内的图片。',
   'background.failed': '无法处理这张图片，请换一张重试。',
+  'fontSize.title': '字号大小',
+  'fontSize.description': '仅影响会话内容的字号',
+  'fontSize.unit': 'px',
+  'fontSize.increase': '增大字号',
+  'fontSize.decrease': '减小字号',
 } satisfies Record<string, string>
 
 /** The settings.theme namespace key union. */
@@ -71,4 +76,9 @@ export const en = {
   'background.unsupported': 'Choose a PNG, JPEG, or WebP image.',
   'background.tooLarge': 'Choose an image no larger than 12 MB.',
   'background.failed': 'This image could not be prepared. Try another image.',
+  'fontSize.title': 'Font size',
+  'fontSize.description': 'Only affects conversation content',
+  'fontSize.unit': 'px',
+  'fontSize.increase': 'Increase font size',
+  'fontSize.decrease': 'Decrease font size',
 } satisfies Record<ThemeKey, string>

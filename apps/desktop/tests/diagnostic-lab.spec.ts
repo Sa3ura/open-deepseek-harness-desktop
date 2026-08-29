@@ -1,0 +1,384 @@
+import { existsSync } from 'node:fs'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi, type Mock } from 'vitest'
+import {
+  DiagnosticLabManager,
+  type DiagnosticLabRunSnapshot,
+  type DiagnosticLabStartRequest,
+} from '../src/diagnostic-lab.ts'
+
+const roots: string[] = []
+
+afterEach(async () => {
+  await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
+})
+
+async function bench(): Promise<{
+  root: string
+  home: string
+  manager: DiagnosticLabManager
+  snapshots: DiagnosticLabRunSnapshot[]
+  suspendHarness: Mock<() => Promise<void>>
+  resumeHarness: Mock<() => void>
+  installProfile: Mock<() => Promise<void>>
+  installDiagnosticPlugin: Mock<() => Promise<void>>
+  runDoctor: Mock<() => Promise<{ status: string; issueCodes: string[]; output: string }>>
+}> {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-diagnostic-lab-'))
+  roots.push(root)
+  const home = join(root, 'active-home')
+  await mkdir(join(home, 'profiles', 'web'), { recursive: true })
+  await writeFile(join(home, 'profiles', 'web', 'package.json'), '{"name":"dsh-profile-web","private":true}\n')
+  const snapshots: DiagnosticLabRunSnapshot[] = []
+  const suspendHarness = vi.fn<() => Promise<void>>(async () => {})
+  const resumeHarness = vi.fn<() => void>(() => {})
+  const installProfile = vi.fn<() => Promise<void>>(async () => {})
+  const installDiagnosticPlugin = vi.fn<() => Promise<void>>(async () => {})
+  const runDoctor = vi.fn(async () => ({ status: 'healthy', issueCodes: [], output: '{}' }))
+  const manager = new DiagnosticLabManager({
+    root: join(root, 'lab'),
+    activeDshHome: home,
+    logDirectory: join(root, 'logs'),
+    suspendHarness,
+    resumeHarness,
+    installProfile,
+    installDiagnosticPlugin,
+    runDoctor,
+    productionDoctorFixtures: false,
+    onSnapshot: (snapshot) => { snapshots.push(snapshot) },
+  })
+  return {
+    root, home, manager, snapshots, suspendHarness, resumeHarness, installProfile, installDiagnosticPlugin, runDoctor,
+  }
+}
+
+async function waitForTerminal(manager: DiagnosticLabManager, runId: string): Promise<DiagnosticLabRunSnapshot> {
+  for (let count = 0; count < 200; count += 1) {
+    const snapshot = manager.get(runId)
+    if (snapshot.phase === 'active' || snapshot.phase === 'restored' || snapshot.phase === 'failed' || snapshot.phase === 'cancelled') return snapshot
+    await new Promise((resolve) => { setTimeout(resolve, 5) })
+  }
+  throw new Error('diagnostic lab test run did not settle')
+}
+
+describe('DiagnosticLabManager', () => {
+  it('runs every reviewed isolated scenario once and retains its runtime until Restore all', async () => {
+    const b = await bench()
+    const scenarioIds = b.manager.catalog()
+      .filter(scenario => scenario.targets.includes('isolated'))
+      .map(scenario => scenario.id)
+    const initial = b.manager.start({ scenarioIds, target: 'isolated' })
+    expect(b.manager.current()?.runId).toBe(initial.runId)
+    const final = await waitForTerminal(b.manager, initial.runId)
+
+    expect(final.phase).toBe('active')
+    expect(final.results).toHaveLength(scenarioIds.length)
+    expect(final.results.every(result => result.phase === 'passed' && result.retained)).toBe(true)
+    expect(final.completedSteps).toBe(final.totalSteps)
+    expect(b.runDoctor).toHaveBeenCalledTimes(scenarioIds.length * 4)
+    expect(b.suspendHarness).not.toHaveBeenCalled()
+    expect(b.resumeHarness).not.toHaveBeenCalled()
+    expect(existsSync(join(b.root, 'lab', 'runs', initial.runId, 'runtime'))).toBe(true)
+    expect(JSON.parse(b.manager.exportReport(initial.runId))).toMatchObject({ runId: initial.runId, phase: 'active' })
+    await expect(b.manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+    expect(existsSync(join(b.root, 'lab', 'runs', initial.runId, 'runtime'))).toBe(false)
+  })
+
+  it('installs production fixtures before requiring convergence and quarantine outcomes', async () => {
+    const b = await bench()
+    const calls = new Map<string, number>()
+    const runDoctor = vi.fn(async (home: string) => {
+      const scenarioId = home.split('/').at(-1) ?? ''
+      const call = (calls.get(home) ?? 0) + 1
+      calls.set(home, call)
+      if (call === 1) {
+        const profileDir = join(home, 'profiles', 'web')
+        await mkdir(profileDir, { recursive: true })
+        await writeFile(join(profileDir, 'package.json'), '{"name":"dsh-profile-web","private":true}\n')
+        await writeFile(join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n\nnodeLinker: hoisted\n')
+      }
+      if (call === 2) {
+        const issueCode = scenarioId === 'orphaned-bundle'
+          ? 'profile.orphaned-bundle'
+          : 'profile.host-dependency-conflict'
+        return { status: 'failed', issueCodes: [issueCode], output: '{}' }
+      }
+      if (call === 3) {
+        return {
+          status: scenarioId === 'host-shadow-compatible' ? 'repaired' : 'quarantined',
+          issueCodes: [],
+          output: '{}',
+        }
+      }
+      if (scenarioId === 'host-shadow-incompatible') {
+        return { status: 'quarantined', issueCodes: ['profile.host-dependency-conflict'], output: '{}' }
+      }
+      if (scenarioId === 'orphaned-bundle') {
+        return { status: 'quarantined', issueCodes: ['profile.orphaned-bundle'], output: '{}' }
+      }
+      return { status: 'healthy', issueCodes: [], output: '{}' }
+    })
+    const manager = new DiagnosticLabManager({
+      root: join(b.root, 'production-lab'),
+      activeDshHome: b.home,
+      logDirectory: join(b.root, 'production-logs'),
+      suspendHarness: b.suspendHarness,
+      resumeHarness: b.resumeHarness,
+      installProfile: b.installProfile,
+      installDiagnosticPlugin: b.installDiagnosticPlugin,
+      runDoctor,
+      onSnapshot: () => {},
+    })
+    const initial = manager.start({
+      scenarioIds: ['host-shadow-compatible', 'host-shadow-incompatible', 'orphaned-bundle'],
+      target: 'isolated',
+    })
+    const final = await waitForTerminal(manager, initial.runId)
+
+    expect(final.phase).toBe('active')
+    expect(final.results.every(result => result.phase === 'passed')).toBe(true)
+    expect(b.installProfile).toHaveBeenCalledTimes(3)
+    expect(runDoctor).toHaveBeenCalledTimes(12)
+  })
+
+  it('persists a real current-Profile quarantine for the ordinary diagnostics summary', async () => {
+    const b = await bench()
+    await writeFile(join(b.home, 'profiles', 'web', 'pnpm-workspace.yaml'), 'packages:\n  - .\n\nnodeLinker: hoisted\n')
+    let call = 0
+    const quarantinePath = join(b.home, 'quarantine', 'profile-plugins.json')
+    const runDoctor = vi.fn(async () => {
+      call += 1
+      if (call === 1) return { status: 'healthy', issueCodes: [], output: '{}' }
+      if (call === 2) return { status: 'failed', issueCodes: ['profile.orphaned-bundle'], output: '{}' }
+      if (call === 3) {
+        await mkdir(join(b.home, 'quarantine'), { recursive: true })
+        await writeFile(quarantinePath, '{"schema":1,"plugins":[{"packageName":"@dsh-diagnostic-lab/orphaned-bundle"}]}\n')
+      }
+      return { status: 'quarantined', issueCodes: ['profile.orphaned-bundle'], output: '{}' }
+    })
+    const manager = new DiagnosticLabManager({
+      root: join(b.root, 'active-production-lab'),
+      activeDshHome: b.home,
+      logDirectory: join(b.root, 'active-production-logs'),
+      suspendHarness: b.suspendHarness,
+      resumeHarness: b.resumeHarness,
+      installProfile: b.installProfile,
+      installDiagnosticPlugin: b.installDiagnosticPlugin,
+      runDoctor,
+      onSnapshot: () => {},
+    })
+    const initial = manager.start({ scenarioIds: ['orphaned-bundle'], target: 'active-profile' })
+    const active = await waitForTerminal(manager, initial.runId)
+
+    expect(active).toMatchObject({ phase: 'active', recovery: 'retained' })
+    expect(active.results[0]).toMatchObject({ disposition: 'quarantined', retained: true })
+    expect(existsSync(quarantinePath)).toBe(true)
+    expect(b.resumeHarness).toHaveBeenCalledOnce()
+
+    await expect(manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+    expect(existsSync(quarantinePath)).toBe(false)
+    expect(b.installProfile).toHaveBeenCalledTimes(2)
+  })
+
+  it('installs packaged dsh-font only for the active exercise and observes real client quarantine', async () => {
+    const b = await bench()
+    const manifestPath = join(b.home, 'profiles', 'web', 'package.json')
+    const installDiagnosticPlugin = vi.fn(async (home: string, packageName: 'dsh-font') => {
+      expect(home).toBe(b.home)
+      expect(packageName).toBe('dsh-font')
+      await writeFile(manifestPath, `${JSON.stringify({
+        name: 'dsh-profile-web',
+        private: true,
+        dependencies: { 'dsh-font': 'file:diagnostic-dsh-font-1.1.0.tgz' },
+        dsh: { profile: { bundles: ['dsh-font'] } },
+      })}\n`)
+    })
+    let recoveryScheduled = false
+    const resumeHarness = vi.fn(() => {
+      if (recoveryScheduled) return
+      recoveryScheduled = true
+      void (async () => {
+        await new Promise((resolve) => { setTimeout(resolve, 15) })
+        await mkdir(join(b.home, 'quarantine'), { recursive: true })
+        await mkdir(join(b.home, 'profile-health'), { recursive: true })
+        await writeFile(join(b.home, 'profile-health', 'web.json'), JSON.stringify({
+          status: 'quarantined',
+          quarantined: [{ packageName: 'dsh-font', reason: 'client-module-unavailable' }],
+          issues: [{ code: 'profile.module-resolution', attribution: { rootPackage: 'dsh-font' } }],
+        }))
+        await writeFile(manifestPath, JSON.stringify({ name: 'dsh-profile-web', private: true }))
+        await writeFile(join(b.home, 'quarantine', 'profile-plugins.json'), JSON.stringify({
+          schema: 1,
+          plugins: [{ packageName: 'dsh-font', reason: 'client-module-unavailable' }],
+        }))
+      })()
+    })
+    const manager = new DiagnosticLabManager({
+      root: join(b.root, 'client-module-lab'),
+      activeDshHome: b.home,
+      logDirectory: join(b.root, 'client-module-logs'),
+      suspendHarness: b.suspendHarness,
+      resumeHarness,
+      installProfile: b.installProfile,
+      installDiagnosticPlugin,
+      runDoctor: b.runDoctor,
+      productionDoctorFixtures: false,
+      clientRecoveryTimeoutMs: 1_000,
+      onSnapshot: () => {},
+    })
+
+    const initial = manager.start({ scenarioIds: ['client-module-unavailable'], target: 'active-profile' })
+    const active = await waitForTerminal(manager, initial.runId)
+
+    expect(active).toMatchObject({ phase: 'active', recovery: 'retained' })
+    expect(active.results).toEqual([
+      expect.objectContaining({
+        scenarioId: 'client-module-unavailable',
+        phase: 'passed',
+        actualCode: 'profile.module-resolution',
+        disposition: 'quarantined',
+      }),
+    ])
+    expect(installDiagnosticPlugin).toHaveBeenCalledOnce()
+    expect(resumeHarness).toHaveBeenCalledOnce()
+
+    await expect(manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+    expect(JSON.parse(await readFile(manifestPath, 'utf8'))).toEqual({ name: 'dsh-profile-web', private: true })
+    expect(existsSync(join(b.home, 'quarantine', 'profile-plugins.json'))).toBe(false)
+    expect(existsSync(join(b.home, 'profile-health', 'web.json'))).toBe(false)
+  })
+
+  it('injects every selected scenario exactly once', async () => {
+    const b = await bench()
+    const initial = b.manager.start({
+      scenarioIds: ['host-shadow-compatible', 'orphaned-bundle'],
+      target: 'isolated',
+    })
+    const final = await waitForTerminal(b.manager, initial.runId)
+    expect(final.results).toHaveLength(2)
+    expect(final.results.map(result => result.scenarioId)).toEqual(['host-shadow-compatible', 'orphaned-bundle'])
+    expect(final.phase).toBe('active')
+  })
+
+  it('cancels at a safe boundary, cleans runtime, and rejects a concurrent run', async () => {
+    const b = await bench()
+    const initial = b.manager.start({
+      scenarioIds: b.manager.catalog()
+        .filter(scenario => scenario.targets.includes('isolated'))
+        .map(scenario => scenario.id),
+      target: 'isolated',
+    })
+    expect(() => b.manager.start({
+      scenarioIds: ['orphaned-bundle'], target: 'isolated',
+    })).toThrow('another diagnostic lab run is active')
+    b.manager.cancel(initial.runId)
+    const final = await waitForTerminal(b.manager, initial.runId)
+    expect(final.phase).toBe('cancelled')
+    expect(existsSync(join(b.root, 'lab', 'runs', initial.runId, 'runtime'))).toBe(false)
+  })
+
+  it('rejects arbitrary and target-incompatible scenario requests', async () => {
+    const b = await bench()
+    expect(() => b.manager.start({ scenarioIds: [], target: 'isolated' })).toThrow('invalid')
+    expect(() => b.manager.start({
+      scenarioIds: ['patch-invalid'],
+      target: 'active-profile',
+    })).toThrow('unavailable')
+    expect(() => b.manager.start({
+      scenarioIds: ['arbitrary-command' as never],
+      target: 'isolated',
+    })).toThrow('invalid')
+  })
+
+  it('pauses the active Harness and retains the exercise until explicit restoration', async () => {
+    const b = await bench()
+    const manifest = join(b.home, 'profiles', 'web', 'package.json')
+    const before = await readFile(manifest, 'utf8')
+    const request: DiagnosticLabStartRequest = {
+      scenarioIds: ['host-shadow-compatible'],
+      target: 'active-profile',
+    }
+    const initial = b.manager.start(request)
+    const final = await waitForTerminal(b.manager, initial.runId)
+
+    expect(final.phase).toBe('active')
+    expect(final.recovery).toBe('retained')
+    expect(b.suspendHarness).toHaveBeenCalledOnce()
+    expect(b.resumeHarness).toHaveBeenCalledOnce()
+    expect(await readFile(manifest, 'utf8')).toBe(before)
+    expect(existsSync(join(b.home, 'profiles', 'web', '.diagnostic-lab', initial.runId))).toBe(true)
+    expect(await readFile(join(b.root, 'logs', `${initial.runId}.txt`), 'utf8'))
+      .toContain('[PASSED] host-shadow-compatible')
+    const restored = await b.manager.restoreAll(initial.runId)
+    expect(restored.phase).toBe('restored')
+    expect(b.suspendHarness).toHaveBeenCalledTimes(2)
+    expect(b.resumeHarness).toHaveBeenCalledTimes(2)
+    expect(await readFile(manifest, 'utf8')).toBe(before)
+    expect(existsSync(join(b.home, 'profiles', 'web', '.diagnostic-lab', initial.runId))).toBe(false)
+  })
+
+  it('resumes Harness and keeps Restore all retryable when restoration fails', async () => {
+    const b = await bench()
+    const initial = b.manager.start({
+      scenarioIds: ['host-shadow-compatible'],
+      target: 'active-profile',
+    })
+    expect((await waitForTerminal(b.manager, initial.runId)).phase).toBe('active')
+    b.installProfile.mockRejectedValueOnce(new Error('fixture install failed'))
+
+    await expect(b.manager.restoreAll(initial.runId)).rejects.toThrow('fixture install failed')
+    expect(b.manager.get(initial.runId)).toMatchObject({ phase: 'active', recovery: 'failed' })
+    expect(b.resumeHarness).toHaveBeenCalledTimes(2)
+
+    await expect(b.manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored', recovery: 'clean' })
+    expect(b.resumeHarness).toHaveBeenCalledTimes(3)
+  })
+
+  it('redacts active home and credential values in failures', async () => {
+    const b = await bench()
+    const manager = new DiagnosticLabManager({
+      root: join(b.root, 'redaction-lab'),
+      activeDshHome: b.home,
+      logDirectory: join(b.root, 'redaction-logs'),
+      suspendHarness: async () => { throw new Error(`token=secret-value ${b.home}`) },
+      resumeHarness: () => {},
+      installProfile: async () => {},
+      installDiagnosticPlugin: async () => {},
+      runDoctor: async () => ({ status: 'healthy', issueCodes: [], output: '{}' }),
+      productionDoctorFixtures: false,
+      onSnapshot: () => {},
+    })
+    const initial = manager.start({
+      scenarioIds: ['host-shadow-compatible'],
+      target: 'active-profile',
+    })
+    const final = await waitForTerminal(manager, initial.runId)
+    expect(final.phase).toBe('failed')
+    expect(final.diagnostic).toContain('token=[REDACTED]')
+    expect(final.diagnostic).toContain('$DSH_HOME')
+    expect(final.diagnostic).not.toContain('secret-value')
+  })
+
+  it('reconnects to an intentionally retained run after desktop restart', async () => {
+    const b = await bench()
+    const initial = b.manager.start({ scenarioIds: ['orphaned-bundle'], target: 'active-profile' })
+    expect((await waitForTerminal(b.manager, initial.runId)).phase).toBe('active')
+    const restarted = new DiagnosticLabManager({
+      root: join(b.root, 'lab'),
+      activeDshHome: b.home,
+      logDirectory: join(b.root, 'logs'),
+      suspendHarness: b.suspendHarness,
+      resumeHarness: b.resumeHarness,
+      installProfile: b.installProfile,
+      installDiagnosticPlugin: b.installDiagnosticPlugin,
+      runDoctor: b.runDoctor,
+      productionDoctorFixtures: false,
+      onSnapshot: () => {},
+    })
+    await restarted.recoverPending()
+    expect(restarted.current()).toMatchObject({ runId: initial.runId, phase: 'active', recovery: 'retained' })
+    await expect(restarted.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+  })
+})

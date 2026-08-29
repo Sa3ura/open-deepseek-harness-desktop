@@ -204,7 +204,7 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ### 六个本地预设插件
 
-安装包携带六个经过完整性校验的插件归档：插件市场、`dsh-im`、`dsh-skill-picker`、`dsh-font`、Better Sidebar 和 `dsh-pocket`。安装时使用包内本地归档，不会临时联网下载这些插件本体；普通传递依赖仍由 Profile 的 pnpm 解析规则管理。
+安装包携带五个经过完整性校验的插件归档：插件市场、`dsh-im`、`dsh-skill-picker`、Better Sidebar 和 `dsh-pocket`。安装时使用包内本地归档，不会临时联网下载这些插件本体；普通传递依赖仍由 Profile 的 pnpm 解析规则管理。
 
 这些插件仍是可卸载的普通 Harness 依赖。用户卸载后，客户端通过持久标记尊重该选择，不会在每次重启时擅自装回；需要时可以从插件市场或恢复流程重新安装。
 
@@ -229,9 +229,11 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 此前的文件与 Session 引用、多查询并发 `web_search`、推理内容回传、持久 PowerShell PTY、动态客户端包、构建 Profile 与品牌插槽继续保留。Electron 始终为 `dsh web` 传入 `--no-open`，因此启动桌面应用不会额外打开系统浏览器。
 
-## 已知问题
+### 诊断演练中心
 
-- 安装版中的“安装诊断测试插件”入口可能仍然显示，但点击后没有可见响应。该问题不影响启动前检查、正式诊断、修复和隔离能力；该入口将在后续版本移除或改造成安全的诊断演示功能。
+原先只在部分开发环境可用的“安装诊断测试插件”已替换为正式的诊断演练中心。开发版与安装版都可以在隔离环境中离线复现 Host 共享依赖影子副本、孤立 Bundle、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断等故障，并完整展示“注入、检测、修复、复检、清理”时间线。
+
+快速、标准与耐久档分别运行 1、3、10 轮。默认演练不会修改用户 Profile；高级真实 Profile 模式需要二次确认，会暂停 Harness、保存受管文件哈希和恢复日志，并在每轮结束后恢复与复检。无法确认现场恢复干净时，客户端不会继续加载插件。演练报告同时提供经过用户名、路径和凭据脱敏的 JSON 与文本摘要。
 
 ## 下载安装
 
@@ -367,7 +369,6 @@ API Key 由 Harness 凭据服务管理，请勿提交凭据。选择任何兼容
 - [`dsh-im`](https://github.com/xmanrui/dsh-im)，由 [xmanrui](https://github.com/xmanrui) 维护：连接微信、飞书等九种 IM 机器人。
 - [`dsh-skill-picker`](https://github.com/a735624258/dsh-skill-picker)，由 [a735624258](https://github.com/a735624258) 维护：在输入区选择 Skill，并插入 Harness 的 Skill 调用指令。
 - [`dsh-market`](https://github.com/dsh-market/dsh-market)，由 [dsh-market](https://github.com/dsh-market) 社区维护：在 Harness 内浏览、搜索、安装和管理插件。
-- [`dsh-font`](https://github.com/tianyhjg-lab/dsh-font)：提供客户端字体定制。
 - [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket)：提供 Pocket 扩展。
 - [`DSH Better Sidebar`](https://github.com/omdsh-dev/DSH-better-sidebar)：提供增强侧边栏。
 

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-/** AppearanceRow behavior: palette and background cards mirror persisted
- * state; a curated palette may also restore its paired background. */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { createSnapshotStore, type SessionListState, type WorkspaceListState } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { AppearanceRow } from '../src/client/AppearanceRow.tsx'
 import type { AppearanceRowComponentProps } from '../src/client/AppearanceRow.tsx'
@@ -14,46 +14,26 @@ afterEach(cleanup)
 
 const COPY: Record<string, string> = {
   'appearance.title': 'Appearance',
-  'appearance.skins': 'Theme skins',
   'appearance.light': 'Light',
   'appearance.dark': 'Dark',
   'appearance.system': 'System',
-  'appearance.ocean': 'Deep Ocean',
-  'appearance.moonlight': 'Moon Whale',
-  'appearance.bubble': 'Bubble Cove',
-  'appearance.inspirationCollage': 'Idea Collage',
-  'appearance.starlight': 'Starlight',
-  'appearance.pirate': 'Pirate Horizon',
-  'appearance.shinobi': 'Shinobi Ember',
-  'appearance.rift': 'Rift Arena',
-  'appearance.collection': '11 skins',
-  'background.title': 'Chat background',
-  'background.description': 'Choose a background.',
-  'background.none': 'Solid',
-  'background.deepOcean': 'Ocean Whale',
-  'background.moonWhale': 'Moon Whale',
-  'background.bubbleWhale': 'Bubble Whale',
-  'background.ideaCollage': 'Idea Collage',
-  'background.animeStarlight': 'Anime Coder',
-  'background.pirateHorizon': 'Pirate Horizon',
-  'background.shinobiEmber': 'Shinobi Ember',
-  'background.riftArena': 'Rift Arena',
-  'background.upload': 'Upload background',
 }
 
-/** Empty global standard-kit hooks (the row reads neither). */
 function emptySessions() {
   const store = createSnapshotStore<SessionListState>(
     { ids: [], byId: {}, current: undefined, phase: 'ready', subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined })
   return bindSnapshotSelector(store)
 }
 function emptyWorkspaces() {
-  const store = createSnapshotStore<WorkspaceListState>({
+  const store = createSnapshotStore<WorkspaceSnapshot>({
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-    baselinesReady: true, recentWorkspaceId: undefined,
   })
   return bindSnapshotSelector(store)
 }
+
+type AttentionSnapshot = Parameters<Parameters<AppearanceRowComponentProps['useSessionPendingInteraction']>[0]>[0]
+const noAttention: AttentionSnapshot = new Map()
+const useSessionPendingInteraction: AppearanceRowComponentProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 
 function mount(preference: ThemePreference = 'system') {
   // Real store instance — the sanctioned zero-machinery path for tests.
@@ -61,9 +41,10 @@ function mount(preference: ThemePreference = 'system') {
   store.actions.sync(preference, 'none', 0)
   const setTheme = vi.fn()
   const setBackground = vi.fn()
-  const setCustomBackground = vi.fn(async () => {})
+  const setCustomBackground = vi.fn(() => Promise.resolve())
   const props: AppearanceRowComponentProps = {
     useSessions: emptySessions(),
+    useSessionPendingInteraction,
     useWorkspaces: emptyWorkspaces(),
     useStore: bindSnapshotSelector(store),
     actions: store.actions,
@@ -73,18 +54,16 @@ function mount(preference: ThemePreference = 'system') {
     setCustomBackground,
   }
   render(<AppearanceRow {...props} />)
-  return { store, setTheme, setBackground }
+  return { store, setTheme }
 }
 
 const pressed = (name: RegExp): string | null =>
   screen.getByRole('button', { name }).getAttribute('aria-pressed')
 
 describe('AppearanceRow', () => {
-  it('renders eleven skins and original background choices with persisted selections', () => {
+  it('renders the title and three cubes with the preference cube selected', () => {
     mount('dark')
-    expect(screen.getByText('Theme skins')).toBeDefined()
-    expect(screen.getByText('11 skins')).toBeDefined()
-    expect(screen.getAllByRole('button', { pressed: false }).length).toBeGreaterThan(3)
+    expect(screen.getByText('Appearance')).toBeDefined()
     expect(pressed(/Dark/)).toBe('true')
     expect(pressed(/Light/)).toBe('false')
     expect(pressed(/System/)).toBe('false')
@@ -99,24 +78,5 @@ describe('AppearanceRow', () => {
     act(() => { b.store.actions.sync('light', 'none', 1) })
     expect(pressed(/Light/)).toBe('true')
     expect(pressed(/Dark/)).toBe('false')
-  })
-
-  it('selects a shipped chat background through the theme service', () => {
-    const mounted = mount()
-    fireEvent.click(screen.getByRole('button', { name: /Ocean Whale/ }))
-    expect(mounted.setBackground).toHaveBeenCalledWith('deep-ocean')
-  })
-
-  it('selects the original anime-style background without using franchise assets', () => {
-    const mounted = mount()
-    fireEvent.click(screen.getByRole('button', { name: /Anime Coder/ }))
-    expect(mounted.setBackground).toHaveBeenCalledWith('anime-starlight')
-  })
-
-  it('selects the inspiration collage palette and its paired background in one gesture', () => {
-    const mounted = mount('inspiration-collage')
-    fireEvent.click(screen.getAllByRole('button', { name: /Idea Collage/ })[0]!)
-    expect(mounted.setTheme).toHaveBeenCalledWith('inspiration-collage')
-    expect(mounted.setBackground).toHaveBeenCalledWith('idea-collage')
   })
 })

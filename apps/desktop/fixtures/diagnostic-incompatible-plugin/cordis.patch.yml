@@ -1,3 +1,0 @@
-# This bundle is intentionally empty. Its package graph, not runtime code,
-# exercises the production dependency-health and quarantine pipeline.
-[]

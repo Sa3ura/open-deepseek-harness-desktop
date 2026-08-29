@@ -242,9 +242,11 @@ Switch between system, light, dark, and eight product themes; pair them with eig
 
 The current desktop baseline incorporates upstream `dsh-v0.1.1-rc.2`. It adds the unified image and DeepSeek Files pipeline, deterministic image admission, credential records and human-driven provider authorization, stable session projections, multiline questions, refined subagent navigation, and standalone pnpm support on Windows. The earlier file and session references, concurrent `web_search`, reasoning passback, persistent PowerShell PTY, dynamic client packages, build Profiles, and branding slots remain available. Electron always passes `--no-open` to `dsh web`, so launching the desktop app does not also open a system browser.
 
-## Known issue
+### Diagnostics Lab
 
-- In installed builds, the **Install diagnostic test plugin** entry may still be visible but produce no visible response. This does not affect preflight inspection, production diagnostics, repair, or quarantine. A later release will remove the entry or replace it with a safe diagnostic demonstration.
+The source-only **Install diagnostic test plugin** action has been replaced by a production Diagnostics Lab available in development and installed builds. Its isolated offline catalog exercises shared-Host shadow copies, orphaned Bundles, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
+
+Quick, standard, and soak presets run 1, 3, or 10 rounds. The default target never changes the user's Profile. The advanced active-Profile target requires a second confirmation, pauses Harness, records managed-file hashes and a recovery journal, then restores and reinspects after every round. If clean recovery cannot be proven, Profile plugins do not restart. Every run produces redacted JSON and text reports without usernames, local paths, or credentials.
 
 ## What you can do
 
