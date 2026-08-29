@@ -1,10 +1,12 @@
-import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
   CUSTOM_WINDOW_TITLE_BAR_HEIGHT,
   usesCustomWindowFrame,
   withCustomWindowFrameInset,
 } from '../src/window-frame.ts'
+
+const readUtf8 = readFileSync as unknown as (path: URL, encoding: 'utf8') => string
 
 describe('desktop window frame policy', () => {
   it.each(['win32', 'linux'] as const)('uses Harness window chrome on %s', (platform) => {
@@ -30,12 +32,28 @@ describe('desktop window frame policy', () => {
     expect(withCustomWindowFrameInset(url, 'darwin')).toBe(url)
   })
 
-  it('pins Web content below the custom title bar instead of relying on document padding', async () => {
-    const preload = await readFile(new URL('../src/preload.ts', import.meta.url), 'utf8')
+  it('pins Web content below the custom title bar instead of relying on document padding', () => {
+    const preload = readUtf8(new URL('../src/preload.ts', import.meta.url), 'utf8')
 
     expect(preload).toContain('inset: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px 0 0;')
+    expect(preload).toContain('--dsh-desktop-titlebar-inset: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px;')
     expect(preload).toContain('height: auto !important;')
     expect(preload).toContain('position: fixed;')
     expect(preload).not.toContain('padding-top: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px;')
+  })
+
+  it('keeps body-portaled full-viewport client surfaces below custom window chrome', () => {
+    const files = [
+      '../../../packages/client/ui-primitives/src/Modal.module.css',
+      '../../../packages/client/ui-primitives/src/OnboardingSurface.module.css',
+      '../../../packages/client/ui-attachment/src/DropOverlay.module.css',
+      '../../../packages/client/ui-attachment/src/ImageLightbox.module.css',
+      '../../../packages/client/ui-settings-general/src/client/SettingsRoot.module.css',
+    ]
+
+    for (const file of files) {
+      const css = readUtf8(new URL(file, import.meta.url), 'utf8')
+      expect(css, file).toContain('inset: var(--dsh-desktop-titlebar-inset, 0px) 0 0;')
+    }
   })
 })

@@ -45,7 +45,7 @@ The `NativeCommandRunner` type is the injectable command boundary for host integ
 
 ### Opening a Host path
 
-`openNativePath(path, signal)` hands a path to the default application and prefers the named default browser for HTML and SVG where the platform can identify one. `openNativeTextFile(path, signal)` selects text-editor intent; on macOS it uses `open -t`. WSL paths are translated with `wslpath -w` before the Windows desktop receives them. `canOpenNativePath()` reports whether the current Host plausibly has a desktop target.
+`openNativePath(path, signal)` hands a path to the default application and prefers the named default browser for HTML and SVG where the platform can identify one. `openNativeTextFile(path, signal)` selects text-editor intent; on macOS it uses `open -t`. Native Windows resolves the inbox PowerShell executable from `SystemRoot` instead of relying on `PATH`; WSL paths are translated with `wslpath -w` before the Windows desktop receives them through interop. `canOpenNativePath()` reports whether the current Host plausibly has a desktop target.
 
 -----
 

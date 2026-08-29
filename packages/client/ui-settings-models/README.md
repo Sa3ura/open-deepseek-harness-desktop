@@ -41,7 +41,7 @@ The add flow is a card carrying the dormant-directory provider select — a bare
 
 ### First-run dialogs
 
-After the versioned notice step completes, the DeepSeek step projects first-run readiness from the same joined snapshot. ANY provider the user can already reach ends it without rendering; only a user with none is asked for the official DeepSeek key. Configure later completes only this coordinator pass, and an absent adapter, inactive route, failed join, read-only deployment, or unusable capability completes the step without rendering — Models remains the diagnostic surface.
+After the versioned notice step completes, the DeepSeek step projects first-run readiness from the same joined snapshot. ANY provider the user can already reach ends it without rendering; only a user with none is asked for the official DeepSeek key. Configure later completes only this coordinator pass, and an absent adapter, inactive route, failed join, read-only deployment, or unusable capability completes the step without rendering — Models remains the diagnostic surface. The shared wizard subtracts desktop title-bar chrome from its viewport budget and gives both columns their own short-window scroll path, so every step and action remains reachable at high display scaling.
 
 ### Extension slots
 

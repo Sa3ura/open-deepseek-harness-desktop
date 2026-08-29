@@ -1,12 +1,13 @@
 /* Full-viewport layer (figma Mask + Dialog 451:18655): mask + centered card. */
 .root {
   position: fixed;
-  inset: 0;
+  inset: var(--dsh-desktop-titlebar-inset, 0px) 0 0;
   z-index: 1000;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
+  box-sizing: border-box;
 }
 
 /* User/spec mask: rgba(0,0,0,0.24) + blur(2px) via --dsw-alias-bg-mask-1 /
@@ -26,18 +27,23 @@
   flex-direction: column;
   gap: 20px;
   width: min(380px, 100%);
+  max-height: 100%;
   padding: 0 0 24px;
   overflow: hidden;
   border: 1px solid var(--dsw-alias-border-inverted);
   border-radius: 24px;
   background: var(--dsw-alias-bg-layer-2);
   box-shadow: var(--dsw-shadow-lv3);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .content {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   width: 100%;
+  overflow-y: auto;
 }
 
 /* Header row (figma Title row): pad l24/t22/r14/b12, SPACE_BETWEEN —

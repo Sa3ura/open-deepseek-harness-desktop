@@ -45,7 +45,7 @@ const { stdout, stderr } = await runNativeCommand('osascript', ['-e', script], s
 
 ### 打开 Host 路径
 
-`openNativePath(path, signal)` 将路径交给默认应用；平台能够确定默认浏览器时，HTML 与 SVG 会优先交给该浏览器。`openNativeTextFile(path, signal)` 选择文本编辑器意图；macOS 使用 `open -t`。WSL 路径先通过 `wslpath -w` 转换，再交给 Windows 桌面。`canOpenNativePath()` 报告当前 Host 是否可能具备桌面目标。
+`openNativePath(path, signal)` 将路径交给默认应用；平台能够确定默认浏览器时，HTML 与 SVG 会优先交给该浏览器。`openNativeTextFile(path, signal)` 选择文本编辑器意图；macOS 使用 `open -t`。原生 Windows 会从 `SystemRoot` 解析系统自带 PowerShell 的绝对路径，而不依赖 `PATH`；WSL 路径先通过 `wslpath -w` 转换，再通过互操作交给 Windows 桌面。`canOpenNativePath()` 报告当前 Host 是否可能具备桌面目标。
 
 -----
 

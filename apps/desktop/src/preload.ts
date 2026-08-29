@@ -374,6 +374,7 @@ const TITLE_BAR_STYLE = `
     box-sizing: border-box;
     height: 100%;
     overflow: hidden;
+    --dsh-desktop-titlebar-inset: ${CUSTOM_WINDOW_TITLE_BAR_HEIGHT}px;
   }
   html.dsh-desktop-custom-frame body {
     box-sizing: border-box;

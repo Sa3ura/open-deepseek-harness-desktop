@@ -1,6 +1,6 @@
 .banner {
   position: fixed;
-  top: 0;
+  top: var(--dsh-desktop-titlebar-inset, 0px);
   left: 0;
   right: 0;
   z-index: 100;

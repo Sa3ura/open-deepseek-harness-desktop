@@ -10,7 +10,7 @@
  */
 
 import { release as osRelease } from 'node:os'
-import { extname } from 'node:path'
+import { extname, win32 } from 'node:path'
 import { runNativeCommand, type NativeCommandRunner } from './runner.ts'
 
 /** Testable command boundary; native implementations never invoke a shell. */
@@ -99,12 +99,23 @@ function isWsl(internals: PathOpenerInternals): boolean {
 }
 
 /** Open one Windows-resolvable path through its registered desktop application. */
-async function openWindowsPath(path: string, signal: AbortSignal, run: PathOpenerRunner): Promise<void> {
-  await run('powershell.exe', [
+async function openWindowsPath(
+  path: string,
+  signal: AbortSignal,
+  run: PathOpenerRunner,
+  powershell: string,
+): Promise<void> {
+  await run(powershell, [
     '-NoProfile',
     '-Command',
     `Invoke-Item -LiteralPath ${powershellLiteral(path)}`,
   ], signal)
+}
+
+/** Resolve the inbox Windows PowerShell without depending on the process PATH. */
+function windowsPowerShellPath(env: NodeJS.ProcessEnv): string {
+  const systemRoot = env.SystemRoot ?? env.WINDIR ?? 'C:\\Windows'
+  return win32.join(systemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
 }
 
 /** Translate a WSL path before handing it to the Windows desktop. */
@@ -113,7 +124,7 @@ async function openWslPath(path: string, signal: AbortSignal, run: PathOpenerRun
   signal.throwIfAborted()
   const windowsPath = translated.stdout.replace(/[\r\n]+$/, '')
   if (windowsPath === '') throw new Error('wslpath returned no Windows path')
-  await openWindowsPath(windowsPath, signal, run)
+  await openWindowsPath(windowsPath, signal, run, 'powershell.exe')
 }
 
 /** Dispatch one shell-free platform command for the requested open intent. */
@@ -137,7 +148,7 @@ async function openNativePathWithIntent(
   }
 
   if (platform === 'win32') {
-    await openWindowsPath(path, signal, run)
+    await openWindowsPath(path, signal, run, windowsPowerShellPath(env))
     return
   }
 
