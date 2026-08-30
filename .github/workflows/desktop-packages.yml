@@ -4,6 +4,7 @@ name: Desktop packages
 on:
   push:
     tags:
+      - 'odsh-v*'
       - 'dsh-v*'
   workflow_dispatch:
     inputs:
@@ -18,7 +19,7 @@ on:
           - windows-x64
           - linux-x64
       publish:
-        description: Create or update the GitHub Release; requires a dsh-v* tag
+        description: Create or update the GitHub Release; requires an odsh-v* or legacy dsh-v* tag
         required: true
         type: boolean
         default: false
@@ -250,8 +251,8 @@ jobs:
       - name: Verify release tag
         run: |
           case "$GITHUB_REF" in
-            refs/tags/dsh-v*) ;;
-            *) echo "::error::Desktop publication requires a dsh-v* tag"; exit 1 ;;
+            refs/tags/odsh-v*|refs/tags/dsh-v*) ;;
+            *) echo "::error::Desktop publication requires an odsh-v* or legacy dsh-v* tag"; exit 1 ;;
           esac
 
       - name: Create or update Release
@@ -260,11 +261,16 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           tag="${GITHUB_REF#refs/tags/}"
-          version="${tag#dsh-v}"
-          prerelease=()
-          case "$version" in *-*) prerelease=(--prerelease) ;; esac
+          version="${tag#odsh-v}"
+          version="${version#dsh-v}"
+          release_args=(--title "DeepSeek Harness Desktop $version")
+          case "$version" in
+            *-*) release_args+=(--prerelease) ;;
+            *) release_args+=(--latest) ;;
+          esac
           if gh release view "$tag" >/dev/null 2>&1; then
             gh release upload "$tag" dist/* --clobber
+            gh release edit "$tag" "${release_args[@]}"
           else
-            gh release create "$tag" --title "DeepSeek Harness Desktop $version" --generate-notes "${prerelease[@]}" dist/*
+            gh release create "$tag" --generate-notes "${release_args[@]}" dist/*
           fi

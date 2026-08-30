@@ -2,6 +2,7 @@
 
 const RELEASES_ENDPOINT = 'https://api.github.com/repos/flaqai/open-deepseek-harness-desktop/releases?per_page=30'
 const RELEASE_URL_PREFIX = 'https://github.com/flaqai/open-deepseek-harness-desktop/releases/'
+const RELEASE_CHECK_TIMEOUT_MS = 15_000
 
 /** Renderer-visible release check status. */
 export type DesktopReleaseStatus =
@@ -27,8 +28,12 @@ interface ParsedVersion {
   prerelease: readonly (number | string)[]
 }
 
+function releaseVersion(value: string): string {
+  return value.replace(/^(?:odsh-|dsh-)?v/u, '')
+}
+
 function parseVersion(value: string): ParsedVersion | undefined {
-  const normalized = value.replace(/^dsh-v/u, '').replace(/^v/u, '')
+  const normalized = releaseVersion(value)
   const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u.exec(normalized)
   if (match === null) return undefined
   return {
@@ -80,15 +85,13 @@ export function selectRelease(currentVersion: string, releases: readonly GitHubR
   const current = parseVersion(currentVersion)
   if (current === undefined) return { phase: 'error', currentVersion, message: 'The installed version is not valid semantic version data.' }
   const allowPrerelease = current.prerelease.length > 0
-  const currentChannel = typeof current.prerelease[0] === 'string' ? current.prerelease[0] : undefined
   const candidates = releases.flatMap((release) => {
-    if (release.draft === true || (!allowPrerelease && release.prerelease === true)) return []
+    if (release.draft === true) return []
     if (typeof release.tag_name !== 'string' || typeof release.html_url !== 'string' || typeof release.published_at !== 'string') return []
     const parsed = parseVersion(release.tag_name)
     if (!isAllowedReleaseUrl(release.html_url) || parsed === undefined) return []
-    const candidateChannel = typeof parsed.prerelease[0] === 'string' ? parsed.prerelease[0] : undefined
-    if (parsed.prerelease.length > 0 && candidateChannel !== currentChannel) return []
-    return [{ version: release.tag_name.replace(/^dsh-v/u, '').replace(/^v/u, ''), url: release.html_url, publishedAt: release.published_at }]
+    if (!allowPrerelease && (release.prerelease === true || parsed.prerelease.length > 0)) return []
+    return [{ version: releaseVersion(release.tag_name), url: release.html_url, publishedAt: release.published_at }]
   }).sort((a, b) => compareDesktopVersions(b.version, a.version) ?? 0)
   const newest = candidates[0]
   if (newest === undefined || (compareDesktopVersions(newest.version, currentVersion) ?? 0) <= 0) {
@@ -103,6 +106,40 @@ export function selectRelease(currentVersion: string, releases: readonly GitHubR
   }
 }
 
+/** Fetch Release metadata with a bounded wait.
+ * @param fetchImpl - HTTP implementation used for the GitHub request.
+ * @param timeoutMs - Maximum request duration in milliseconds.
+ * @returns GitHub Release metadata.
+ */
+export async function fetchGitHubReleases(
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = RELEASE_CHECK_TIMEOUT_MS,
+): Promise<readonly GitHubRelease[]> {
+  const controller = new AbortController()
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => {
+      controller.abort()
+      reject(new Error(`GitHub Releases request timed out after ${Math.ceil(timeoutMs / 1_000)} seconds`))
+    }, timeoutMs)
+  })
+  try {
+    const response = await Promise.race([
+      fetchImpl(RELEASES_ENDPOINT, {
+        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'DeepSeek-Harness-Desktop' },
+        signal: controller.signal,
+      }),
+      deadline,
+    ])
+    if (!response.ok) throw new Error(`GitHub Releases returned HTTP ${response.status}`)
+    const body: unknown = await response.json()
+    if (!Array.isArray(body)) throw new Error('GitHub Releases returned an invalid response')
+    return body as GitHubRelease[]
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
+  }
+}
+
 /** Stateful Release checker with callback-contained status publication. */
 export class DesktopReleaseChecker {
   #status: DesktopReleaseStatus
@@ -111,15 +148,7 @@ export class DesktopReleaseChecker {
 
   constructor(
     readonly currentVersion: string,
-    readonly fetchReleases: () => Promise<readonly GitHubRelease[]> = async () => {
-      const response = await fetch(RELEASES_ENDPOINT, {
-        headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'DeepSeek-Harness-Desktop' },
-      })
-      if (!response.ok) throw new Error(`GitHub Releases returned HTTP ${response.status}`)
-      const body: unknown = await response.json()
-      if (!Array.isArray(body)) throw new Error('GitHub Releases returned an invalid response')
-      return body as GitHubRelease[]
-    },
+    readonly fetchReleases: () => Promise<readonly GitHubRelease[]> = fetchGitHubReleases,
   ) {
     this.#status = { phase: 'idle', currentVersion }
   }

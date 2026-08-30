@@ -77,7 +77,7 @@ Electron 主进程不经过 shell，直接启动 `node apps/cli/lib/bin.js web -
 
 ## 打包版本的 Release 发现
 
-打包应用会在启动后和用户明确请求时检查 `https://github.com/flaqai/open-deepseek-harness-desktop` 的 Releases。稳定版忽略预发布；rc 或 beta 客户端跟随同名预发布通道，也接受更高稳定版。发现可用版本时，“设置”上方只显示这一项，同时继续在“通用设置”中显示版本状态；桌面宿主会隐藏其他插件提供的页脚快捷按钮。操作只会在系统浏览器打开经过校验的 GitHub Release 页面；应用不会下载、安装或替换安装程序。
+打包应用会在启动后和用户明确请求时检查 `https://github.com/flaqai/open-deepseek-harness-desktop` 的 Releases，并识别社区 `odsh-v*`、旧版 `dsh-v*` 和普通 `v*` 标签。稳定版会依据语义版本忽略预发布，即使 GitHub 元数据标记错误也不会接受；预发布客户端可以发现任意更高的预发布或稳定版本。Release 请求超过十五秒后会显示明确错误，不会让设置页一直停留在检查状态。发现可用版本时，“设置”上方只显示这一项，同时继续在“通用设置”中显示版本状态；桌面宿主会隐藏其他插件提供的页脚快捷按钮。支持的 macOS 和 Windows 安装版可以下载并校验所选安装程序，其他目标则会在系统浏览器中打开经过仓库校验的 Release 页面。
 
 ## 安全性
 
