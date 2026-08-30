@@ -12,9 +12,9 @@ Languages: [简体中文](README.md) · English · [日本語](README.ja.md) · 
 
 > [!IMPORTANT]
 >
-> **[v0.1.1-rc.2 is available now — download it and give it a try](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/dsh-v0.1.1-rc.2).** This release adds independent data environments, safe plugin restoration after import, much stronger plugin diagnostics, text-selection actions, and a more complete desktop host.
+> **[v0.1.2-alpha.1 is available now — download it and give it a try](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1).** It integrates DeepSeek Harness 0.1.2-alpha.1 and adds the Diagnostics Lab, live plugin discovery, stronger plugin isolation, and reorderable Settings navigation, alongside fixes for Windows PATH handling, the title bar, configuration-file opening, and packaged startup checks.
 >
-> We are aware of the upstream [DeepSeek Harness 0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) update and are reviewing its architectural changes while preparing a safe integration.
+> This is an Alpha pre-release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="Downloads"></a>
@@ -238,9 +238,9 @@ Switch between system, light, dark, and eight product themes; pair them with eig
   </tr>
 </table>
 
-### Tracking DeepSeek Harness 0.1.1-rc.2
+### Synchronized with DeepSeek Harness 0.1.2-alpha.1
 
-The current desktop baseline incorporates upstream `dsh-v0.1.1-rc.2`. It adds the unified image and DeepSeek Files pipeline, deterministic image admission, credential records and human-driven provider authorization, stable session projections, multiline questions, refined subagent navigation, and standalone pnpm support on Windows. The earlier file and session references, concurrent `web_search`, reasoning passback, persistent PowerShell PTY, dynamic client packages, build Profiles, and branding slots remain available. Electron always passes `--no-open` to `dsh web`, so launching the desktop app does not also open a system browser.
+The current desktop baseline incorporates upstream `dsh-v0.1.2-alpha.1`, including folded process details, adjustable conversation width and font size, exact token usage, turn navigation, authorized subagent model selection, third-party languages, the improved image pipeline, expanded ACP support, and more efficient page and conversation initialization. Existing file and Session references, concurrent `web_search`, reasoning passback, persistent PowerShell PTY, dynamic client packages, build Profiles, and branding slots remain available. Upstream also fixes Windows paths containing Chinese characters, persistent terminal output on macOS and Linux, lost Agent Preset directories, and idle WebSocket disconnects. Electron always passes `--no-open` to `dsh web`, so launching the desktop app does not also open a system browser.
 
 ### Diagnostics Lab
 
@@ -259,7 +259,7 @@ Quick, standard, and soak presets run 1, 3, or 10 rounds. The default target nev
 
 ## Installation
 
-Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) page. `v0.1.1-rc.2` provides the following artifacts:
+Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) page. [`v0.1.2-alpha.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1) provides the following artifacts:
 
 | Platform | Architecture | Release package | Status |
 | --- | --- | --- | --- |

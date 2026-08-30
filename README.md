@@ -12,9 +12,9 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.1-rc.2 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/dsh-v0.1.1-rc.2)。** 新版本带来了独立配置环境、导入插件恢复、超级强化的插件诊断、文本划选快捷操作，以及更完整的桌面宿主体验。
+> **[v0.1.2-alpha.1 已发布，欢迎下载体验](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1)。** 本版同步官方 DeepSeek Harness 0.1.2-alpha.1，并新增诊断演练中心、实时插件发现、插件隔离保护和可排序的设置导航，同时修复 Windows PATH、标题栏、配置文件打开及安装包启动检查等问题。
 >
-> 我们已关注到上游 [DeepSeek Harness 0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) 更新，正在评估其中的架构变化并筹备安全合并。
+> 这是 Alpha 预发布版本。升级前建议备份重要配置，并将遇到的问题连同日志或诊断报告反馈给我们。
 
 <p align="center">
   <a href="https://github.com/flaqai/open-deepseek-harness-desktop/releases"><img src="https://img.shields.io/github/downloads/flaqai/open-deepseek-harness-desktop/total.svg?style=flat" alt="下载量"></a>
@@ -223,11 +223,11 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
   </tr>
 </table>
 
-## 跟进 DeepSeek Harness 0.1.1-rc.2
+## 同步 DeepSeek Harness 0.1.2-alpha.1
 
-当前桌面基线已同步上游 `dsh-v0.1.1-rc.2`，包含统一图片与 DeepSeek Files 管线、确定性的图片准入、凭据记录与用户主导的提供商授权、稳定会话投影、多行问题、更清晰的子 Agent 导航，以及 Windows 独立 pnpm 支持。
+当前桌面基线已同步上游 `dsh-v0.1.2-alpha.1`，包含会话过程折叠、可调正文宽度与字号、精确 Token 用量、回合导航、子 Agent 模型授权、第三方语言扩展、改进的图片管线、ACP 能力补全，以及更高效的页面和会话初始化。
 
-此前的文件与 Session 引用、多查询并发 `web_search`、推理内容回传、持久 PowerShell PTY、动态客户端包、构建 Profile 与品牌插槽继续保留。Electron 始终为 `dsh web` 传入 `--no-open`，因此启动桌面应用不会额外打开系统浏览器。
+此前的文件与 Session 引用、多查询并发 `web_search`、推理内容回传、持久 PowerShell PTY、动态客户端包、构建 Profile 与品牌插槽继续保留。上游还修复了 Windows 中文目录选择、macOS/Linux 持久终端输出、Agent Preset 目录丢失和空闲 WebSocket 断连等问题。Electron 始终为 `dsh web` 传入 `--no-open`，因此启动桌面应用不会额外打开系统浏览器。
 
 ### 诊断演练中心
 
@@ -237,7 +237,7 @@ Codex 与 Claude Code 不再随安装包捆绑，以减小下载体积并避免�
 
 ## 下载安装
 
-请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) 页面下载安装包。`v0.1.1-rc.2` 已提供以下发行产物：
+请只从本项目的 [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) 页面下载安装包。[`v0.1.2-alpha.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1) 已提供以下发行产物：
 
 | 平台 | 架构 | 发行包 | 状态 |
 | --- | --- | --- | --- |

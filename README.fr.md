@@ -8,9 +8,9 @@ Langues : [简体中文](README.md) · [English](README.en.md) · [日本語](RE
 
 > [!IMPORTANT]
 >
-> **[v0.1.1-rc.2 est disponible — téléchargez-la et essayez-la](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/dsh-v0.1.1-rc.2).** Cette version apporte des environnements de données indépendants, la restauration sûre des plugins importés, des diagnostics renforcés, des actions sur le texte sélectionné et un hôte de bureau plus complet.
+> **[v0.1.2-alpha.1 est disponible — téléchargez-la et essayez-la](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1).** Cette version intègre DeepSeek Harness 0.1.2-alpha.1 et ajoute le centre d’exercices de diagnostic, la découverte de plugins en temps réel, une isolation renforcée et une navigation des réglages réorganisable.
 >
-> Nous avons pris connaissance de la mise à jour amont [DeepSeek Harness 0.1.2-alpha.1](https://github.com/deepseek-ai/deepseek-harness/releases/tag/dsh-v0.1.2-alpha.1) et examinons ses changements d’architecture afin de préparer une intégration sûre.
+> Il s’agit d’une préversion Alpha. Sauvegardez les configurations importantes avant la mise à niveau et joignez les journaux ou rapports de diagnostic utiles à vos signalements.
 
 Open DeepSeek Harness Desktop est une distribution indépendante et maintenue par la communauté de [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Les installateurs incluent Node.js, pnpm et le runtime Harness : configuration des modèles, sessions de code, traces d’exécution, plugins, Skills, outils de code externes et bots IM fonctionnent sans préparer un environnement de développement.
 
