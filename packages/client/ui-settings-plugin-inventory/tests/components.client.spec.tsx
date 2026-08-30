@@ -30,12 +30,19 @@ import type {
   DiagnosticLabRunSnapshot,
   DiagnosticLabScenario,
 } from '../src/client/bundled-install-bridge.ts'
+import {
+  buildPluginDiscoveryCatalog,
+  resetPluginDiscoveryMemoryCache,
+  writePluginDiscoveryCache,
+} from '../src/client/plugin-discovery-preview.ts'
 
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
+  localStorage.clear()
+  resetPluginDiscoveryMemoryCache()
 })
 
 type Snapshot = Awaited<ReturnType<PluginInventorySettingsTabInjected['list']>>
@@ -785,27 +792,128 @@ describe('PluginDiscovery', () => {
     phase: 'succeeded',
     exitCode: 0,
   }
-  const startInstall = vi.fn(async () => installed)
+  const startInstall = vi.fn(async (request: PluginInstallRequest) => ({
+    ...installed,
+    packageSpec: request.packageSpec,
+    command: `dsh plugin --profile web add ${request.packageSpec}`,
+  }))
   const getInstall = vi.fn(async () => installed)
   const list = vi.fn(async () => ({ entries: [{ moduleName: 'dshmarket' }], dependencyHealth: { lastRepair: null, quarantined: [] } } as never))
   const openSettings = vi.fn()
   const discoveryProps = { t, list, startInstall, getInstall, openSettings } as PluginDiscoveryProps
-  const preview = {
-    schema: 'dsh-market/preview/v1', updated: '2026-08-29',
-    items: [{ name: 'popular-plugin', owner: 'author', category: ['tools'], categoryLabels: { tools: { en: 'Tools' } },
-      description: { en: 'A live description' }, downloads: 1234, stars: 42, packageName: 'popular-plugin', state: 'uninstalled' }],
+  const registry = {
+    updated: '2026-08-29', categories: { tools: { en: 'Tools' }, ui: { en: 'UI' } },
+    plugins: [{ name: 'popular-plugin', owner: 'author', url: 'https://github.com/author/popular-plugin', npm: 'popular-plugin',
+      category: ['tools'], description: { en: 'A live description' }, downloads: 1234, stars: 42,
+      install: 'dsh plugin --profile web add popular-plugin' },
+    { name: 'ui-plugin', owner: 'designer', url: 'https://github.com/author/ui-plugin', npm: 'ui-plugin',
+      category: ['ui'], description: { en: 'A UI plugin' }, downloads: 900, stars: 30,
+      install: 'dsh plugin --profile web add ui-plugin' }],
   }
+  const requestUrl = (input: RequestInfo | URL): string => typeof input === 'string'
+    ? input
+    : input instanceof URL ? input.href : input.url
+  const previewFetch = vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(
+    requestUrl(input).endsWith('/dsh-market/registry') ? { registry } : { installed: {}, activation: {} },
+  ), { status: 200 }))
 
-  it('loads live market data and navigates installation to the full market', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(preview), { status: 200 })))
+  it('loads live market data, switches categories locally, and opens the plugin in Market', async () => {
+    vi.stubGlobal('fetch', previewFetch)
     render(<PluginDiscovery {...discoveryProps} />)
     const trigger = screen.getByRole('button', { name: en['discovery.trigger'] })
     expect(trigger.textContent).not.toContain('5')
     fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-busy')).toBe('true')
+    expect(screen.getByText(en['discovery.loadingShort'])).toBeTruthy()
     expect(await screen.findByText('popular-plugin')).toBeTruthy()
+    await waitFor(() => { expect(trigger.getAttribute('aria-busy')).toBe('false') })
+    expect(screen.queryByText(en['discovery.loadingShort'])).toBeNull()
     expect(screen.getByText('★ 42')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: en['discovery.goInstall'] }))
-    expect(openSettings).toHaveBeenCalledWith('market', 'discover:popular-plugin')
+    fireEvent.click(screen.getByRole('button', { name: 'UI' }))
+    expect(screen.getByText('ui-plugin')).toBeTruthy()
+    expect(previewFetch).toHaveBeenCalledTimes(2)
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.goView'] }))
+    expect(openSettings).toHaveBeenCalledWith('market', 'discover:ui-plugin')
+  })
+
+  it('expands the fixed category area and collapses it when results scroll upward', async () => {
+    vi.stubGlobal('fetch', previewFetch)
+    render(<PluginDiscovery {...discoveryProps} />)
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.trigger'] }))
+    expect(await screen.findByText('popular-plugin')).toBeTruthy()
+
+    const expand = screen.getByRole('button', { name: en['discovery.categories.expand'] })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(expand)
+    expect(screen.getByRole('button', { name: en['discovery.categories.collapse'] }).getAttribute('aria-expanded')).toBe('true')
+
+    const results = screen.getByLabelText(en['discovery.results'])
+    results.scrollTop = 120
+    fireEvent.scroll(results)
+    results.scrollTop = 60
+    fireEvent.scroll(results)
+    expect(screen.getByRole('button', { name: en['discovery.categories.expand'] }).getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('installs an npm-backed recommendation through the guarded installer after confirmation', async () => {
+    vi.stubGlobal('fetch', previewFetch)
+    render(<PluginDiscovery {...discoveryProps} />)
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.trigger'] }))
+    expect(await screen.findByText('popular-plugin')).toBeTruthy()
+
+    const installButton = screen.getAllByRole('button', { name: en['discovery.install.action'] }).at(0)
+    if (installButton === undefined) throw new Error('expected an install button')
+    fireEvent.click(installButton)
+    const confirm = screen.getByRole('button', { name: en['discovery.confirm.install'] })
+    expect(confirm.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('checkbox', { name: en['discovery.confirm.acknowledge'] }))
+    fireEvent.click(confirm)
+
+    await waitFor(() => {
+      expect(startInstall).toHaveBeenCalledWith({ profile: 'web', packageSpec: 'popular-plugin' })
+    })
+    expect(await screen.findByRole('button', { name: en['discovery.install.installed'] })).toBeTruthy()
+  })
+
+  it('reuses a fresh catalog for 24 hours while refreshing installed state on every open', async () => {
+    vi.stubGlobal('fetch', previewFetch)
+    render(<PluginDiscovery {...discoveryProps} />)
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.trigger'] }))
+    expect(await screen.findByText('popular-plugin')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.close'] }))
+    const cachedTrigger = screen.getByRole('button', { name: en['discovery.trigger'] })
+    fireEvent.click(cachedTrigger)
+    expect(cachedTrigger.getAttribute('aria-busy')).toBe('true')
+    expect(await screen.findByText('popular-plugin')).toBeTruthy()
+    await waitFor(() => { expect(cachedTrigger.getAttribute('aria-busy')).toBe('false') })
+
+    const paths = previewFetch.mock.calls.map(([input]) => requestUrl(input))
+    expect(paths.filter(path => path.endsWith('/dsh-market/registry'))).toHaveLength(1)
+    expect(paths.filter(path => path.endsWith('/dsh-market/installed'))).toHaveLength(2)
+  })
+
+  it('forces a catalog request when the user refreshes', async () => {
+    vi.stubGlobal('fetch', previewFetch)
+    render(<PluginDiscovery {...discoveryProps} />)
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.trigger'] }))
+    expect(await screen.findByText('popular-plugin')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.refresh'] }))
+    expect(screen.getByText(en['discovery.loadingShort'])).toBeTruthy()
+    await waitFor(() => {
+      expect(previewFetch.mock.calls.filter(([input]) => requestUrl(input).endsWith('/dsh-market/registry'))).toHaveLength(2)
+    })
+  })
+
+  it('keeps an expired ranking with a warning when refresh fails', async () => {
+    const old = buildPluginDiscoveryCatalog(registry, Date.now() - 25 * 60 * 60 * 1_000)
+    writePluginDiscoveryCache(old)
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => requestUrl(input).endsWith('/dsh-market/installed')
+      ? new Response(JSON.stringify({ installed: {}, activation: {} }), { status: 200 })
+      : new Response(JSON.stringify({ error: 'offline' }), { status: 502 })))
+    render(<PluginDiscovery {...discoveryProps} />)
+    fireEvent.click(screen.getByRole('button', { name: en['discovery.trigger'] }))
+    expect(await screen.findByText('popular-plugin')).toBeTruthy()
+    expect(await screen.findByText(en['discovery.cache.stale'])).toBeTruthy()
   })
 
   it('identifies an installed old market instead of calling it missing', async () => {
@@ -814,7 +922,7 @@ describe('PluginDiscovery', () => {
     fireEvent.click(screen.getByRole('button', { name: en['discovery.trigger'] }))
     expect(await screen.findByText(en['discovery.outdated.title'])).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en['discovery.updateMarket'] }))
-    await waitFor(() => { expect(startInstall).toHaveBeenCalledOnce() })
+    await waitFor(() => { expect(startInstall).toHaveBeenCalledWith({ profile: 'web', packageSpec: 'dshmarket' }) })
   })
 
   it('installs a missing market only after the user asks', async () => {
@@ -823,6 +931,6 @@ describe('PluginDiscovery', () => {
     render(<PluginDiscovery {...discoveryProps} />)
     fireEvent.click(screen.getByRole('button', { name: en['discovery.trigger'] }))
     fireEvent.click(await screen.findByRole('button', { name: en['discovery.installMarket'] }))
-    await waitFor(() => { expect(startInstall).toHaveBeenCalledOnce() })
+    await waitFor(() => { expect(startInstall).toHaveBeenCalledWith({ profile: 'web', packageSpec: 'dshmarket' }) })
   })
 })

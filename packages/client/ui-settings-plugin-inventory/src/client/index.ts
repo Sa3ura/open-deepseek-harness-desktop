@@ -157,7 +157,7 @@ export function apply(ctx: ClientContext): void {
   )
   const discoveryInjected = (): PluginDiscoveryInjected => ({
     list,
-    startInstall: () => startControlledInstall({ profile: 'web', packageSpec: 'dshmarket' }),
+    startInstall: startControlledInstall,
     getInstall,
     openSettings: (sectionId, subsectionId) => {
       ctx.settingsNavigation.open({ sectionId, ...(subsectionId === undefined ? {} : { subsectionId }) })

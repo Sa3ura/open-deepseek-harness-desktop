@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-29-market-owned-plugin-discovery.md
-2026-08-29-market-owned-plugin-discovery.md: c2e168e260c6e50fab90037a38a3ecfd39e42ce3
-2026-08-29-market-owned-plugin-discovery.zh.md: e423da9448d26d43a4b4e7be8a36fbf266961849
+2026-08-29-market-owned-plugin-discovery.md: 1c398214ac2fa2865e3ebc6d0cf9661efbdc9c9f
+2026-08-29-market-owned-plugin-discovery.zh.md: db225009cf2611b8acbcb6b333e180e65672abbd

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings-plugin-inventory` provides the client surfaces for plugin inventory, diagnostics, imported-plugin recovery, external tools, and Plugin Market discovery. Its new-session **Explore plugins** control requests four current popular entries from the installed market only when opened, shows market-owned popularity and Profile state, and navigates installation or management into the complete market. It keeps no duplicate plugin catalog or fallback statistics. The existing **Plugin list** tab lazily reads the Host inventory and renders searchable Loader state and configuration.
+`dsh-client-ui-settings-plugin-inventory` provides the client surfaces for plugin inventory, diagnostics, imported-plugin recovery, external tools, and Plugin Market discovery. Its new-session **Explore plugins** control composes four recommended or category-specific entries from the installed market, shows market-owned popularity and current Profile state, and offers both guarded direct installation and a deep link into the complete market. It keeps no duplicate full catalog or fallback statistics. The existing **Plugin list** tab lazily reads the Host inventory and renders searchable Loader state and configuration.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ Open the Plugins section in Settings and select the **Plugin list** tab to inspe
 
 ### Exploring market plugins
 
-Open **Explore plugins** on the new-session page to request the market's live preview. The four cards show category, author, description, 30-day downloads, stars, and installed, uninstalled, restart-required, or unavailable state. A card opens the matching market tab and package; the preview itself performs no third-party plugin mutation. If the market is absent or lacks the preview API, an explicit install or update uses the checked bundled market archive and reports that a quick restart is required. Network and catalog failures show their actual message and can be retried without stale fallback data.
+Open **Explore plugins** on the new-session page to browse the recommended ranking or any non-empty market category. The four cards show category, author, description, 30-day downloads, stars, and installed, uninstalled, restart-required, unavailable, or unknown state. **View in Market** opens the matching market entry. **Install now** is offered only for an npm-backed uninstalled item, requires an explicit third-party-code acknowledgement, and then uses the same guarded Host/Desktop installer, diagnostics, and polling flow as Settings. Market-only sources remain view-only. If the market is absent, an explicit install or update uses the checked bundled market archive and reports that a quick restart is required. Network and catalog failures show their actual message; expired cached rankings remain available behind a stale warning.
 
 ### Reading a card
 
@@ -47,7 +47,7 @@ A failed read renders a generic failure state inside the tab; retrying re-runs t
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The inventory tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection. Discovery is a separate lazy browser request to the market-owned `dsh-market/preview` endpoint. A settings-domain navigation request carries the target market tab and package without coupling this package to the settings shell or duplicating the market's installed-source matcher.
+The inventory tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection. Discovery lazily reads the Plugin Market's standard `dsh-market/registry` and `dsh-market/installed` resources, then ranks and composes four-card recommended and category views in this desktop-owned package. The compact ranking cache lasts 24 hours while installed state is refreshed on every open; manual refresh bypasses the catalog cache. A settings-domain navigation request carries the target market tab and package without coupling this package to the settings shell. Direct installation accepts only the market's explicit npm package identity and delegates the structured request to the existing guarded installer; it never executes the catalog's free-form command string.
 
 ### Registration
 
@@ -91,7 +91,8 @@ These limits define the freshness and reach of the inventory and discovery views
 
 - **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
 - **Read-only Loader view** — local search does not add provenance, current-browser activation diagnosis, grouping by source, or plugin mutation controls.
-- **Market-owned discovery availability** — the preview requires a current Plugin Market and its catalog connection; an older bundled market must be upgraded and the client restarted before preview data is available.
+- **Market data availability** — the preview requires an installed Plugin Market exposing its standard registry and installed-state resources, plus a working catalog connection; failures are shown honestly and can be retried.
+- **Bounded stale fallback** — when a 24-hour cache expires and catalog refresh fails, the old ranking remains visible only with an explicit stale warning; unknown installed state is never presented as uninstalled.
 
 <a id="dev-note"></a>
 ### Dev Note

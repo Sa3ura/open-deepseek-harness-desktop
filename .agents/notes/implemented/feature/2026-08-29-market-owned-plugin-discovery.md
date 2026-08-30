@@ -1,4 +1,4 @@
-# Agent Note: Market-owned plugin discovery
+# Agent Note: Desktop-owned plugin discovery preview
 
 Status: implemented
 
@@ -10,9 +10,9 @@ The new-session plugin discovery surface carried a second, fixed catalog with st
 
 ## Decision
 
-The Plugin Market owns discovery data and returns a versioned four-item preview built from its live catalog and existing installed-source matcher. The preview excludes the market itself, deprecated entries, and entries without an install source; it sorts by 30-day downloads, then stars, then name. The conversation surface requests this preview only when opened and delegates installation or management to a process-local settings navigation service that can select a section, tab, and package.
+The Plugin Market remains the source for its catalog and active Profile state through its existing registry and installed-state resources. The desktop conversation package owns the versioned four-item recommended and category compositions: it excludes the market itself, deprecated entries, and entries without an install source; it sorts once by 30-day downloads, then stars, then name, and fills each category during one pass. The compact catalog projection is cached for 24 hours, while installed state is read on every open and manual refresh always revalidates both resources. A card can deep-link to its complete market entry. An uninstalled npm-backed card can also submit its explicit package identity to the existing guarded installer after a third-party-code acknowledgement; catalog command strings and source-only entries are never executed directly.
 
-An absent market is installed only after explicit confirmation from the checked bundled archive. An installed market without the preview API is upgraded through the same controlled archive path and requires a restart. Network and catalog failures remain visible and never fall back to fixed statistics.
+An absent market is installed only after explicit confirmation from the checked bundled archive. Missing standard market resources are reported as an unavailable or outdated market. Network and catalog failures remain visible and never fall back to fixed statistics. No dedicated discovery route or preview UI is added to the Plugin Market source.
 
 The market compares ordinary npm installs with the registry and recognized GitHub installs with repository HEAD. A local `file:` or `link:` source remains non-updatable unless the package has an explicit trusted release channel; this exception lets the locally seeded market detect its own published upgrade without guessing update ownership for arbitrary local plugins.
 
@@ -26,4 +26,4 @@ The market compares ordinary npm installs with the registry and recognized GitHu
 
 ## Consequences
 
-Users see current popularity and Profile state in both Electron and web compositions, and every mutation remains in Plugin Market. Opening discovery now depends on the market preview endpoint and its network/catalog health; failures are honest and retryable. Older market installations need one controlled bundled upgrade and restart before live preview is available.
+Users see recommended or category-specific entries and current Profile state in both Electron and web compositions. They can inspect any entry in the full market or install an npm-backed recommendation without leaving the preview while retaining the standard installer diagnostics and progress lifecycle. A fresh cache avoids repeated catalog downloads; an expired cache survives a failed refresh only behind an explicit stale warning, and failed installed-state reads become unknown rather than uninstalled. Preview ranking, filtering, layout, caching, navigation, and the guarded install affordance evolve with the desktop client rather than requiring a market-source feature release.
