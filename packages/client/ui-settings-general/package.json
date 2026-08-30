@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-settings-general",
-  "description": "Settings ownerless-copy and product onboarding plugin: the General section, shell trigger/header chrome content, settings dictionaries, and the versioned welcome notice",
+  "description": "Settings shell plugin: General section, chrome copy, user-ordered navigation, and durable product onboarding settings",
   "version": "0.1.2-alpha.1",
   "publishConfig": {
     "access": "public"

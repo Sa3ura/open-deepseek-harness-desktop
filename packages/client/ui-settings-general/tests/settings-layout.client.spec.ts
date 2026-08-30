@@ -33,7 +33,7 @@ describe('SettingsRoot.module.css geometry', () => {
   it('gives contributed navigation its own non-collapsing scrollport', () => {
     const nav = declarations('.nav')
     const list = declarations('.navList')
-    const cell = declarations('.navCell')
+    const item = declarations('.navItem')
 
     expect(nav.get('min-height')).toBe('0')
     expect(nav.get('overflow')).toBe('hidden')
@@ -42,6 +42,19 @@ describe('SettingsRoot.module.css geometry', () => {
     expect(list.get('overflow-y')).toBe('auto')
     expect(list.get('overscroll-behavior')).toBe('contain')
     expect(list.get('scrollbar-gutter')).toBe('stable')
-    expect(cell.get('flex')).toBe('none')
+    expect(list.get('position')).toBe('relative')
+    expect(item.get('flex')).toBe('none')
+  })
+
+  it('uses an animated row gap, a theme-adaptive solid indicator, and a fixed pointer ghost', () => {
+    expect(declarations('.navItem').get('transition'))
+      .toBe('transform 180ms cubic-bezier(0.2, 0, 0, 1)')
+    expect(declarations('.dropIndicator').get('height')).toBe('2px')
+    expect(declarations('.dropIndicator').get('background')).toBe('var(--dsw-alias-label-primary)')
+    expect(declarations('.dragGhost').get('position')).toBe('fixed')
+    expect(declarations('.dragHandle').get('touch-action')).toBe('none')
+    expect(css).not.toContain('data-drop-before')
+    expect(css).not.toContain('data-drop-after')
+    expect(css).not.toContain('transform: rotate(90deg)')
   })
 })

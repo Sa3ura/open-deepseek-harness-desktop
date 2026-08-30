@@ -1,5 +1,5 @@
 ---
-description: "Settings shell, ownerless copy, and durable product-onboarding namespace for the dsh web client: the General section, trigger chrome, and onboarding ledger projection."
+description: "Settings shell, ownerless copy, durable user navigation order, and product-onboarding settings for the dsh web client."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings-general` is the settings shell of the dsh web client: the Settings panel opens from the sidebar's bottom control with the trigger chrome and modal shell, the navigation is built from the sections features contribute, and first-run users are walked through one onboarding step at a time. It also registers everything on the Settings pages that belongs to no single feature: the trigger/header/close chrome content, the local configuration-file action, the General section and its `settings.general.item` slot, and the `settings` dictionaries. Feature-owned rows (Permission, Language, Appearance), sections (Models), and conditional onboarding steps stay with their feature packages; the shell itself ships no onboarding copy of its own.
+`dsh-client-ui-settings-general` is the settings shell of the dsh web client: the Settings panel opens from the sidebar's bottom control with the trigger chrome and modal shell, the navigation is built from the sections features contribute and can be rearranged by the user, and first-run users are walked through one onboarding step at a time. It also registers everything on the Settings pages that belongs to no single feature: the trigger/header/close chrome content, the local configuration-file action, the General section and its `settings.general.item` slot, and the `settings` dictionaries. Feature-owned rows (Permission, Language, Appearance), sections (Models), and conditional onboarding steps stay with their feature packages; the shell itself ships no onboarding copy of its own.
 
 ## Table of Contents
 
@@ -26,6 +26,8 @@ English | [中文](README.zh.md)
 ## Use this package
 
 Users reach the shell through the sidebar's bottom Settings control; feature plugins contribute their pages and onboarding steps through the slot ledgers this shell projects. The shell renders the modal panel, the navigation built from `settings.section` entries, and exactly one mounted onboarding step at a time.
+
+Each navigation row has a three-line reorder handle. Moving that handle more than four pixels lifts the complete row under the pointer; crossed rows animate into the vacated full-height slot, and the order is persisted once after the row settles. Releasing outside the rail, pressing Escape, or receiving `pointercancel` restores the original order. The insertion line follows the current theme, edge proximity scrolls long rails, reduced-motion users skip the transitions, and focused handles retain equivalent Up/Down arrow controls. A loopback client persists stable section ids in `ui-settings-navigation`; a remote client follows the settings transport's existing process-local policy. Labels may change with language and plugin sections may appear or disappear without corrupting the preference. A newly registered section is appended in its canonical registration order; a temporarily absent id is retained for a later reinstall.
 
 A feature can also call `ctx.settingsNavigation.open({ sectionId, subsectionId })`. The shell opens the panel, selects the requested contributed section, and forwards the optional subsection identifier to that section; a later request has a higher revision and is handled even when it repeats the same destination.
 
@@ -63,7 +65,7 @@ The settings panel reserves the desktop title-bar inset before centering its fix
 
 ### Host half
 
-The Host half registers `ui-onboarding` in the user-settings seam. The welcome step contributed by ui-settings-models reads and writes its `welcomeNoticeVersion` through the existing public settings boundary; the shell itself remains policy-free.
+The Host half registers `ui-onboarding` and `ui-settings-navigation` in the user-settings seam. The welcome step contributed by ui-settings-models reads and writes its `welcomeNoticeVersion` through the existing public settings boundary. The shell writes only the ordered `settings.section` ids; it never rewrites a feature's canonical registration order.
 
 </details>
 

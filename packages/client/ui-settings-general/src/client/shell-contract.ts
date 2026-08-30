@@ -40,7 +40,11 @@ export type SettingsRootInjected = {
     onboardingSteps: HostObservable<readonly SettingsOnboardingStep[]>
     /** Programmatic requests from feature surfaces such as plugin discovery. */
     navigation: HostObservable<SettingsNavigationRequest | undefined>
+    /** Durable user-selected vertical order of settings section ids. */
+    sectionOrder: HostObservable<readonly string[]>
   }
+  /** Persist the complete visible order while retaining absent plugin ids. */
+  setSectionOrder: (ids: readonly string[]) => Promise<void>
 }
 
 /**

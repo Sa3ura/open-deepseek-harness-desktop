@@ -1,5 +1,5 @@
 ---
-description: "dsh Web 客户端的设置外壳、无特定功能归属文案与持久化产品引导命名空间：「通用」分区、触发控件界面框架与引导账本投影。"
+description: "dsh Web 客户端的设置外壳、无特定功能归属文案、持久化用户导航顺序与产品引导设置。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-settings-general` 是 dsh Web 客户端的设置外壳：Settings 面板从侧边栏底部的控件打开，带触发控件与模态外壳；导航由各功能贡献的分区构建；首次运行的用户一次只走一个引导步骤。它还注册设置页面上所有不属于单一功能的内容：触发器、标题栏与关闭控件界面框架、「本地配置文件」操作、「通用」分区及其 `settings.general.item` slot，以及 `settings` 字典。归具体功能所有的行（「权限」、「语言」、「外观」）、分区（「模型」）与条件式首次使用引导步骤仍由各自的功能包提供；外壳本身不自带任何引导文案。
+`dsh-client-ui-settings-general` 是 dsh Web 客户端的设置外壳：Settings 面板从侧边栏底部的控件打开，带触发控件与模态外壳；导航由各功能贡献的分区构建，并允许用户调整顺序；首次运行的用户一次只走一个引导步骤。它还注册设置页面上所有不属于单一功能的内容：触发器、标题栏与关闭控件界面框架、「本地配置文件」操作、「通用」分区及其 `settings.general.item` slot，以及 `settings` 字典。归具体功能所有的行（「权限」、「语言」、「外观」）、分区（「模型」）与条件式首次使用引导步骤仍由各自的功能包提供；外壳本身不自带任何引导文案。
 
 ## 目录
 
@@ -26,6 +26,8 @@ kind: "package-reference"
 ## 使用本包
 
 用户通过侧边栏底部的 Settings 控件进入外壳；功能插件通过本外壳所投影的 slot 账本贡献自己的页面与引导步骤。外壳渲染模态面板、由 `settings.section` 条目构建的导航，以及每次只挂载一个的引导步骤。
+
+每个导航项都带有三横线排序把手。把手移动超过 4px 后，完整选项行会锁定跟随鼠标；被跨越的项目以动画让出一整行空位，落位动画结束后才一次性保存顺序。释放到导航区外、按 Escape 或收到 `pointercancel` 都会恢复原顺序。插入线会随明暗主题显示，靠近长列表边缘时会自动滚动，减少动态效果模式会跳过过渡动画；聚焦把手后仍可用上、下方向键完成等价排序。回环客户端会把稳定的分区 ID 持久化在 `ui-settings-navigation` 中；远程客户端则遵循设置传输既有的进程内策略。因此切换语言、插件分区出现或消失都不会破坏排序。新注册的分区会按其规范注册顺序追加；暂时缺失的 ID 会保留，以便插件重新安装后恢复。
 
 功能也可以调用 `ctx.settingsNavigation.open({ sectionId, subsectionId })`。外壳会打开面板、选择请求的贡献分区，并把可选子分区标识传给该分区；后续请求拥有更高 revision，即使目标相同也会再次处理。
 
@@ -63,7 +65,7 @@ kind: "package-reference"
 
 ### 宿主端
 
-宿主端在用户设置 seam 中注册 `ui-onboarding`。`ui-settings-models` 提供的欢迎步骤通过既有公开 settings 边界读写其中的 `welcomeNoticeVersion`；外壳本身仍不持有产品策略。
+宿主端在用户设置 seam 中注册 `ui-onboarding` 与 `ui-settings-navigation`。`ui-settings-models` 提供的欢迎步骤通过既有公开 settings 边界读写其中的 `welcomeNoticeVersion`。外壳只写入有序的 `settings.section` ID，不会改写功能自身的规范注册顺序。
 
 </details>
 

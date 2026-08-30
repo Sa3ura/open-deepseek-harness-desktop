@@ -115,6 +115,15 @@ export const IconEllipsisOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** Three-line reorder handle. */
+export const IconReorderOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M3 4.25H13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    <path d="M3 8H13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    <path d="M3 11.75H13" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+  </svg>
+)
+
 /** ic_ds_plus_outline_16 */
 export const IconPlusOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

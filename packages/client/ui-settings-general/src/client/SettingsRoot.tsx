@@ -10,15 +10,21 @@
  * sessions-derived empty-Hero fact is active. Visible dialog chrome belongs
  * to the step, so a mounted-but-deciding step paints nothing here.
  */
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
   IconAgentPresetOutline16, IconCheckOutline16, IconCloseOutline16, IconDataOutline16,
+  IconReorderOutline16,
   IconLinkOutline16, IconPersonalizationOutline16, IconSettingsOutline16, IconWarningOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsOnboardingSectionRequest } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
+import {
+  moveSettingsSection, moveSettingsSectionToIndex, orderSettingsSections,
+  settingsSectionAutoScroll, settingsSectionRowShift, settingsSectionTargetIndex,
+  type SettingsSectionBox,
+} from './section-order.ts'
 import css from './SettingsRoot.module.css'
 
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
@@ -34,11 +40,48 @@ function navIcon(id: string) {
 
 type PanelProps = {
   rows: readonly SettingsSectionRow[]
+  storedOrder: readonly string[]
   renderSlot: SettingsRootComponentProps['renderSlot']
+  t: SettingsRootComponentProps['t']
   activeId: string | undefined
   onSelect: (id: string) => void
+  onReorder: (ids: readonly string[]) => void
   onClose: () => void
   preferredSubsectionId?: string
+}
+
+const POINTER_DRAG_THRESHOLD = 4
+const SECTION_SORT_ANIMATION_MS = 180
+
+/** Query motion preference while tolerating DOM test hosts without matchMedia. */
+function prefersReducedMotion(): boolean {
+  const matchMedia = Reflect.get(window, 'matchMedia') as unknown
+  return typeof matchMedia === 'function'
+    && (matchMedia.call(window, '(prefers-reduced-motion: reduce)') as MediaQueryList).matches
+}
+
+type SectionDragState = {
+  id: string
+  phase: 'dragging' | 'settling' | 'cancelling'
+  sourceIndex: number
+  targetIndex: number
+  startPointerY: number
+  pointerY: number
+  originTop: number
+  originLeft: number
+  width: number
+  height: number
+  listTop: number
+  listScrollTop: number
+  boxes: readonly SettingsSectionBox[]
+}
+
+type ArmedSectionDrag = {
+  id: string
+  pointerId: number
+  startX: number
+  startY: number
+  handle: HTMLButtonElement
 }
 
 type OnboardingPanelProps = {
@@ -111,23 +154,236 @@ function OnboardingSectionPanel({ request, renderSlot, t, onBack, onComplete }: 
  * header button, a mask click, and document-level Escape (mounted only while
  * open, so the listener lifetime is the panel's).
  */
-function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose, preferredSubsectionId }: PanelProps) {
+function SettingsPanel({
+  rows, storedOrder, renderSlot, t, activeId, onSelect, onReorder, onClose, preferredSubsectionId,
+}: PanelProps) {
   // Entries can unmount underneath the requested id, so the render-time
   // projection falls back to the first row when the id is gone.
   const active = rows.find(r => r.id === activeId)?.id ?? rows[0]?.id
   const titleId = useId()
+  const navList = useRef<HTMLDivElement | null>(null)
+  const rowElements = useRef(new Map<string, HTMLDivElement>())
+  const armedDrag = useRef<ArmedSectionDrag>()
+  const dragFrame = useRef<number | null>(null)
+  const settleTimer = useRef<number | null>(null)
+  const latestPointer = useRef({ x: 0, y: 0 })
+  const dragState = useRef<SectionDragState>()
+  const [drag, setDrag] = useState<SectionDragState>()
+
+  const publishDrag = useCallback((next: SectionDragState | undefined) => {
+    dragState.current = next
+    setDrag(next)
+  }, [])
+
+  const clearScheduledDragWork = useCallback(() => {
+    if (dragFrame.current !== null) cancelAnimationFrame(dragFrame.current)
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current)
+    dragFrame.current = null
+    settleTimer.current = null
+  }, [])
+
+  const releasePointer = useCallback(() => {
+    const armed = armedDrag.current
+    armedDrag.current = undefined
+    if (armed === undefined || typeof armed.handle.releasePointerCapture !== 'function') return
+    if (typeof armed.handle.hasPointerCapture === 'function'
+      && !armed.handle.hasPointerCapture(armed.pointerId)) return
+    armed.handle.releasePointerCapture(armed.pointerId)
+  }, [])
+
+  const measureRows = useCallback(() => {
+    const list = navList.current
+    if (list === null) return undefined
+    const listBox = list.getBoundingClientRect()
+    const boxes: SettingsSectionBox[] = []
+    for (const row of rows) {
+      const element = rowElements.current.get(row.id)
+      if (element === undefined) return undefined
+      const box = element.getBoundingClientRect()
+      const top = box.top - listBox.top + list.scrollTop
+      boxes.push({ id: row.id, top, bottom: top + box.height, height: box.height })
+    }
+    return { list, listBox, boxes }
+  }, [rows])
+
+  const reorderRelativeTo = useCallback((
+    dragged: string,
+    target: string,
+    position: 'before' | 'after',
+  ) => {
+    const ids = rows.map(row => row.id)
+    const next = moveSettingsSection(ids, storedOrder, dragged, target, position)
+    if (next.join('\u0000') !== storedOrder.join('\u0000')) onReorder(next)
+  }, [onReorder, rows, storedOrder])
+
+  const updateDragFrame = useRef<() => void>(() => {})
+  const scheduleDragFrame = useCallback(() => {
+    dragFrame.current ??= requestAnimationFrame(() => {
+      dragFrame.current = null
+      updateDragFrame.current()
+    })
+  }, [])
+
+  updateDragFrame.current = () => {
+    const current = dragState.current
+    const list = navList.current
+    if (current === undefined || current.phase !== 'dragging' || list === null) return
+    const listBox = list.getBoundingClientRect()
+    const point = latestPointer.current
+    const scrollVelocity = settingsSectionAutoScroll(point.y, listBox.top, listBox.bottom)
+    const previousScrollTop = list.scrollTop
+    if (scrollVelocity !== 0) list.scrollTop += scrollVelocity
+    const draggedCenterInList = current.originTop
+      + (point.y - current.startPointerY)
+      + current.height / 2
+      - listBox.top
+      + list.scrollTop
+    const targetIndex = settingsSectionTargetIndex(
+      current.boxes,
+      current.sourceIndex,
+      draggedCenterInList,
+    )
+    publishDrag({
+      ...current,
+      pointerY: point.y,
+      targetIndex,
+      listTop: listBox.top,
+      listScrollTop: list.scrollTop,
+    })
+    if (list.scrollTop !== previousScrollTop) scheduleDragFrame()
+  }
+
+  const finishVisualDrag = useCallback((commit: boolean) => {
+    const current = dragState.current
+    if (current === undefined) return
+    clearScheduledDragWork()
+    publishDrag({
+      ...current,
+      phase: commit ? 'settling' : 'cancelling',
+      targetIndex: commit ? current.targetIndex : current.sourceIndex,
+    })
+    const reduced = prefersReducedMotion()
+    settleTimer.current = window.setTimeout(() => {
+      const settled = dragState.current
+      if (commit && settled !== undefined) {
+        const next = moveSettingsSectionToIndex(
+          rows.map(row => row.id),
+          storedOrder,
+          settled.id,
+          settled.targetIndex,
+        )
+        if (next.join('\u0000') !== storedOrder.join('\u0000')) onReorder(next)
+      }
+      publishDrag(undefined)
+      settleTimer.current = null
+    }, reduced ? 0 : SECTION_SORT_ANIMATION_MS)
+  }, [clearScheduledDragWork, onReorder, publishDrag, rows, storedOrder])
+
+  const cancelPointerDrag = useCallback(() => {
+    releasePointer()
+    if (dragState.current === undefined) {
+      clearScheduledDragWork()
+      return
+    }
+    finishVisualDrag(false)
+  }, [clearScheduledDragWork, finishVisualDrag, releasePointer])
+
+  const beginPointerDrag = useCallback((event: PointerEvent<HTMLButtonElement>, id: string) => {
+    if (event.button !== 0 || !event.isPrimary || dragState.current !== undefined) return
+    event.preventDefault()
+    if (typeof event.currentTarget.setPointerCapture === 'function') {
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
+    latestPointer.current = { x: event.clientX, y: event.clientY }
+    armedDrag.current = {
+      id,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      handle: event.currentTarget,
+    }
+  }, [])
+
+  const movePointerDrag = useCallback((event: PointerEvent<HTMLButtonElement>) => {
+    const armed = armedDrag.current
+    if (armed === undefined || armed.pointerId !== event.pointerId) return
+    event.preventDefault()
+    latestPointer.current = { x: event.clientX, y: event.clientY }
+    if (dragState.current === undefined) {
+      const distance = Math.hypot(event.clientX - armed.startX, event.clientY - armed.startY)
+      if (distance < POINTER_DRAG_THRESHOLD) return
+      const measured = measureRows()
+      const sourceIndex = rows.findIndex(row => row.id === armed.id)
+      const sourceElement = rowElements.current.get(armed.id)
+      if (measured === undefined || sourceIndex === -1 || sourceElement === undefined) return
+      const sourceBox = sourceElement.getBoundingClientRect()
+      publishDrag({
+        id: armed.id,
+        phase: 'dragging',
+        sourceIndex,
+        targetIndex: sourceIndex,
+        startPointerY: armed.startY,
+        pointerY: event.clientY,
+        originTop: sourceBox.top,
+        originLeft: sourceBox.left,
+        width: sourceBox.width,
+        height: sourceBox.height,
+        listTop: measured.listBox.top,
+        listScrollTop: measured.list.scrollTop,
+        boxes: measured.boxes,
+      })
+    }
+    scheduleDragFrame()
+  }, [measureRows, publishDrag, rows, scheduleDragFrame])
+
+  const endPointerDrag = useCallback((event: PointerEvent<HTMLButtonElement>) => {
+    const armed = armedDrag.current
+    if (armed === undefined || armed.pointerId !== event.pointerId) return
+    latestPointer.current = { x: event.clientX, y: event.clientY }
+    updateDragFrame.current()
+    const current = dragState.current
+    const listBox = navList.current?.getBoundingClientRect()
+    releasePointer()
+    if (current === undefined) return
+    const inside = listBox !== undefined
+      && event.clientX >= listBox.left && event.clientX <= listBox.right
+      && event.clientY >= listBox.top && event.clientY <= listBox.bottom
+    finishVisualDrag(inside)
+  }, [finishVisualDrag, releasePointer])
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key !== 'Escape') return
+      if (armedDrag.current !== undefined || dragState.current !== undefined) {
+        e.preventDefault()
+        cancelPointerDrag()
+        return
+      }
+      onClose()
     }
     document.addEventListener('keydown', onKeyDown)
     return () => { document.removeEventListener('keydown', onKeyDown) }
-  }, [onClose])
+  }, [cancelPointerDrag, onClose])
+
+  useEffect(() => () => {
+    clearScheduledDragWork()
+    armedDrag.current = undefined
+    dragState.current = undefined
+  }, [clearScheduledDragWork])
 
   // Baseline focus management: entering the dialog lands on the close button.
   const closeButton = useRef<HTMLButtonElement | null>(null)
   useEffect(() => { closeButton.current?.focus() }, [])
+
+  const draggedRow = drag === undefined ? undefined : rows.find(row => row.id === drag.id)
+  const targetBox = drag === undefined ? undefined : drag.boxes[drag.targetIndex]
+  const ghostOffset = drag === undefined
+    ? 0
+    : drag.phase === 'dragging'
+      ? drag.pointerY - drag.startPointerY
+      : drag.phase === 'settling' && targetBox !== undefined
+        ? drag.listTop - drag.listScrollTop + targetBox.top - drag.originTop
+        : 0
 
   return (
     <div className={css.overlay} role="presentation">
@@ -135,20 +391,91 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose, preferre
       <div className={css.panel} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <nav className={css.nav}>
           <div className={css.navTitle} id={titleId}>{renderSlot('settings.header', {})}</div>
-          <div className={css.navList}>
-            {rows.map(row => (
-              <button
-                key={row.id}
-                type="button"
-                className={clsx(css.navCell, row.id === active && css.active)}
-                aria-current={row.id === active ? 'true' : undefined}
-                onClick={() => { onSelect(row.id) }}
-              >
-                {navIcon(row.id)}
-                <span className={css.navLabel}>{row.label}</span>
-              </button>
-            ))}
+          <div
+            ref={navList}
+            className={css.navList}
+            role="list"
+            data-sorting={drag === undefined ? undefined : 'true'}
+          >
+            {rows.map((row, index) => {
+              const rowShift = drag === undefined || drag.phase === 'cancelling'
+                ? 0
+                : settingsSectionRowShift(drag.boxes, drag.sourceIndex, drag.targetIndex, index)
+              return (
+                <div
+                  key={row.id}
+                  ref={(element) => {
+                    if (element === null) rowElements.current.delete(row.id)
+                    else rowElements.current.set(row.id, element)
+                  }}
+                  className={css.navItem}
+                  role="listitem"
+                  style={{ transform: `translateY(${rowShift}px)` }}
+                  data-active={row.id === active ? 'true' : undefined}
+                  data-placeholder={drag?.id === row.id ? 'true' : undefined}
+                >
+                  <button
+                    type="button"
+                    className={clsx(css.navCell, row.id === active && css.active)}
+                    aria-current={row.id === active ? 'true' : undefined}
+                    onClick={() => { onSelect(row.id) }}
+                  >
+                    {navIcon(row.id)}
+                    <span className={css.navLabel}>{row.label}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={css.dragHandle}
+                    aria-label={`${t('nav.reorder')}: ${row.label}`}
+                    onPointerDown={(event) => { beginPointerDrag(event, row.id) }}
+                    onPointerMove={movePointerDrag}
+                    onPointerUp={endPointerDrag}
+                    onPointerCancel={() => { cancelPointerDrag() }}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+                      const index = rows.findIndex(candidate => candidate.id === row.id)
+                      const target = rows[index + (event.key === 'ArrowUp' ? -1 : 1)]
+                      if (target === undefined) return
+                      event.preventDefault()
+                      reorderRelativeTo(row.id, target.id, event.key === 'ArrowUp' ? 'before' : 'after')
+                    }}
+                  >
+                    <IconReorderOutline16 size={16} />
+                  </button>
+                </div>
+              )
+            })}
+            {drag !== undefined && drag.phase !== 'cancelling' && targetBox !== undefined && (
+              <span
+                className={css.dropIndicator}
+                style={{ top: targetBox.top }}
+                aria-hidden="true"
+              />
+            )}
           </div>
+          {drag !== undefined && draggedRow !== undefined && (
+            <div
+              className={clsx(css.navItem, css.dragGhost)}
+              data-active={draggedRow.id === active ? 'true' : undefined}
+              data-phase={drag.phase}
+              style={{
+                top: drag.originTop,
+                left: drag.originLeft,
+                width: drag.width,
+                height: drag.height,
+                transform: `translateY(${ghostOffset}px)`,
+              }}
+              aria-hidden="true"
+            >
+              <div className={css.navCell}>
+                {navIcon(draggedRow.id)}
+                <span className={css.navLabel}>{draggedRow.label}</span>
+              </div>
+              <div className={css.dragHandle}>
+                <IconReorderOutline16 size={16} />
+              </div>
+            </div>
+          )}
         </nav>
         <div className={css.content}>
           <div className={css.header}>
@@ -176,7 +503,10 @@ function SettingsPanel({ rows, renderSlot, activeId, onSelect, onClose, preferre
  * @returns the settings shell element tree.
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
-  const { wide, useSections, useOnboardingSteps, useNavigation, useSessions, renderSlot, t } = props
+  const {
+    wide, useSections, useOnboardingSteps, useNavigation, useSectionOrder, useSessions,
+    setSectionOrder, renderSlot, t,
+  } = props
   const [open, setOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [preferredSubsectionId, setPreferredSubsectionId] = useState<string | undefined>()
@@ -193,6 +523,21 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
   const rows = useSections(s => s)
   const onboardingSteps = useOnboardingSteps(s => s)
   const navigation = useNavigation(s => s)
+  const storedSectionOrder = useSectionOrder(s => s)
+  const [optimisticSectionOrder, setOptimisticSectionOrder] = useState<readonly string[]>()
+  const persistGeneration = useRef(0)
+  const effectiveSectionOrder = optimisticSectionOrder ?? storedSectionOrder
+  const orderedRows = useMemo(
+    () => orderSettingsSections(rows, effectiveSectionOrder),
+    [effectiveSectionOrder, rows],
+  )
+  const reorderSections = useCallback((ids: readonly string[]) => {
+    const generation = ++persistGeneration.current
+    setOptimisticSectionOrder(ids)
+    void setSectionOrder(ids).finally(() => {
+      if (persistGeneration.current === generation) setOptimisticSectionOrder(undefined)
+    })
+  }, [setSectionOrder])
 
   useEffect(() => {
     if (navigation === undefined) return
@@ -233,10 +578,13 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
       </button>
       {open && (
         <SettingsPanel
-          rows={rows}
+          rows={orderedRows}
+          storedOrder={effectiveSectionOrder}
           renderSlot={renderSlot}
+          t={t}
           activeId={activeId}
           onSelect={(id) => { setActiveId(id); setPreferredSubsectionId(undefined) }}
+          onReorder={reorderSections}
           onClose={close}
           {...preferredSubsectionId === undefined ? {} : { preferredSubsectionId }}
         />

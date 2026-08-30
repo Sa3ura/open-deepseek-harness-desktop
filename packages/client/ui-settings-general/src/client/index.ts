@@ -21,6 +21,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {
   SettingsOnboardingStep, SettingsRootInjected, SettingsSectionRow,
 } from './shell-contract.ts'
+import type { SettingsNavigationSettings } from '../settings-navigation-order.ts'
+import { SETTINGS_NAVIGATION_NAMESPACE } from '../settings-navigation-order.ts'
 import { SettingsRoot } from './SettingsRoot.tsx'
 import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
@@ -81,6 +83,28 @@ export function apply(ctx: ClientContext): void {
       hooks: { snapshot: documentController.store },
     })
   ctx.effect(() => () => { documentController?.dispose() }, 'ui-settings-general: document action directory')
+  const navigationOrder = ctx.settingsScope.bind<SettingsNavigationSettings>({
+    namespace: SETTINGS_NAVIGATION_NAMESPACE,
+  })
+  const emptySectionOrder: readonly string[] = []
+  let memorySectionOrder: readonly string[] = emptySectionOrder
+  const memorySectionOrderListeners = new Set<() => void>()
+  const sectionOrderSource = {
+    getSnapshot: (): readonly string[] => {
+      const snapshot = navigationOrder.getSnapshot()
+      return snapshot.mode === 'memory'
+        ? memorySectionOrder
+        : snapshot.value?.sectionOrder ?? emptySectionOrder
+    },
+    subscribe: (listener: () => void) => {
+      memorySectionOrderListeners.add(listener)
+      const offHost = navigationOrder.subscribe(listener)
+      return () => {
+        memorySectionOrderListeners.delete(listener)
+        offHost()
+      }
+    },
+  }
   // The settings shell: this package occupies the sidebar-owned hole and
   // declares the settings slots. Ledger → nav-row projection as an observable
   // source (uSES contract: getSnapshot returns the cached rows until the
@@ -141,6 +165,15 @@ export function apply(ctx: ClientContext): void {
         getSnapshot: ctx.settingsNavigation.getSnapshot,
         subscribe: ctx.settingsNavigation.subscribe,
       },
+      sectionOrder: sectionOrderSource,
+    },
+    setSectionOrder: async (ids) => {
+      if (navigationOrder.getSnapshot().mode === 'memory') {
+        memorySectionOrder = [...ids]
+        for (const listener of memorySectionOrderListeners) listener()
+        return
+      }
+      await navigationOrder.set('sectionOrder', [...ids])
     },
   })
   ctx.slots.inject('sidebar.settings', () => ctx.slots.register({

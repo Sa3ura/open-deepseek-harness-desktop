@@ -108,6 +108,7 @@
 
 /* Cell stack (figma 501:29961): gap 4. */
 .navList {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -118,15 +119,43 @@
   scrollbar-gutter: stable;
 }
 
-/* Nav cell (figma .Setting-nav-cell 501:29962): 164x40, r12, pad
-   (12,9,16,9), gap 8; label 14/400 lh22; selected fill #EBEEF2. */
-.navCell {
+.navList[data-sorting='true'] {
+  user-select: none;
+}
+
+/* One row keeps selection and reordering as separate controls: clicking the
+   page remains ordinary navigation, while the narrow handle owns drag. */
+.navItem {
+  position: relative;
   flex: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: center;
+  min-width: 0;
+  height: 40px;
+  border-radius: 12px;
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+  will-change: transform;
+}
+
+.navItem[data-active='true'] {
+  background: var(--dsw-specific-sidebar-nav-item-active);
+}
+
+.navItem[data-placeholder='true'] {
+  opacity: 0;
+}
+
+/* Nav cell (figma .Setting-nav-cell 501:29962): r12, pad (12,9,4,9),
+   gap 8; label 14/400 lh22; selected fill #EBEEF2. */
+.navCell {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  width: 100%;
   height: 40px;
-  padding: 9px 16px 9px 12px;
+  padding: 9px 4px 9px 12px;
   box-sizing: border-box;
   border: none;
   border-radius: 12px;
@@ -145,7 +174,76 @@
 }
 
 .navCell.active {
-  background: var(--dsw-specific-sidebar-nav-item-active);
+  background: transparent;
+}
+
+.dragHandle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: grab;
+  opacity: 0.42;
+  touch-action: none;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.dragHandle:hover,
+.dragHandle:focus-visible {
+  background: var(--dsw-alias-interactive-bg-hover);
+  opacity: 1;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+.dropIndicator {
+  position: absolute;
+  z-index: 3;
+  right: 4px;
+  left: 4px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--dsw-alias-label-primary);
+  pointer-events: none;
+  transform: translateY(-1px);
+  transition: top 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.dragGhost {
+  position: fixed;
+  z-index: 1100;
+  margin: 0;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: var(--dsw-shadow-lv2);
+  pointer-events: none;
+  transition: none;
+  will-change: transform;
+}
+
+.dragGhost[data-phase='settling'],
+.dragGhost[data-phase='cancelling'] {
+  transition: transform 180ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.dragGhost .dragHandle {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navItem,
+  .dropIndicator,
+  .dragGhost,
+  .dragHandle {
+    transition: none;
+  }
 }
 
 .navIcon {
