@@ -301,7 +301,7 @@ async function smokeHarness() {
   const smokeHome = join(outputRoot, 'smoke-home')
   try {
     await new Promise((resolvePromise, reject) => {
-      const child = spawn(nodeExecutable, [entry, 'web', '--host', '127.0.0.1', '--port', '0'], {
+      const child = spawn(nodeExecutable, [entry, 'web', '--host', '127.0.0.1', '--port', '0', '--no-open'], {
         cwd: harnessRoot,
         env: {
           ...process.env,
@@ -317,7 +317,7 @@ async function smokeHarness() {
       let failure
       const accept = (chunk) => {
         output += chunk.toString('utf8')
-        if (!ready && /^dsh web: http:\/\/127\.0\.0\.1:\d+$/mu.test(output)) {
+        if (!ready && /^dsh web: http:\/\/127\.0\.0\.1:\d+(?:\/[^\r\n]*)?\r?$/mu.test(output)) {
           ready = true
           child.kill()
         }
