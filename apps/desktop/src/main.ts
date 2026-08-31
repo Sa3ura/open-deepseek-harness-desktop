@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, session, shell, Tray,
-  type MenuItemConstructorOptions, type MessageBoxOptions,
+  type MenuItemConstructorOptions, type MessageBoxOptions, type WebContents, type WebPreferences,
 } from 'electron'
 import { appendBundledPluginFailure, verifyBundledPluginArchive } from './bundled-plugin-seed.ts'
 import {
@@ -41,7 +41,11 @@ import { DesktopReleaseChecker, isAllowedReleaseUrl, type DesktopReleaseStatus }
 import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import { SourceUpdater } from './source-updater.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
-import { usesCustomWindowFrame, withCustomWindowFrameInset } from './window-frame.ts'
+import { isDesktopRenderer, withDesktopWindowMetadata } from './window-frame.ts'
+import {
+  createDesktopWindowSurface,
+  type DesktopWindowSurface,
+} from './desktop-window-surface.ts'
 import {
   DiagnosticLabManager,
   type DiagnosticLabDoctorResult,
@@ -98,6 +102,8 @@ const WINDOW_ICON = fileURLToPath(new URL('./icon.png', import.meta.url))
 const DEVELOPMENT_DOCK_ICON = fileURLToPath(new URL('./dev-dock-icon.png', import.meta.url))
 const MACOS_TRAY_ICON = fileURLToPath(new URL('./tray-iconTemplate.png', import.meta.url))
 const PRELOAD = fileURLToPath(new URL('./preload.cjs', import.meta.url))
+const TITLEBAR_PAGE = fileURLToPath(new URL('./titlebar.html', import.meta.url))
+const TITLEBAR_PRELOAD = fileURLToPath(new URL('./titlebar-preload.cjs', import.meta.url))
 const DATA_HOME_PAGE = fileURLToPath(new URL('./data-home.html', import.meta.url))
 const DATA_HOME_PRELOAD = fileURLToPath(new URL('./data-home-preload.cjs', import.meta.url))
 const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
@@ -114,6 +120,7 @@ app.setPath('sessionData', DESKTOP_DATA_HOME.sessionData)
 app.setAppLogsPath(DESKTOP_DATA_HOME.logs)
 
 let mainWindow: BrowserWindow | undefined
+let mainSurface: DesktopWindowSurface | undefined
 let supervisor: HarnessSupervisor | undefined
 let harnessOrigin: string | undefined
 let lifecycle: DesktopLifecycle | undefined
@@ -171,7 +178,10 @@ function applyDesktopThemeSource(source: DesktopThemeSource): void {
   nativeTheme.themeSource = source
   const window = mainWindow
   if (window !== undefined && !window.isDestroyed()) {
-    window.setBackgroundColor(desktopThemeBackground(source, nativeTheme.shouldUseDarkColors))
+    const background = desktopThemeBackground(source, nativeTheme.shouldUseDarkColors)
+    mainSurface?.setBackgroundColor(background)
+    mainSurface?.sendTitlebar('dsh:window:theme', nativeTheme.shouldUseDarkColors)
+    if (mainSurface === undefined) window.setBackgroundColor(background)
   }
 }
 
@@ -419,10 +429,7 @@ function applyLaunchAtLogin(enabled: boolean): void {
 }
 
 function publishPreferences(): void {
-  const window = mainWindow
-  if (window !== undefined && !window.isDestroyed()) {
-    window.webContents.send('dsh:desktop:preferences', preferences)
-  }
+  mainSurface?.send('dsh:desktop:preferences', preferences)
   refreshTrayMenu()
 }
 
@@ -701,22 +708,20 @@ async function resolveStartupBuildApproval(
 }
 
 function assertMainRenderer(sender: Electron.WebContents): void {
-  if (mainWindow === undefined || mainWindow.isDestroyed() || sender !== mainWindow.webContents) {
-    throw new Error('desktop: bundled plugin request came from an untrusted renderer')
+  if (mainSurface === undefined || mainSurface.window.isDestroyed()
+    || !isDesktopRenderer(sender, mainSurface.renderer)) {
+    throw new Error('desktop: request came from an untrusted renderer')
   }
 }
 
 function publishStartupProgress(next: DesktopStartupProgress): void {
   startupProgress = next
-  const window = mainWindow
-  if (window !== undefined && !window.isDestroyed()) {
-    window.webContents.send('dsh:startup-progress', startupProgress)
-  }
+  mainSurface?.send('dsh:startup-progress', startupProgress)
 }
 
 function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: string }): void {
-  if (mainWindow === undefined || mainWindow.isDestroyed() || state === 'ready' || state === 'stopped') return
-  void mainWindow.loadFile(LOADING_PAGE, {
+  if (mainSurface === undefined || mainSurface.window.isDestroyed() || state === 'ready' || state === 'stopped') return
+  void mainSurface.loadFile(LOADING_PAGE, {
     query: {
       state,
       stage: startupProgress.stage,
@@ -727,12 +732,12 @@ function showLoading(state: HarnessState, failure?: HarnessFailure & { logPath: 
   })
 }
 
-function configureNavigation(window: BrowserWindow): void {
-  window.webContents.on('will-navigate', (event, target) => {
+function configureNavigation(renderer: WebContents): void {
+  renderer.on('will-navigate', (event, target) => {
     if (harnessOrigin !== undefined && new URL(target).origin === harnessOrigin) return
     event.preventDefault()
   })
-  window.webContents.setWindowOpenHandler(({ url }) => {
+  renderer.setWindowOpenHandler(({ url }) => {
     let parsed: URL
     try {
       parsed = new URL(url)
@@ -742,18 +747,18 @@ function configureNavigation(window: BrowserWindow): void {
     if (parsed.protocol === 'https:') void shell.openExternal(parsed.href)
     return { action: 'deny' }
   })
-  window.webContents.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
-    return contents === window.webContents && allowsHarnessPermission(
+  renderer.session.setPermissionCheckHandler((contents, permission, requestingOrigin, details) => {
+    return contents === renderer && allowsHarnessPermission(
       permission,
       details.requestingUrl ?? requestingOrigin,
       harnessOrigin,
       details.isMainFrame,
     )
   })
-  window.webContents.session.setPermissionRequestHandler((contents, permission, callback, details) => {
+  renderer.session.setPermissionRequestHandler((contents, permission, callback, details) => {
     const requestingUrl = 'requestingUrl' in details ? details.requestingUrl : undefined
     const isMainFrame = 'isMainFrame' in details && details.isMainFrame
-    callback(contents === window.webContents && allowsHarnessPermission(
+    callback(contents === renderer && allowsHarnessPermission(
       permission,
       requestingUrl,
       harnessOrigin,
@@ -763,43 +768,72 @@ function configureNavigation(window: BrowserWindow): void {
 }
 
 function createWindow(): BrowserWindow {
-  const customWindowFrame = usesCustomWindowFrame(process.platform)
-  const window = new BrowserWindow({
-    title: APP_NAME,
-    width: 1440,
-    height: 920,
-    minWidth: 960,
-    minHeight: 640,
-    backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
-    icon: WINDOW_ICON,
-    frame: !customWindowFrame,
-    show: false,
-    webPreferences: {
+  const rendererPreferences: WebPreferences = {
+    contextIsolation: true,
+    nodeIntegration: false,
+    sandbox: true,
+    preload: PRELOAD,
+    additionalArguments: [app.isPackaged ? '--dsh-packaged' : '--dsh-source'],
+  }
+  const surface = createDesktopWindowSurface({
+    platform: process.platform,
+    window: {
+      title: APP_NAME,
+      width: 1440,
+      height: 920,
+      minWidth: 960,
+      minHeight: 640,
+      backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
+      icon: WINDOW_ICON,
+      show: false,
+    },
+    rendererPreferences,
+    titlebarPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
-      preload: PRELOAD,
-      additionalArguments: [app.isPackaged ? '--dsh-packaged' : '--dsh-source'],
+      preload: TITLEBAR_PRELOAD,
+    },
+    titlebarPage: TITLEBAR_PAGE,
+    onSplitFailure: (error) => {
+      console.error('desktop: could not create split title-bar renderer; using the native frame', error)
+      void appendDesktopStartupLog(`Split title-bar renderer unavailable: ${error instanceof Error ? error.message : String(error)}`)
     },
   })
-  configureNavigation(window)
-  if (customWindowFrame) {
-    const sendMaximizedState = (): void => {
-      window.webContents.send('dsh:window:maximized', window.isMaximized())
+  const { window } = surface
+  configureNavigation(surface.renderer)
+  surface.renderer.on('page-title-updated', (_event, title) => {
+    if (title !== '') surface.sendTitlebar('dsh:window:title', title)
+  })
+  if (surface.titlebarRenderer !== undefined) {
+    const syncTitlebarState = (): void => {
+      surface.layout()
+      surface.sendTitlebar('dsh:window:maximized', window.isMaximized())
+      surface.sendTitlebar('dsh:window:title', surface.renderer.getTitle() || APP_NAME)
+      surface.sendTitlebar('dsh:window:theme', nativeTheme.shouldUseDarkColors)
     }
-    window.on('maximize', sendMaximizedState)
-    window.on('unmaximize', sendMaximizedState)
+    window.on('maximize', syncTitlebarState)
+    window.on('unmaximize', syncTitlebarState)
+    void surface.initialize().then(syncTitlebarState, (error: unknown) => {
+      console.error('desktop: could not load the custom title bar', error)
+    })
   }
   window.once('ready-to-show', () => {
     if (!hiddenLaunch && lifecycle?.isQuitting !== true) window.show()
   })
-  window.on('close', (event) => { lifecycle?.onWindowClose(event) })
+  window.on('close', (event) => {
+    lifecycle?.onWindowClose(event)
+    if (!event.defaultPrevented) surface.dispose()
+  })
   window.on('closed', () => {
+    surface.dispose()
+    if (mainSurface === surface) mainSurface = undefined
     if (mainWindow === window) mainWindow = undefined
   })
   mainWindow = window
+  mainSurface = surface
   if (harnessOrigin === undefined) showLoading('starting')
-  else void window.loadURL(withCustomWindowFrameInset(harnessOrigin, process.platform))
+  else void surface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
   return window
 }
 
@@ -859,18 +893,23 @@ async function startApplication(): Promise<void> {
   })
   releaseChecker?.subscribe((status) => {
     releaseDownloader?.resetForRelease(status)
-    const window = mainWindow
-    if (window !== undefined && !window.isDestroyed()) window.webContents.send('dsh:desktop:release-status', status)
+    mainSurface?.send('dsh:desktop:release-status', status)
   })
   releaseDownloader?.subscribe((status) => {
-    const window = mainWindow
-    if (window !== undefined && !window.isDestroyed()) {
-      window.webContents.send('dsh:desktop:release-download-status', status)
-    }
+    mainSurface?.send('dsh:desktop:release-download-status', status)
   })
-  ipcMain.handle('dsh:desktop:capabilities', () => desktopCapabilities())
-  ipcMain.handle('dsh:desktop:preferences:get', () => preferences)
-  ipcMain.handle('dsh:desktop:preferences:update', (_event, patch: unknown) => updatePreferences(patch))
+  ipcMain.handle('dsh:desktop:capabilities', (event) => {
+    assertMainRenderer(event.sender)
+    return desktopCapabilities()
+  })
+  ipcMain.handle('dsh:desktop:preferences:get', (event) => {
+    assertMainRenderer(event.sender)
+    return preferences
+  })
+  ipcMain.handle('dsh:desktop:preferences:update', (event, patch: unknown) => {
+    assertMainRenderer(event.sender)
+    return updatePreferences(patch)
+  })
   ipcMain.handle('dsh:desktop:chat-background:read', (event) => {
     assertMainRenderer(event.sender)
     return chatBackgroundStore?.read()
@@ -880,7 +919,10 @@ async function startApplication(): Promise<void> {
     if (chatBackgroundStore === undefined) throw new Error('desktop: chat background store is unavailable')
     return chatBackgroundStore.write(background)
   })
-  ipcMain.handle('dsh:desktop:log:open', () => openHarnessLog())
+  ipcMain.handle('dsh:desktop:log:open', (event) => {
+    assertMainRenderer(event.sender)
+    return openHarnessLog()
+  })
   ipcMain.handle('dsh:desktop:cli:get', async (event): Promise<DesktopCliStatus> => {
     assertMainRenderer(event.sender)
     if (desktopCliManager === undefined) throw new Error('desktop: command-line manager is unavailable')
@@ -923,12 +965,14 @@ async function startApplication(): Promise<void> {
     reportedDesktopReadiness.add(phase)
     void appendDesktopStartupLog(phase === 'client' ? 'client ready' : 'event-dispatch is ready')
   })
-  ipcMain.handle('dsh:desktop:releases:get', (): DesktopReleaseStatus => (
-    releaseChecker?.status ?? { phase: 'unsupported' }
-  ))
-  ipcMain.handle('dsh:desktop:releases:check', () => (
-    releaseChecker?.check() ?? Promise.resolve({ phase: 'unsupported' } satisfies DesktopReleaseStatus)
-  ))
+  ipcMain.handle('dsh:desktop:releases:get', (event): DesktopReleaseStatus => {
+    assertMainRenderer(event.sender)
+    return releaseChecker?.status ?? { phase: 'unsupported' }
+  })
+  ipcMain.handle('dsh:desktop:releases:check', (event) => {
+    assertMainRenderer(event.sender)
+    return releaseChecker?.check() ?? Promise.resolve({ phase: 'unsupported' } satisfies DesktopReleaseStatus)
+  })
   ipcMain.handle('dsh:desktop:releases:open', async (event, releaseUrl: unknown) => {
     assertMainRenderer(event.sender)
     if (typeof releaseUrl !== 'string' || !isAllowedReleaseUrl(releaseUrl)) {
@@ -952,14 +996,19 @@ async function startApplication(): Promise<void> {
     assertMainRenderer(event.sender)
     return releaseDownloader?.open() ?? Promise.resolve({ error: 'Release downloads are unavailable.' })
   })
-  ipcMain.handle('dsh:source-update:check', () => updater.check())
-  ipcMain.handle('dsh:source-update:upgrade', (_event, expectedCommit: unknown) => {
+  ipcMain.handle('dsh:source-update:check', (event) => {
+    assertMainRenderer(event.sender)
+    return updater.check()
+  })
+  ipcMain.handle('dsh:source-update:upgrade', (event, expectedCommit: unknown) => {
+    assertMainRenderer(event.sender)
     if (typeof expectedCommit !== 'string' || !/^[0-9a-f]{40}$/u.test(expectedCommit)) {
       throw new TypeError('desktop: invalid expected update commit')
     }
     return updater.upgrade(expectedCommit)
   })
-  ipcMain.handle('dsh:source-update:restart', () => {
+  ipcMain.handle('dsh:source-update:restart', (event) => {
+    assertMainRenderer(event.sender)
     setTimeout(() => {
       requestDesktopRestart()
     }, 250)
@@ -972,8 +1021,14 @@ async function startApplication(): Promise<void> {
     }, 250)
     return { restarting: true as const }
   })
-  ipcMain.handle('dsh:harness:retry', () => ({ started: supervisor?.retry() ?? false }))
-  ipcMain.handle('dsh:harness:open-logs', () => openHarnessLog())
+  ipcMain.handle('dsh:harness:retry', (event) => {
+    assertMainRenderer(event.sender)
+    return { started: supervisor?.retry() ?? false }
+  })
+  ipcMain.handle('dsh:harness:open-logs', (event) => {
+    assertMainRenderer(event.sender)
+    return openHarnessLog()
+  })
   ipcMain.handle('dsh:desktop:bundled-plugins:start', (event, request: unknown): BundledPluginStartResult => {
     assertMainRenderer(event.sender)
     if (request === null || typeof request !== 'object') throw new TypeError('desktop: invalid bundled plugin request')
@@ -1138,18 +1193,19 @@ async function startApplication(): Promise<void> {
     return diagnosticLabManager.exportReport(runId)
   })
   ipcMain.on('dsh:window:minimize', (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (window === mainWindow && usesCustomWindowFrame(process.platform)) window.minimize()
+    const surface = mainSurface
+    if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.minimize()
   })
   ipcMain.on('dsh:window:toggle-maximize', (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (window !== mainWindow || !usesCustomWindowFrame(process.platform)) return
+    const surface = mainSurface
+    if (surface === undefined || !isDesktopRenderer(event.sender, surface.titlebarRenderer)) return
+    const window = surface.window
     if (window.isMaximized()) window.unmaximize()
     else window.maximize()
   })
   ipcMain.on('dsh:window:close', (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender)
-    if (window === mainWindow && usesCustomWindowFrame(process.platform)) window.close()
+    const surface = mainSurface
+    if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.close()
   })
   lifecycle = createDesktopLifecycle({
     getWindow: () => mainWindow,
@@ -1358,8 +1414,8 @@ async function startApplication(): Promise<void> {
       publishStartupProgress({ stage: 'ready', progress: 100 })
       const readyOrigin = harnessOrigin
       setTimeout(() => {
-        if (harnessOrigin !== readyOrigin || mainWindow === undefined || mainWindow.isDestroyed()) return
-        void mainWindow.loadURL(withCustomWindowFrameInset(url, process.platform))
+        if (harnessOrigin !== readyOrigin || mainSurface === undefined || mainSurface.window.isDestroyed()) return
+        void mainSurface.loadURL(withDesktopWindowMetadata(url, process.platform))
       }, 120)
       if (recovering) {
         recovering = false
@@ -1418,10 +1474,7 @@ async function startApplication(): Promise<void> {
       return parseDiagnosticLabDoctorOutput(output)
     },
     onSnapshot: (snapshot: DiagnosticLabRunSnapshot) => {
-      const window = mainWindow
-      if (window !== undefined && !window.isDestroyed()) {
-        window.webContents.send('dsh:desktop:diagnostic-lab:status', snapshot)
-      }
+      mainSurface?.send('dsh:desktop:diagnostic-lab:status', snapshot)
     },
   })
   await diagnosticLabManager.recoverPending()
