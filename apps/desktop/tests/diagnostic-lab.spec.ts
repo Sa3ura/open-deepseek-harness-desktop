@@ -102,12 +102,16 @@ describe('DiagnosticLabManager', () => {
       if (call === 2) {
         const issueCode = scenarioId === 'orphaned-bundle'
           ? 'profile.orphaned-bundle'
-          : 'profile.host-dependency-conflict'
+          : scenarioId === 'quarantine-removal-residue'
+            ? 'profile.quarantine-removal-residue'
+            : 'profile.host-dependency-conflict'
         return { status: 'failed', issueCodes: [issueCode], output: '{}' }
       }
       if (call === 3) {
         return {
-          status: scenarioId === 'host-shadow-compatible' ? 'repaired' : 'quarantined',
+          status: scenarioId === 'host-shadow-compatible' || scenarioId === 'quarantine-removal-residue'
+            ? 'repaired'
+            : 'quarantined',
           issueCodes: [],
           output: '{}',
         }
@@ -132,7 +136,12 @@ describe('DiagnosticLabManager', () => {
       onSnapshot: () => {},
     })
     const initial = manager.start({
-      scenarioIds: ['host-shadow-compatible', 'host-shadow-incompatible', 'orphaned-bundle'],
+      scenarioIds: [
+        'host-shadow-compatible',
+        'host-shadow-incompatible',
+        'orphaned-bundle',
+        'quarantine-removal-residue',
+      ],
       target: 'isolated',
     })
     const final = await waitForTerminal(manager, initial.runId)
@@ -140,7 +149,59 @@ describe('DiagnosticLabManager', () => {
     expect(final.phase).toBe('active')
     expect(final.results.every(result => result.phase === 'passed')).toBe(true)
     expect(b.installProfile).toHaveBeenCalledTimes(3)
-    expect(runDoctor).toHaveBeenCalledTimes(12)
+    expect(runDoctor).toHaveBeenCalledTimes(16)
+  })
+
+  it('stages and restores the real legacy quarantine-removal residue shape', async () => {
+    const b = await bench()
+    await writeFile(join(b.home, 'profiles', 'web', 'pnpm-workspace.yaml'), 'packages:\n  - .\n\nnodeLinker: hoisted\n')
+    let call = 0
+    const runDoctor = vi.fn(async () => {
+      call += 1
+      const repairPath = join(b.home, 'profile-health', 'web.json')
+      const diagnosticPath = join(b.home, 'profile-health', 'web.diagnostics.json')
+      const lockfilePath = join(b.home, 'profiles', 'web', 'pnpm-lock.yaml')
+      if (call === 1) return { status: 'healthy', issueCodes: [], output: '{}' }
+      if (call === 2) {
+        expect(await readFile(repairPath, 'utf8')).toContain('@dsh-diagnostic-lab/quarantine-removal-residue')
+        expect(await readFile(diagnosticPath, 'utf8')).toContain('profile.module-resolution')
+        expect(await readFile(lockfilePath, 'utf8')).toContain('@dsh-diagnostic-lab/quarantine-removal-residue')
+        return { status: 'failed', issueCodes: ['profile.quarantine-removal-residue'], output: '{}' }
+      }
+      if (call === 3) {
+        await rm(repairPath, { force: true })
+        await rm(diagnosticPath, { force: true })
+        await writeFile(lockfilePath, "lockfileVersion: '9.0'\n\nimporters:\n  .: {}\n")
+        return { status: 'repaired', issueCodes: [], output: '{}' }
+      }
+      return { status: 'healthy', issueCodes: [], output: '{}' }
+    })
+    const manager = new DiagnosticLabManager({
+      root: join(b.root, 'quarantine-removal-lab'),
+      activeDshHome: b.home,
+      logDirectory: join(b.root, 'quarantine-removal-logs'),
+      suspendHarness: b.suspendHarness,
+      resumeHarness: b.resumeHarness,
+      installProfile: b.installProfile,
+      installDiagnosticPlugin: b.installDiagnosticPlugin,
+      runDoctor,
+      onSnapshot: () => {},
+    })
+    const initial = manager.start({
+      scenarioIds: ['quarantine-removal-residue'],
+      target: 'active-profile',
+    })
+    const active = await waitForTerminal(manager, initial.runId)
+
+    expect(active).toMatchObject({ phase: 'active', recovery: 'retained' })
+    expect(active.results).toEqual([expect.objectContaining({
+      scenarioId: 'quarantine-removal-residue',
+      actualCode: 'profile.quarantine-removal-residue',
+      disposition: 'repaired',
+    })])
+    await expect(manager.restoreAll(initial.runId)).resolves.toMatchObject({ phase: 'restored' })
+    expect(existsSync(join(b.home, 'profile-health', 'web.json'))).toBe(false)
+    expect(existsSync(join(b.home, 'profile-health', 'web.diagnostics.json'))).toBe(false)
   })
 
   it('persists a real current-Profile quarantine for the ordinary diagnostics summary', async () => {

@@ -21,9 +21,11 @@ import {
   initProfile,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  inspectQuarantineRemovalResidue,
   orphanedBundleDiagnostic,
   PROFILE_TEMPLATES,
   profileDependencyConflictDiagnostic,
+  quarantineRemovalResidueDiagnostic,
   quarantineProfilePluginAfterLoadFailure,
   readProfileManifest,
   readProfileDiagnosticReport,
@@ -296,6 +298,11 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         installAnchor: INSTALL_ANCHOR,
       })
       const conflicts = inspectProfileDependencies({ binName: NAME, profile, installAnchor: INSTALL_ANCHOR })
+      const quarantineRemovalResidue = inspectQuarantineRemovalResidue({
+        binName: NAME,
+        profile,
+        installAnchor: INSTALL_ANCHOR,
+      })
       outcome = {
         schema: 'dsh/profile-dependency-repair/v1' as const,
         diagnosticSchema: 'dsh/profile-diagnostic/v2' as const,
@@ -310,11 +317,17 @@ export function runPlugin(profile: string, args: readonly string[]): number {
             conflict.dependencyChain,
           )),
           ...orphanedBundles.map(bundle => orphanedBundleDiagnostic(bundle.packageName)),
+          ...quarantineRemovalResidue.map(residue => quarantineRemovalResidueDiagnostic(
+            residue.packageName,
+            residue.staleComponents,
+          )),
         ],
       }
     }
     const normalized = !mutatesProfile
-      && (outcome.conflicts.length > 0 || (outcome.orphanedBundles?.length ?? 0) > 0)
+      && (outcome.conflicts.length > 0
+        || (outcome.orphanedBundles?.length ?? 0) > 0
+        || (outcome.issues?.length ?? 0) > 0)
       ? { ...outcome, status: 'failed' as const }
       : outcome
     process.stdout.write(`${JSON.stringify(normalized, undefined, 2)}\n`)

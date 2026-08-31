@@ -18,6 +18,7 @@ import type {
 import type { PluginDiscoveryProps } from '../src/client/PluginDiscovery.tsx'
 import type {
   PluginDoctorId,
+  PluginDoctorRequest,
   PluginDoctorSnapshot,
   PluginInstallId,
   PluginInstallRequest,
@@ -457,10 +458,10 @@ describe('PluginDiagnosticsSection', () => {
     const startQuarantineRetry = vi.fn()
     const uninstallQuarantine = vi.fn()
     const scenario = {
-      id: 'host-shadow-compatible',
-      title: 'Compatible Host shadow',
-      description: 'Detect a second physical Host instance.',
-      expectedCode: 'HOST_SHADOW_COMPATIBLE',
+      id: 'quarantine-removal-residue',
+      title: 'Quarantine removal residue',
+      description: 'Detect stale derived state after a legacy uninstall.',
+      expectedCode: 'profile.quarantine-removal-residue',
       targets: ['isolated', 'active-profile'],
     } satisfies DiagnosticLabScenario
     const queued = {
@@ -501,11 +502,11 @@ describe('PluginDiagnosticsSection', () => {
 
     expect(await screen.findByRole('heading', { name: en['lab.title'] })).toBeTruthy()
     expect(listScenarios).toHaveBeenCalledOnce()
-    expect(screen.getByText(en['lab.scenario.hostCompatible.title'])).toBeTruthy()
+    expect(screen.getByText(en['lab.scenario.quarantineRemoval.title'])).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en['lab.start'] }))
     await waitFor(() => {
       expect(start).toHaveBeenCalledWith({
-        scenarioIds: ['host-shadow-compatible'],
+        scenarioIds: ['quarantine-removal-residue'],
         target: 'isolated',
       })
     })
@@ -657,6 +658,50 @@ describe('PluginDiagnosticsSection', () => {
     expect(await screen.findByText('dsh-computer-use → @deepseek-ai/dsh-tools')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en['diagnostics.repair'] }))
     await waitFor(() => { expect(startDependencyDoctor).toHaveBeenLastCalledWith({ profile: 'web', repair: true }) })
+  })
+
+  it('offers a focused repair for stale quarantine removal state', async () => {
+    const residue = {
+      ...healthy,
+      phase: 'issues' as const,
+      exitCode: 2,
+      report: {
+        ...healthy.report!,
+        status: 'failed' as const,
+        issues: [{
+          diagnosticId: 'diagnostic-residue-1',
+          code: 'profile.quarantine-removal-residue' as const,
+          source: 'profile' as const,
+          phase: 'preflight' as const,
+          severity: 'warning' as const,
+          attribution: { rootPackage: 'dsh-font' },
+          actions: ['repair', 'export'] as const,
+          evidence: ['repair-report', 'diagnostic-report', 'lockfile-importer'],
+        }],
+      },
+    } satisfies PluginDoctorSnapshot
+    const startDependencyDoctor = vi.fn(async (request: PluginDoctorRequest) => (
+      request.repair ? healthy : residue
+    ))
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => diagnosticsSnapshot,
+      startDependencyDoctor,
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(),
+      startUninstall: vi.fn(),
+      startQuarantineRetry: vi.fn(),
+      uninstallQuarantine: vi.fn(),
+      dismissDependencyHealth: vi.fn(),
+    } as PluginDiagnosticsSectionProps)} />)
+
+    fireEvent.click(screen.getByRole('button', { name: en['diagnostics.check'] }))
+    expect(await screen.findByText(en['diagnostics.issue.quarantineRemovalResidue'])).toBeTruthy()
+    expect(screen.getByText('dsh-font')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['diagnostics.repairQuarantineRemovalResidue'] }))
+    await waitFor(() => {
+      expect(startDependencyDoctor).toHaveBeenLastCalledWith({ profile: 'web', repair: true })
+    })
   })
 
   it('confirms and starts the standard removal for an active conflicting plugin', async () => {

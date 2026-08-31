@@ -108,6 +108,7 @@ const DIAGNOSTIC_ACTION_KEYS = {
 } satisfies Record<DiagnosticIssue['actions'][number], PluginInventoryLocaleKey>
 
 function diagnosticIssueCopy(code: DiagnosticIssue['code']): PluginInventoryLocaleKey {
+  if (code === 'profile.quarantine-removal-residue') return 'diagnostics.issue.quarantineRemovalResidue'
   if (code === 'pnpm.build-script-blocked') return 'diagnostics.issue.buildScript'
   if (code === 'pnpm.minimum-release-age' || code === 'pnpm.supply-chain' || code === 'pnpm.integrity') {
     return 'diagnostics.issue.supplyChain'
@@ -471,6 +472,17 @@ export function PluginDiagnosticsSection({
                       && diagnosticBuildInstall.snapshot.phase === 'running'
                       ? t('health.retry.running')
                       : t('health.approveBuild')}
+                  </Button>
+                </div>
+              ) : null}
+              {issue.code === 'profile.quarantine-removal-residue' ? (
+                <div className={css.actions}>
+                  <Button
+                    variant="primary"
+                    disabled={doctor?.phase === 'running'}
+                    onClick={() => { runDoctor(true) }}
+                  >
+                    {t('diagnostics.repairQuarantineRemovalResidue')}
                   </Button>
                 </div>
               ) : null}

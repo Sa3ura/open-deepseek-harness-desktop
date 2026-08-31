@@ -34,6 +34,7 @@ import {
   orphanedBundleDiagnostic,
   profileDependencyConflictDiagnostic,
   quarantinedPluginDiagnostic,
+  readProfileDiagnosticReport,
   sanitizeProfileDiagnostic,
   writeProfileDiagnosticReport,
   type ProfileDiagnostic,
@@ -101,6 +102,19 @@ export interface QuarantinedProfilePlugin {
   readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable'
   readonly buildApprovalKey?: string
   readonly conflicts: readonly ProfileDependencyConflict[]
+}
+
+/** Derived Profile state left after an inactive quarantined plugin was physically removed. */
+export interface QuarantineRemovalResidue {
+  readonly profile: string
+  readonly packageName: string
+  readonly quarantineId: string
+  readonly staleComponents: readonly (
+    | 'repair-report'
+    | 'diagnostic-report'
+    | 'lockfile-importer'
+    | 'package-directory'
+  )[]
 }
 
 interface ProfileQuarantineFile {
@@ -416,8 +430,7 @@ function writeProfilePnpmCompatibility(profileDir: string): void {
   if (rendered !== source) atomicWrite(workspacePath, rendered)
 }
 
-/** Remove importer entries whose dependency declarations no longer exist in the profile manifest. */
-function pruneStaleLockfileImporter(profileDir: string): string[] {
+function staleLockfileImporterDependencies(profileDir: string, remove: boolean): string[] {
   const lockfilePath = join(profileDir, PROFILE_LOCKFILE_FILENAME)
   if (!existsSync(lockfilePath)) return []
   const source = readFileSync(lockfilePath, 'utf8')
@@ -443,13 +456,18 @@ function pruneStaleLockfileImporter(profileDir: string): string[] {
     for (const item of [...group.items]) {
       const packageName = String((item as { readonly key: unknown }).key)
       if (declarations[packageName] !== undefined) continue
-      group.delete(packageName)
+      if (remove) group.delete(packageName)
       removed.push(packageName)
     }
-    if (group.items.length === 0) importer.delete(groupName)
+    if (remove && group.items.length === 0) importer.delete(groupName)
   }
-  if (removed.length > 0) atomicWrite(lockfilePath, document.toString())
+  if (remove && removed.length > 0) atomicWrite(lockfilePath, document.toString())
   return removed
+}
+
+/** Remove importer entries whose dependency declarations no longer exist in the profile manifest. */
+function pruneStaleLockfileImporter(profileDir: string): string[] {
+  return staleLockfileImporterDependencies(profileDir, true)
 }
 
 /** Replace undeclared profile-local Host packages left by another installation with the running installation. */
@@ -520,6 +538,112 @@ export function clearQuarantinedProfilePlugin(
   return true
 }
 
+function issueBelongsToPlugin(issue: ProfileDiagnostic, packageName: string): boolean {
+  return issue.attribution?.rootPackage === packageName
+    || (issue.attribution?.rootPackage === undefined && issue.attribution?.moduleName === packageName)
+}
+
+/**
+ * Find derived quarantine state whose plugin is no longer active, installed, or durably quarantined.
+ * @param options - Profile identity and optional Harness home.
+ * @returns Repairable residue records without local filesystem paths.
+ */
+export function inspectQuarantineRemovalResidue(
+  options: ProfileDependencyOptions,
+): QuarantineRemovalResidue[] {
+  const home = options.home ?? resolveDshHome()
+  const retained = readLastProfileRepairReport(options.profile, home)
+  if (retained === undefined || retained.quarantined.length === 0) return []
+  const profileDir = resolveProfileDir(options.profile, home)
+  const manifest = readProfileManifest(options.binName, profileDir)
+  const durablePackages = new Set(readQuarantineFile(home).plugins.map(record => (
+    `${record.profile}\0${record.packageName}`
+  )))
+  const staleLockfileDependencies = new Set(staleLockfileImporterDependencies(profileDir, false))
+  const diagnostics = readProfileDiagnosticReport(options.profile, home)
+
+  return retained.quarantined.flatMap((record) => {
+    if (record.profile !== options.profile
+      || durablePackages.has(`${record.profile}\0${record.packageName}`)
+      || manifest.dependencies?.[record.packageName] !== undefined
+      || manifest.dsh?.profile?.bundles?.includes(record.packageName) === true
+      || existsSync(join(profilePackageDirectory(profileDir, record.packageName), 'package.json'))) return []
+    const packageDirectory = profilePackageDirectory(profileDir, record.packageName)
+    const staleComponents: QuarantineRemovalResidue['staleComponents'][number][] = ['repair-report']
+    if (diagnostics?.issues.some(issue => issueBelongsToPlugin(issue, record.packageName)) === true) {
+      staleComponents.push('diagnostic-report')
+    }
+    if (staleLockfileDependencies.has(record.packageName)) staleComponents.push('lockfile-importer')
+    if (existsSync(packageDirectory)) staleComponents.push('package-directory')
+    return [{
+      profile: record.profile,
+      packageName: record.packageName,
+      quarantineId: record.quarantineId,
+      staleComponents,
+    }]
+  })
+}
+
+function reconcileRemovedQuarantineReports(record: QuarantinedProfilePlugin, home: string): void {
+  const retained = readLastProfileRepairReport(record.profile, home)
+  if (retained !== undefined) {
+    const conflicts = retained.conflicts.filter(conflict => conflict.rootPackage !== record.packageName)
+    const orphanedBundles = (retained.orphanedBundles ?? [])
+      .filter(bundle => bundle.packageName !== record.packageName)
+    const quarantined = retained.quarantined.filter(candidate => candidate.quarantineId !== record.quarantineId)
+    const issues = (retained.issues ?? []).filter(issue => !issueBelongsToPlugin(issue, record.packageName))
+    if (conflicts.length === 0 && orphanedBundles.length === 0 && quarantined.length === 0 && issues.length === 0) {
+      clearLastProfileRepairReport(record.profile, home)
+    } else {
+      const status = quarantined.length > 0
+        ? 'quarantined'
+        : retained.status === 'failed' || conflicts.length > 0 || orphanedBundles.length > 0
+          ? 'failed'
+          : 'repaired'
+      atomicWrite(profileRepairReportPath(home, record.profile), `${JSON.stringify({
+        ...retained,
+        status,
+        conflicts,
+        orphanedBundles,
+        quarantined,
+        issues,
+      }, undefined, 2)}\n`)
+    }
+  }
+
+  const diagnostics = readProfileDiagnosticReport(record.profile, home)
+  if (diagnostics === undefined) return
+  const issues = diagnostics.issues.filter(issue => !issueBelongsToPlugin(issue, record.packageName))
+  if (issues.length === 0) {
+    clearProfileDiagnosticReport(record.profile, home)
+    return
+  }
+  writeProfileDiagnosticReport({
+    ...diagnostics,
+    generatedAt: new Date().toISOString(),
+    issues,
+  }, home)
+}
+
+function repairQuarantineRemovalResidue(
+  options: ProfileDependencyOptions,
+  home: string,
+  profileDir: string,
+  residue: readonly QuarantineRemovalResidue[],
+): string[] {
+  if (residue.length === 0) return []
+  const records = readLastProfileRepairReport(options.profile, home)?.quarantined ?? []
+  const repaired: string[] = []
+  for (const item of residue) {
+    const record = records.find(candidate => candidate.quarantineId === item.quarantineId)
+    if (record === undefined) continue
+    rmSync(profilePackageDirectory(profileDir, item.packageName), { recursive: true, force: true })
+    reconcileRemovedQuarantineReports(record, home)
+    repaired.push(item.packageName)
+  }
+  return repaired
+}
+
 /**
  * Remove an inactive quarantined plugin from its profile and discard its record.
  * @param quarantineId - opaque id from {@link QuarantinedProfilePlugin}.
@@ -544,6 +668,7 @@ export function uninstallQuarantinedProfilePlugin(
     throw new Error(`dsh: cannot uninstall active quarantined plugin ${record.packageName}`)
   }
 
+  pruneStaleLockfileImporter(profileDir)
   const nodeModulesDir = resolve(profileDir, 'node_modules')
   const packageDir = resolve(nodeModulesDir, record.packageName)
   const packageRelative = relative(nodeModulesDir, packageDir)
@@ -551,6 +676,7 @@ export function uninstallQuarantinedProfilePlugin(
     throw new Error(`dsh: quarantined package path escapes profile ${record.packageName}`)
   }
   rmSync(packageDir, { recursive: true, force: true })
+  reconcileRemovedQuarantineReports(record, home)
   return clearQuarantinedProfilePlugin(quarantineId, home)
 }
 
@@ -956,7 +1082,14 @@ function recoverInterruptedQuarantine(
 export function repairProfileDependencies(options: ProfileRepairOptions): ProfileRepairReport {
   const home = options.home ?? resolveDshHome()
   const profileDir = resolveProfileDir(options.profile, home)
+  const quarantineRemovalResidue = inspectQuarantineRemovalResidue({ ...options, home })
   writeProfilePnpmCompatibility(profileDir)
+  const repairedQuarantineRemoval = repairQuarantineRemovalResidue(
+    options,
+    home,
+    profileDir,
+    quarantineRemovalResidue,
+  )
   const prunedLockfileDependencies = pruneStaleLockfileImporter(profileDir)
   const repairedHostResidue = repairUnmanagedSharedHostResidue(options, home, profileDir)
   const initial = inspectProfileDependencies({ ...options, home })
@@ -964,8 +1097,13 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
   if (initial.length === 0 && initialOrphans.length === 0) {
     const recovered = recoverInterruptedQuarantine(options, home, profileDir)
     if (recovered !== undefined) return recovered
-    if (prunedLockfileDependencies.length > 0 || repairedHostResidue.length > 0) {
+    if (prunedLockfileDependencies.length > 0
+      || repairedHostResidue.length > 0
+      || repairedQuarantineRemoval.length > 0) {
       const diagnostics = [
+        ...(repairedQuarantineRemoval.length === 0
+          ? []
+          : [`removed stale quarantine state: ${repairedQuarantineRemoval.join(', ')}`]),
         ...(prunedLockfileDependencies.length === 0
           ? []
           : [`removed stale lockfile dependencies: ${prunedLockfileDependencies.join(', ')}`]),

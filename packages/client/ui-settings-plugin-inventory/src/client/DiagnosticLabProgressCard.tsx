@@ -16,6 +16,7 @@ const SCENARIO_TITLES: Record<DiagnosticLabScenarioId, PluginInventoryLocaleKey>
   'host-shadow-compatible': 'lab.scenario.hostCompatible.title',
   'host-shadow-incompatible': 'lab.scenario.hostIncompatible.title',
   'orphaned-bundle': 'lab.scenario.orphan.title',
+  'quarantine-removal-residue': 'lab.scenario.quarantineRemoval.title',
   'client-module-unavailable': 'lab.scenario.clientModule.title',
   'module-resolution-missing': 'lab.scenario.module.title',
   'patch-invalid': 'lab.scenario.patch.title',
