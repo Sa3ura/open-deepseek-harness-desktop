@@ -1,6 +1,7 @@
 /** Electron application host for the existing DeepSeek Harness Web GUI. */
 
 import { spawn } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -55,17 +56,26 @@ import {
 import { parseStartupBuildApproval } from './startup-build-approval.ts'
 import {
   desktopDataHomeSetup,
+  desktopDataHomesOverlap,
   hasDesktopData,
   IMPORTED_ONBOARDING_RESET_VERSION,
   importOfficialDesktopData,
+  inspectDesktopDataHomeStatus,
   readDesktopDataHomeSetup,
   resetImportedDesktopOnboarding,
+  resolveDesktopDataHomeSwitch,
   resolveDesktopDataHomeSource,
+  resolveDesktopDataHomeRecoverySelection,
+  resolveEmptyDesktopDataHome,
   resolveRecordedDesktopDataHome,
   resolveDesktopDataHomeLayout,
   writeDesktopDataHomeSetup,
   type DesktopDataHomeSource,
   type DesktopDataHomeLayout,
+  type DesktopDataHomeSelectionResult,
+  type DesktopDataHomeSelectionKind,
+  type DesktopDataHomeSwitchRequest,
+  type DesktopDataHomeSwitchResult,
 } from './desktop-data-home.ts'
 import { mapBundledPluginProgress, type DesktopStartupProgress } from './startup-progress.ts'
 import {
@@ -106,6 +116,7 @@ const TITLEBAR_PAGE = fileURLToPath(new URL('./titlebar.html', import.meta.url))
 const TITLEBAR_PRELOAD = fileURLToPath(new URL('./titlebar-preload.cjs', import.meta.url))
 const DATA_HOME_PAGE = fileURLToPath(new URL('./data-home.html', import.meta.url))
 const DATA_HOME_PRELOAD = fileURLToPath(new URL('./data-home-preload.cjs', import.meta.url))
+const DATA_HOME_SELECTION_LIFETIME_MS = 5 * 60_000
 const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
   app.getPath('appData'),
@@ -140,6 +151,12 @@ let diagnosticLabManager: DiagnosticLabManager | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
+const pendingDataHomeSelections = new Map<string, {
+  readonly rendererId: number
+  readonly selectionKind: DesktopDataHomeSelectionKind
+  readonly path: string
+  readonly expiresAt: number
+}>()
 
 async function appendDesktopStartupLog(message: string): Promise<void> {
   if (harnessLogPath === '') return
@@ -150,12 +167,35 @@ async function appendDesktopStartupLog(message: string): Promise<void> {
 type DataHomeSelection = 'imported' | 'reused' | 'fresh'
 
 type DataHomeChoice =
-  | { readonly mode: 'fresh' }
-  | { readonly mode: 'imported' | 'reused'; readonly source: string }
+  | { readonly mode: 'fresh'; readonly target: string; readonly customTarget: boolean }
+  | {
+    readonly mode: 'imported'
+    readonly source: string
+    readonly target: string
+    readonly customTarget: boolean
+  }
+  | { readonly mode: 'reused'; readonly source: string }
+
+type DataHomeChoiceRequest =
+  | {
+    readonly mode: 'fresh'
+    readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
+  }
+  | {
+    readonly mode: 'imported'
+    readonly source: string
+    readonly target: { readonly kind: 'default' } | { readonly kind: 'custom'; readonly selectionId: string }
+  }
+  | { readonly mode: 'reused'; readonly source: string }
 
 type DataHomeSourceResult =
   | { readonly status: 'valid'; readonly path: string; readonly entries: readonly string[] }
   | { readonly status: 'invalid' | 'unreadable'; readonly path: string }
+  | { readonly status: 'cancelled' }
+
+type DataHomeTargetResult =
+  | { readonly status: 'selected'; readonly selectionId: string; readonly path: string }
+  | { readonly status: 'not-empty' | 'overlap' | 'unreadable'; readonly path: string }
   | { readonly status: 'cancelled' }
 
 class DesktopDataHomeSelectionCancelledError extends Error {
@@ -238,17 +278,37 @@ function isDataHomeSelection(value: unknown): value is DataHomeSelection {
   return value === 'imported' || value === 'reused' || value === 'fresh'
 }
 
-function isDataHomeChoice(value: unknown): value is DataHomeChoice {
+function isDataHomeChoiceRequest(value: unknown): value is DataHomeChoiceRequest {
   if (typeof value !== 'object' || value === null || !('mode' in value)
     || !isDataHomeSelection(value.mode)) return false
-  if (value.mode === 'fresh') return true
-  return 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
+  if (value.mode === 'reused') {
+    return 'source' in value && typeof value.source === 'string' && value.source.trim().length > 0
+  }
+  if (value.mode === 'imported'
+    && (!('source' in value) || typeof value.source !== 'string' || value.source.trim().length === 0)) return false
+  if (!('target' in value) || typeof value.target !== 'object' || value.target === null
+    || !('kind' in value.target)) return false
+  if (value.target.kind === 'default') return true
+  return value.target.kind === 'custom'
+    && 'selectionId' in value.target
+    && typeof value.target.selectionId === 'string'
+    && /^[0-9a-f-]{36}$/u.test(value.target.selectionId)
+}
+
+function isDesktopDataHomeSwitchRequest(value: unknown): value is DesktopDataHomeSwitchRequest {
+  if (typeof value !== 'object' || value === null || !('kind' in value)) return false
+  if (value.kind === 'desktop' || value.kind === 'official') return true
+  return (value.kind === 'custom' || value.kind === 'create')
+    && 'selectionId' in value
+    && typeof value.selectionId === 'string'
+    && /^[0-9a-f-]{36}$/u.test(value.selectionId)
 }
 
 async function showDataHomeChooser(
   defaultSource: DesktopDataHomeSource | undefined,
   defaultSourceUnreadable: boolean,
   defaultSourceCandidate: string,
+  defaultTarget: string,
 ): Promise<DataHomeChoice> {
   const chooser = new BrowserWindow({
     title: APP_NAME,
@@ -272,10 +332,13 @@ async function showDataHomeChooser(
 
   return new Promise<DataHomeChoice>((resolve, reject) => {
     let settled = false
+    const pendingTargets = new Map<string, { readonly path: string; readonly expiresAt: number }>()
     const cleanup = (): void => {
       ipcMain.removeListener('dsh:data-home:selected', handleSelection)
       ipcMain.removeListener('dsh:data-home:cancelled', handleCancellation)
       ipcMain.removeHandler('dsh:data-home:choose-source')
+      ipcMain.removeHandler('dsh:data-home:choose-target')
+      pendingTargets.clear()
     }
     const closeChooser = (): void => {
       cleanup()
@@ -295,22 +358,60 @@ async function showDataHomeChooser(
       reject(error instanceof Error ? error : new Error(String(error)))
     }
     const handleSelection = (event: Electron.IpcMainEvent, value: unknown): void => {
-      if (event.sender !== chooser.webContents || !isDataHomeChoice(value)) return
-      if (value.mode === 'fresh') {
-        finish({ mode: 'fresh' })
-        return
-      }
-      void resolveDesktopDataHomeSource(value.source).then((source) => {
-        if (settled) return
-        if (source === undefined) {
-          event.sender.send('dsh:data-home:source-error', { status: 'invalid', path: value.source })
+      if (event.sender !== chooser.webContents || !isDataHomeChoiceRequest(value)) return
+      void (async () => {
+        let source: DesktopDataHomeSource | undefined
+        if (value.mode !== 'fresh') {
+          try {
+            source = await resolveDesktopDataHomeSource(value.source)
+          } catch {
+            if (!settled) event.sender.send('dsh:data-home:source-error', { status: 'unreadable', path: value.source })
+            return
+          }
+          if (source === undefined) {
+            if (!settled) event.sender.send('dsh:data-home:source-error', { status: 'invalid', path: value.source })
+            return
+          }
+        }
+        if (value.mode === 'reused') {
+          if (source === undefined) return
+          finish({ mode: 'reused', source: source.path })
           return
         }
-        finish({ mode: value.mode, source: source.path })
-      }).catch(() => {
-        if (settled) return
-        event.sender.send('dsh:data-home:source-error', { status: 'unreadable', path: value.source })
-      })
+        let target = defaultTarget
+        let customTarget = false
+        if (value.target.kind === 'custom') {
+          const pending = pendingTargets.get(value.target.selectionId)
+          if (pending === undefined || pending.expiresAt < Date.now()) {
+            pendingTargets.delete(value.target.selectionId)
+            event.sender.send('dsh:data-home:target-error', { status: 'unreadable', path: '' })
+            return
+          }
+          pendingTargets.delete(value.target.selectionId)
+          let resolvedTarget: string | undefined
+          try {
+            resolvedTarget = await resolveEmptyDesktopDataHome(pending.path)
+          } catch {
+            event.sender.send('dsh:data-home:target-error', { status: 'unreadable', path: pending.path })
+            return
+          }
+          if (resolvedTarget === undefined) {
+            event.sender.send('dsh:data-home:target-error', { status: 'not-empty', path: pending.path })
+            return
+          }
+          target = resolvedTarget
+          customTarget = true
+        }
+        if (value.mode === 'imported' && source !== undefined && desktopDataHomesOverlap(source.path, target)) {
+          event.sender.send('dsh:data-home:target-error', { status: 'overlap', path: target })
+          return
+        }
+        if (value.mode === 'fresh') finish({ mode: 'fresh', target, customTarget })
+        else {
+          if (source === undefined) return
+          finish({ mode: 'imported', source: source.path, target, customTarget })
+        }
+      })().catch(fail)
     }
     const handleCancellation = (event: Electron.IpcMainEvent): void => {
       if (event.sender === chooser.webContents) finish()
@@ -334,6 +435,30 @@ async function showDataHomeChooser(
         return { status: 'unreadable', path: candidate }
       }
     })
+    ipcMain.handle('dsh:data-home:choose-target', async (event): Promise<DataHomeTargetResult> => {
+      if (event.sender !== chooser.webContents) throw new Error('desktop: invalid data-home target requester')
+      const result = await dialog.showOpenDialog(chooser, {
+        title: app.getLocale().toLowerCase().startsWith('zh')
+          ? '选择空文件夹作为配置目录'
+          : 'Choose an empty folder for the configuration',
+        properties: ['openDirectory', 'createDirectory'],
+      })
+      const candidate = result.filePaths[0]
+      if (result.canceled || candidate === undefined) return { status: 'cancelled' }
+      let path: string | undefined
+      try {
+        path = await resolveEmptyDesktopDataHome(candidate)
+      } catch {
+        return { status: 'unreadable', path: candidate }
+      }
+      if (path === undefined) return { status: 'not-empty', path: candidate }
+      const selectionId = randomUUID()
+      for (const [id, pending] of pendingTargets) {
+        if (pending.expiresAt < Date.now()) pendingTargets.delete(id)
+      }
+      pendingTargets.set(selectionId, { path, expiresAt: Date.now() + DATA_HOME_SELECTION_LIFETIME_MS })
+      return { status: 'selected', selectionId, path }
+    })
     chooser.once('closed', () => { finish() })
     chooser.once('ready-to-show', () => {
       chooser.show()
@@ -345,6 +470,7 @@ async function showDataHomeChooser(
       defaultSource: defaultSource?.path ?? '',
       sourceCandidate: defaultSourceCandidate,
       sourceStatus: defaultSourceUnreadable ? 'unreadable' : defaultSource === undefined ? 'missing' : 'valid',
+      defaultTarget,
       development: app.isPackaged ? 'false' : 'true',
     } }).catch(fail)
   })
@@ -391,19 +517,24 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
   }
 
   const copy = dataHomeCopy()
-  const selection = await showDataHomeChooser(defaultSource, defaultSourceUnreadable, layout.officialDshHome)
+  const selection = await showDataHomeChooser(
+    defaultSource,
+    defaultSourceUnreadable,
+    layout.officialDshHome,
+    layout.dshHome,
+  )
   if (selection.mode === 'imported') {
     try {
-      await importOfficialDesktopData(selection.source, layout.dshHome)
+      await importOfficialDesktopData(selection.source, selection.target)
       await writeDesktopDataHomeSetup(
         layout.setupFile,
-        desktopDataHomeSetup('imported', layout.dshHome, selection.source),
+        desktopDataHomeSetup('imported', selection.target, selection.source),
       )
       await dialog.showMessageBox({
         type: 'info', title: copy.completeTitle, message: copy.completeMessage,
-        detail: layout.dshHome, buttons: ['OK'], noLink: true,
+        detail: selection.target, buttons: ['OK'], noLink: true,
       })
-      return layout.dshHome
+      return selection.target
     } catch (error) {
       dialog.showErrorBox(copy.failedTitle, error instanceof Error ? error.message : String(error))
       throw error
@@ -418,9 +549,9 @@ async function prepareDesktopDshHome(layout: DesktopDataHomeLayout): Promise<str
   }
   await writeDesktopDataHomeSetup(
     layout.setupFile,
-    desktopDataHomeSetup('fresh', layout.dshHome),
+    desktopDataHomeSetup(selection.customTarget ? 'created' : 'fresh', selection.target),
   )
-  return layout.dshHome
+  return selection.target
 }
 
 function applyLaunchAtLogin(enabled: boolean): void {
@@ -901,6 +1032,136 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:capabilities', (event) => {
     assertMainRenderer(event.sender)
     return desktopCapabilities()
+  })
+  ipcMain.handle('dsh:desktop:data-home:get', (event) => {
+    assertMainRenderer(event.sender)
+    return inspectDesktopDataHomeStatus(DESKTOP_DATA_HOME, dshHome)
+  })
+  ipcMain.handle('dsh:desktop:data-home:choose', async (
+    event,
+    selectionKind: unknown,
+  ): Promise<DesktopDataHomeSelectionResult> => {
+    assertMainRenderer(event.sender)
+    if (selectionKind !== 'existing' && selectionKind !== 'empty') {
+      throw new TypeError('desktop: invalid data-home selection kind')
+    }
+    const surface = mainSurface
+    if (surface === undefined) throw new Error('desktop: main window is unavailable')
+    const result = await dialog.showOpenDialog(surface.window, {
+      title: app.getLocale().toLowerCase().startsWith('zh')
+        ? selectionKind === 'empty' ? '选择空文件夹以创建新配置' : '选择已有 DSH 配置目录'
+        : selectionKind === 'empty' ? 'Choose an empty folder for a new configuration' : 'Choose an existing DSH data directory',
+      properties: ['openDirectory'],
+    })
+    const candidate = result.filePaths[0]
+    if (result.canceled || candidate === undefined) return { status: 'cancelled' }
+    let selectedPath: string | undefined
+    let entries: readonly string[] = []
+    try {
+      if (selectionKind === 'empty') {
+        selectedPath = await resolveEmptyDesktopDataHome(candidate)
+        if (selectedPath === undefined) return { status: 'not-empty', path: candidate }
+      } else {
+        const source: DesktopDataHomeSource | undefined = await resolveDesktopDataHomeSource(candidate)
+        if (source === undefined) return { status: 'invalid', path: candidate }
+        selectedPath = source.path
+        entries = source.entries
+      }
+    } catch {
+      return { status: 'unreadable', path: candidate }
+    }
+    const now = Date.now()
+    for (const [selectionId, pending] of pendingDataHomeSelections) {
+      if (pending.expiresAt <= now || pending.rendererId === event.sender.id) {
+        pendingDataHomeSelections.delete(selectionId)
+      }
+    }
+    const selectionId = randomUUID()
+    pendingDataHomeSelections.set(selectionId, {
+      rendererId: event.sender.id,
+      selectionKind,
+      path: selectedPath,
+      expiresAt: now + DATA_HOME_SELECTION_LIFETIME_MS,
+    })
+    return { status: 'selected', selectionKind, selectionId, path: selectedPath, entries }
+  })
+  ipcMain.handle('dsh:desktop:data-home:choose-recovery', async (
+    event,
+  ): Promise<DesktopDataHomeSelectionResult> => {
+    assertMainRenderer(event.sender)
+    const surface = mainSurface
+    if (surface === undefined) throw new Error('desktop: main window is unavailable')
+    const result = await dialog.showOpenDialog(surface.window, {
+      title: app.getLocale().toLowerCase().startsWith('zh')
+        ? '切换或新建 DSH 配置目录'
+        : 'Switch or create a DSH data directory',
+      properties: ['openDirectory', 'createDirectory'],
+    })
+    const candidate = result.filePaths[0]
+    if (result.canceled || candidate === undefined) return { status: 'cancelled' }
+    let selection
+    try {
+      selection = await resolveDesktopDataHomeRecoverySelection(candidate)
+    } catch {
+      return { status: 'unreadable', path: candidate }
+    }
+    if (selection === undefined) return { status: 'invalid', path: candidate }
+    const now = Date.now()
+    for (const [selectionId, pending] of pendingDataHomeSelections) {
+      if (pending.expiresAt <= now || pending.rendererId === event.sender.id) {
+        pendingDataHomeSelections.delete(selectionId)
+      }
+    }
+    const selectionId = randomUUID()
+    pendingDataHomeSelections.set(selectionId, {
+      rendererId: event.sender.id,
+      selectionKind: selection.kind,
+      path: selection.path,
+      expiresAt: now + DATA_HOME_SELECTION_LIFETIME_MS,
+    })
+    return {
+      status: 'selected',
+      selectionKind: selection.kind,
+      selectionId,
+      path: selection.path,
+      entries: selection.kind === 'existing' ? selection.entries : [],
+    }
+  })
+  ipcMain.handle('dsh:desktop:data-home:switch', async (
+    event,
+    request: unknown,
+  ): Promise<DesktopDataHomeSwitchResult> => {
+    assertMainRenderer(event.sender)
+    if (!isDesktopDataHomeSwitchRequest(request)) throw new TypeError('desktop: invalid data-home switch request')
+    let target: { readonly kind: 'desktop' }
+      | { readonly kind: 'official' }
+      | { readonly kind: 'custom' | 'create'; readonly path: string }
+    if (request.kind === 'custom' || request.kind === 'create') {
+      const pending = pendingDataHomeSelections.get(request.selectionId)
+      const expectedSelectionKind: DesktopDataHomeSelectionKind = request.kind === 'create' ? 'empty' : 'existing'
+      if (pending === undefined
+        || pending.rendererId !== event.sender.id
+        || pending.selectionKind !== expectedSelectionKind
+        || pending.expiresAt <= Date.now()) {
+        pendingDataHomeSelections.delete(request.selectionId)
+        throw new Error('desktop: selected data directory expired; choose it again')
+      }
+      target = { kind: request.kind, path: pending.path }
+    } else {
+      target = request
+    }
+    const decision = await resolveDesktopDataHomeSwitch(
+      DESKTOP_DATA_HOME,
+      dshHome,
+      target,
+    )
+    if (request.kind === 'custom' || request.kind === 'create') {
+      pendingDataHomeSelections.delete(request.selectionId)
+    }
+    if (!decision.changed) return { restarting: false, activePath: dshHome }
+    await writeDesktopDataHomeSetup(DESKTOP_DATA_HOME.setupFile, decision.setup)
+    setTimeout(requestDesktopRestart, 250)
+    return { restarting: true, activePath: decision.path }
   })
   ipcMain.handle('dsh:desktop:preferences:get', (event) => {
     assertMainRenderer(event.sender)

@@ -7,6 +7,13 @@ import type { DesktopReleaseStatus } from './release-checker.ts'
 import type { DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import type { SourceUpdateResult, SourceUpdateStatus } from './source-updater.ts'
 import type { DesktopCliStatus } from './desktop-cli-registration.ts'
+import type {
+  DesktopDataHomeSelectionResult,
+  DesktopDataHomeSelectionKind,
+  DesktopDataHomeStatus,
+  DesktopDataHomeSwitchRequest,
+  DesktopDataHomeSwitchResult,
+} from './desktop-data-home.ts'
 import type { DesktopChatBackground } from './chat-background-store.ts'
 import type {
   BundledPluginDeferredStartResult,
@@ -50,6 +57,9 @@ export interface DesktopCapabilities {
 /** Narrow desktop-shell preference and diagnostics bridge. */
 export interface DesktopShellBridge {
   getCapabilities(): Promise<DesktopCapabilities>
+  getDataHome(): Promise<DesktopDataHomeStatus>
+  chooseDataHome(kind: DesktopDataHomeSelectionKind): Promise<DesktopDataHomeSelectionResult>
+  switchDataHome(request: DesktopDataHomeSwitchRequest): Promise<DesktopDataHomeSwitchResult>
   getPreferences(): Promise<DesktopPreferences>
   updatePreferences(patch: DesktopPreferencesPatch): Promise<DesktopPreferences>
   onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
@@ -113,6 +123,13 @@ export interface DesktopChatBackgroundBridge {
 
 const shellBridge: DesktopShellBridge = {
   getCapabilities: () => ipcRenderer.invoke('dsh:desktop:capabilities') as Promise<DesktopCapabilities>,
+  getDataHome: () => ipcRenderer.invoke('dsh:desktop:data-home:get') as Promise<DesktopDataHomeStatus>,
+  chooseDataHome: kind => ipcRenderer.invoke(
+    'dsh:desktop:data-home:choose', kind,
+  ) as Promise<DesktopDataHomeSelectionResult>,
+  switchDataHome: request => ipcRenderer.invoke(
+    'dsh:desktop:data-home:switch', request,
+  ) as Promise<DesktopDataHomeSwitchResult>,
   getPreferences: () => ipcRenderer.invoke('dsh:desktop:preferences:get') as Promise<DesktopPreferences>,
   updatePreferences: patch => ipcRenderer.invoke('dsh:desktop:preferences:update', patch) as Promise<DesktopPreferences>,
   onPreferences(callback) {
@@ -254,8 +271,13 @@ function installLoadingPage(): void {
       title: 'DeepSeek Harness 启动失败',
       description: '内置 Harness 连续三次未能完成启动。你可以重试或打开日志目录查看详情。',
       retry: '重新启动',
+      switchDataHome: '切换配置目录',
       logs: '打开日志目录',
       logLabel: '日志：',
+      invalidDataHome: '请选择受支持的 DSH 配置目录，或选择一个完全空的目录来新建配置。',
+      unreadableDataHome: '无法读取所选目录，请检查目录权限后重试。',
+      unchangedDataHome: '当前已在使用这个配置目录，请选择其他目录。',
+      switchDataHomeFailed: '配置目录切换失败，请重试或查看日志。',
       slow: '启动时间较长，你可以打开 Harness 日志查看当前进度。',
       stages: {
         'preparing-desktop': '正在准备桌面环境',
@@ -275,8 +297,13 @@ function installLoadingPage(): void {
       title: 'DeepSeek Harness could not start',
       description: 'The embedded Harness failed to become ready after three attempts. Retry or open the log folder for details.',
       retry: 'Retry',
+      switchDataHome: 'Switch data directory',
       logs: 'Open log folder',
       logLabel: 'Log: ',
+      invalidDataHome: 'Choose a supported DSH data directory, or a completely empty folder for a new configuration.',
+      unreadableDataHome: 'The selected directory cannot be read. Check its permissions and try again.',
+      unchangedDataHome: 'This configuration directory is already active. Choose a different directory.',
+      switchDataHomeFailed: 'Could not switch the configuration directory. Retry or inspect the log.',
       slow: 'Startup is taking longer than expected. Open the Harness log to inspect its progress.',
       stages: {
         'preparing-desktop': 'Preparing desktop environment',
@@ -301,14 +328,17 @@ function installLoadingPage(): void {
   const message = document.querySelector<HTMLElement>('#failure-message')
   const logPath = document.querySelector<HTMLElement>('#log-path')
   const retry = document.querySelector<HTMLButtonElement>('#retry')
+  const switchDataHome = document.querySelector<HTMLButtonElement>('#switch-data-home')
   const openLogs = document.querySelector<HTMLButtonElement>('#open-logs')
+  const directoryError = document.querySelector<HTMLElement>('#directory-error')
   const slow = document.querySelector<HTMLElement>('#slow')
   const slowMessage = document.querySelector<HTMLElement>('#slow-message')
   const openSlowLog = document.querySelector<HTMLButtonElement>('#open-slow-log')
   if (
     title === null || description === null || progress === null || progressSurface === null
     || progressBar === null || progressTask === null || progressPercent === null || failure === null
-    || message === null || logPath === null || retry === null || openLogs === null
+    || message === null || logPath === null || retry === null || switchDataHome === null
+    || openLogs === null || directoryError === null
     || slow === null || slowMessage === null || openSlowLog === null
   ) return
   title.textContent = copy.startupTitle
@@ -360,11 +390,47 @@ function installLoadingPage(): void {
   message.textContent = query.get('message') ?? copy.description
   logPath.textContent = `${copy.logLabel}${query.get('logPath') ?? ''}`
   retry.textContent = copy.retry
+  switchDataHome.textContent = copy.switchDataHome
   progressSurface.hidden = true
   failure.hidden = false
   retry.addEventListener('click', () => {
     retry.disabled = true
     void ipcRenderer.invoke('dsh:harness:retry').finally(() => { retry.disabled = false })
+  })
+  const showDirectoryError = (value: string): void => {
+    directoryError.textContent = value
+    directoryError.hidden = false
+  }
+  switchDataHome.addEventListener('click', () => {
+    switchDataHome.disabled = true
+    directoryError.hidden = true
+    void ipcRenderer.invoke('dsh:desktop:data-home:choose-recovery').then(async (value) => {
+      const selection = value as DesktopDataHomeSelectionResult
+      if (selection.status === 'cancelled') return
+      if (selection.status !== 'selected') {
+        showDirectoryError(selection.status === 'unreadable'
+          ? copy.unreadableDataHome
+          : copy.invalidDataHome)
+        return
+      }
+      const request: DesktopDataHomeSwitchRequest = selection.selectionKind === 'empty'
+        ? { kind: 'create', selectionId: selection.selectionId }
+        : { kind: 'custom', selectionId: selection.selectionId }
+      const switched = await ipcRenderer.invoke(
+        'dsh:desktop:data-home:switch', request,
+      ) as DesktopDataHomeSwitchResult
+      if (!switched.restarting) showDirectoryError(copy.unchangedDataHome)
+    }).catch(() => {
+      showDirectoryError(copy.switchDataHomeFailed)
+    }).finally(() => {
+      switchDataHome.disabled = false
+    })
+  })
+  void ipcRenderer.invoke('dsh:desktop:data-home:get').then((value) => {
+    const status = value as DesktopDataHomeStatus
+    if (status.managedExternally) switchDataHome.hidden = true
+  }, () => {
+    // Keep the recovery action visible when capability probing fails.
   })
 }
 
