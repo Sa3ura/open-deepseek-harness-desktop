@@ -4,22 +4,22 @@
     {
       "seedId": "dshmarket",
       "packageName": "dshmarket",
-      "version": "1.36.3",
+      "version": "1.38.1",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dshmarket@1.36.3",
-      "archive": "dshmarket-1.36.3.tgz",
-      "integrity": "sha512-jdNgRbSp6IKHZuTvLsWEaCc9OLcGij3VDTJZ17PHklSckJHFyAjoUd4rAPAMifDJz6KnodtewgFEvkrqUEEYAw=="
+      "registrySpec": "dshmarket@1.38.1",
+      "archive": "dshmarket-1.38.1.tgz",
+      "integrity": "sha512-Z9VleLtCXwk5OlbSJKayWtbMaKACL8JUMyb/JHpErS4N3q//GJS+cgOhhxNkZYmXxB8/lv9IbhX1CBzlMhJeJg=="
     },
     {
       "seedId": "xmanrui-dsh-im",
       "packageName": "@xmanrui/dsh-im",
-      "version": "3.0.1",
+      "version": "4.2.1",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "@xmanrui/dsh-im@3.0.1",
-      "archive": "xmanrui-dsh-im-3.0.1.tgz",
-      "integrity": "sha512-Uhdx5Iqod43Npi0OkB9527qhqqyzerKRFVVtlfaIdKH0EDmaQIslYlvldJiCGPUEZeKlD5HbbWi+hKORGU3HXA=="
+      "registrySpec": "@xmanrui/dsh-im@4.2.1",
+      "archive": "xmanrui-dsh-im-4.2.1.tgz",
+      "integrity": "sha512-ciklkZVeBYvX1FNbqktb5GeVLJlyln2kN1ZRAQtq5vVAVahLXiP1pEG/sLbkc1fCXGB0h6qu9BNRNP6mupRL3w=="
     },
     {
       "seedId": "dsh-skill-picker",
@@ -34,25 +34,25 @@
     {
       "seedId": "dsh-better-sidebar",
       "packageName": "dsh-better-sidebar",
-      "version": "0.16.1",
+      "version": "0.17.1",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dsh-better-sidebar@0.16.1",
+      "registrySpec": "dsh-better-sidebar@0.17.1",
       "approvedBuilds": [
         "node-pty"
       ],
-      "archive": "dsh-better-sidebar-0.16.1.tgz",
-      "integrity": "sha512-fjFNzfrgdIbzlcC4Sd4aS1I2ZRbuA+/m3XQnOxY13jE6IKJzwz0+GjATcKTyFoLnXoDRp2QJz/U0GxhaOD70Dw=="
+      "archive": "dsh-better-sidebar-0.17.1.tgz",
+      "integrity": "sha512-7me2X6w+ecbzAMEHtuWkSPUrfLDLTBvL9qugzgBbg1FyWyy2dzS9QNDvnZjjkst4kr4LjUJTTG4rsXBcz41YzQ=="
     },
     {
       "seedId": "dsh-pocket",
       "packageName": "dsh-pocket",
-      "version": "1.14.5",
+      "version": "2.10.0",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dsh-pocket@1.14.5",
-      "archive": "dsh-pocket-1.14.5.tgz",
-      "integrity": "sha512-TIVmqvXT6QbmOiSGXXAuZtfpF5SvI1W3RPwgQSebXWA8lfib9B3MQitVc30SSs9chqmT1jaQCUzdMTZZdrOeZg=="
+      "registrySpec": "dsh-pocket@2.10.0",
+      "archive": "dsh-pocket-2.10.0.tgz",
+      "integrity": "sha512-2lL4Fo0GEgfW0qvXfNYuNl7m0ELGjZ2/BIdjzaCpZ6M/3oYLcq6cCwkdm/KiOQTii6bydM7afI2zLD+8TCzuRw=="
     },
     {
       "seedId": "diagnostic-dsh-font",
