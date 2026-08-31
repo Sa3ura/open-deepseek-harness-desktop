@@ -45,7 +45,7 @@ import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
-import { INSTALL_ANCHOR } from './install-anchor.ts'
+import { INSTALL_ANCHOR, INSTALL_MODULE_BASE_URL } from './install-anchor.ts'
 import { runProfilePackageManager } from './profile-package-manager.ts'
 
 const NAME = 'dsh'
@@ -492,7 +492,7 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
       exit: code => void shutdown.shutdown(code),
       ready: appReady.service,
     })
-  }, safeMode ? INSTALL_ANCHOR : undefined)
+  }, safeMode ? INSTALL_MODULE_BASE_URL : undefined)
   app.current = ctx
   if (safeMode) {
     const current = readProfileDiagnosticReport(options.profile)

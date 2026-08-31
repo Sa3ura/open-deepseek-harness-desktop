@@ -648,6 +648,59 @@ describe('profile shared Host dependency repair', () => {
     ])
   })
 
+  it('quarantines the namespaced Diagnostics Lab fixture without a Profile-wide fake Host override', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, ['@deepseek-ai/dsh-base'])
+    const packageName = '@dsh-diagnostic-lab/host-shadow-incompatible'
+    const pluginDir = join(profileDir, 'node_modules', packageName)
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: packageName,
+      version: '1.0.0',
+      dependencies: { '@deepseek-ai/dsh-tools': '<0.0.0' },
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    stageDuplicate(pluginDir, '@deepseek-ai/dsh-tools', '0.0.0-diagnostic')
+    writeProfileManifest(profileDir, {
+      name: 'dsh-profile-web',
+      dependencies: { [packageName]: 'file:../../../diagnostic-fixtures/run/host-shadow-incompatible' },
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', packageName] } },
+    })
+    const workspacePath = join(profileDir, 'pnpm-workspace.yaml')
+    const beforeWorkspace = readFileSync(workspacePath, 'utf8')
+
+    expect(inspectProfileDependencies({ binName: 'test', profile: 'web', installAnchor: anchor, home }))
+      .toEqual([expect.objectContaining({
+        rootPackage: packageName,
+        dependency: '@deepseek-ai/dsh-tools',
+        compatible: false,
+      })])
+
+    const result = repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => {
+        if (readProfileManifest('test', profileDir).dependencies?.[packageName] === undefined) {
+          rmSync(pluginDir, { recursive: true, force: true })
+        }
+        return { exitCode: 0 }
+      },
+    })
+
+    expect(result).toMatchObject({
+      status: 'quarantined',
+      quarantined: [expect.objectContaining({ packageName, reason: 'incompatible-host-dependency' })],
+    })
+    expect(inspectProfileDependencies({ binName: 'test', profile: 'web', installAnchor: anchor, home })).toEqual([])
+    const workspace = readFileSync(workspacePath, 'utf8')
+    expect(workspace).not.toContain('diagnostic-fixtures')
+    expect(workspace).not.toContain('nodeLinker: isolated')
+    expect(workspace).not.toBe(beforeWorkspace)
+  })
+
   it('does not invoke pnpm for a healthy profile', () => {
     const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')

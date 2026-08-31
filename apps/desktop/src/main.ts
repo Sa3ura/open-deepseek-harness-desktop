@@ -1443,9 +1443,9 @@ async function startApplication(): Promise<void> {
     logDirectory: join(app.getPath('logs'), 'diagnostic-lab'),
     suspendHarness: async () => { await supervisor?.stop() },
     resumeHarness: () => { supervisor?.resume() },
-    installProfile: async (home) => {
+    installProfile: async (home, force) => {
       await runPackageManagerInvocation(
-        ['install', '--offline', '--ignore-scripts'],
+        ['install', '--offline', '--ignore-scripts', ...(force ? ['--force'] : [])],
         join(home, 'profiles', 'web'),
         { ...harnessEnvironment, DSH_HOME: home },
         launchOptions,
@@ -1477,7 +1477,11 @@ async function startApplication(): Promise<void> {
       mainSurface?.send('dsh:desktop:diagnostic-lab:status', snapshot)
     },
   })
-  await diagnosticLabManager.recoverPending()
+  try {
+    await diagnosticLabManager.recoverPending()
+  } catch (error) {
+    console.error('desktop: diagnostic lab startup recovery failed; continuing with supervised Harness startup', error)
+  }
   supervisor.start()
 
   if (releaseChecker !== undefined) {

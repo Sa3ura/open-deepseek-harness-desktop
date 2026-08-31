@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { classifyProfileDiagnostic } from '@deepseek-ai/dsh-app-boot'
+import { fileURLToPath } from 'node:url'
+import { INSTALL_ANCHOR, INSTALL_MODULE_BASE_URL } from '../src/install-anchor.ts'
 import { isDeterministicSafeModeFailure, loaderClientModuleFailure } from '../src/profile-boot.ts'
 
 describe('Profile diagnostic recovery policy', () => {
+  it('provides the Loader a valid file URL for packaged safe-mode imports', () => {
+    expect(new URL(INSTALL_MODULE_BASE_URL).protocol).toBe('file:')
+    expect(fileURLToPath(INSTALL_MODULE_BASE_URL)).toBe(INSTALL_ANCHOR)
+  })
+
   it('does not divert transient, waiting-period, unknown, or broken-runtime failures into safe mode', () => {
     for (const value of [
       'ECONNRESET while fetching registry',

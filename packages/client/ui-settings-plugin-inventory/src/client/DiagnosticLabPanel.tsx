@@ -106,7 +106,8 @@ export function DiagnosticLabPanel({
   const chosen = available.filter(scenario => selected.has(scenario.id))
   const running = run?.phase === 'queued' || run?.phase === 'running' || run?.phase === 'restoring'
   const retained = run?.phase === 'active'
-  const occupied = running || retained
+  const recoveryBlocked = run?.recovery === 'failed'
+  const occupied = running || retained || recoveryBlocked
   const progress = run === null || run.totalSteps === 0
     ? 0
     : Math.min(100, Math.round(run.completedSteps / run.totalSteps * 100))
@@ -209,8 +210,13 @@ export function DiagnosticLabPanel({
             >
               {t('lab.export')}
             </Button>
-            {run.phase === 'active' ? (
-              <Button variant="outline" onClick={() => { void restoreAll(run.runId).then(setRun) }}>
+            {run.phase === 'active' || run.recovery === 'failed' ? (
+              <Button variant="outline" onClick={() => {
+                setError(null)
+                void restoreAll(run.runId).then(setRun, (reason: unknown) => {
+                  setError(reason instanceof Error ? reason.message : String(reason))
+                })
+              }}>
                 {t('lab.restoreAll')}
               </Button>
             ) : null}

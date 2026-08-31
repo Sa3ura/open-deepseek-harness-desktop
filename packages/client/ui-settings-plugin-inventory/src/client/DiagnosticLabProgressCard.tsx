@@ -101,7 +101,7 @@ export function DiagnosticLabProgressCard({
       <div className={css.actions}>
         <Button variant="outline" onClick={() => { setHiddenRunId(snapshot.runId) }}>{t('lab.overlay.hide')}</Button>
         {cancellable ? <Button variant="outline" onClick={() => { void cancel(snapshot.runId).then(setSnapshot) }}>{t('lab.cancel')}</Button> : null}
-        {snapshot.phase === 'active' ? (
+        {snapshot.phase === 'active' || snapshot.recovery === 'failed' ? (
           <Button variant="outline" onClick={() => { void restoreAll(snapshot.runId).then(setSnapshot) }}>{t('lab.restoreAll')}</Button>
         ) : null}
       </div>

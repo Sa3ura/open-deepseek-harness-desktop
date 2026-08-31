@@ -574,6 +574,57 @@ describe('PluginDiagnosticsSection', () => {
     await waitFor(() => { expect(restoreAll).toHaveBeenCalledWith(active.runId) })
   })
 
+  it('blocks another exercise and keeps recovery retryable after restoration fails', async () => {
+    const scenario = {
+      id: 'host-shadow-incompatible',
+      title: 'Incompatible Host dependency',
+      description: 'Retain recovery controls after a failed restore.',
+      expectedCode: 'profile.host-dependency-conflict',
+      targets: ['isolated', 'active-profile'],
+    } satisfies DiagnosticLabScenario
+    const failed = {
+      schema: 2,
+      runId: 'lab-run-recovery-failed',
+      target: 'active-profile',
+      scenarioIds: [scenario.id],
+      phase: 'failed',
+      completedSteps: 5,
+      totalSteps: 6,
+      recovery: 'failed',
+      startedAt: '2026-08-31T00:00:00.000Z',
+      results: [],
+      diagnostic: 'dependency graph restoration could not be verified',
+    } satisfies DiagnosticLabRunSnapshot
+    const restored = { ...failed, phase: 'restored', recovery: 'clean' } satisfies DiagnosticLabRunSnapshot
+    const restoreAll = vi.fn(async () => restored)
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => diagnosticsSnapshot,
+      startDependencyDoctor: vi.fn(),
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(),
+      startUninstall: vi.fn(),
+      startQuarantineRetry: vi.fn(),
+      uninstallQuarantine: vi.fn(),
+      dismissDependencyHealth: vi.fn(),
+      diagnosticLab: {
+        listScenarios: vi.fn(async () => [scenario]),
+        current: vi.fn(async () => failed),
+        start: vi.fn(async () => failed),
+        getRun: vi.fn(async () => failed),
+        cancel: vi.fn(async () => failed),
+        restoreAll,
+        exportReport: vi.fn(async () => '{}'),
+        subscribe: vi.fn(() => () => {}),
+      },
+    } as PluginDiagnosticsSectionProps)} />)
+
+    expect(await screen.findByText(failed.diagnostic)).toBeTruthy()
+    expect(screen.getByRole('button', { name: en['lab.start'] }).hasAttribute('disabled')).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: en['lab.restoreAll'] }))
+    await waitFor(() => { expect(restoreAll).toHaveBeenCalledWith(failed.runId) })
+  })
+
   it('runs a current read-only check and presents the structured result', async () => {
     const startDependencyDoctor = vi.fn(async () => healthy)
     render(<PluginDiagnosticsSection {...({

@@ -29,7 +29,7 @@ Open the Plugins section in Settings and select the **Plugin list** tab to inspe
 
 Open **Diagnostics** to inspect Profile dependency, Loader, quarantine, and removal consistency. A `profile.quarantine-removal-residue` card means the plugin is already inactive and absent, but derived lockfile or diagnostic state still names it; **Clean removal residue** invokes the guarded Profile doctor and never reinstalls or re-isolates that plugin.
 
-The desktop-only **Diagnostics Lab** includes an **Incomplete quarantine removal** exercise for both the isolated home and the explicitly confirmed current Profile. It writes the reviewed legacy repair-report, diagnostic-report, and lockfile shape, invokes the production doctor, and retains the run report until **Restore all**; the renderer cannot supply a package, path, or arbitrary payload.
+The desktop-only **Diagnostics Lab** includes an **Incomplete quarantine removal** exercise for both the isolated home and the explicitly confirmed current Profile. It writes the reviewed legacy repair-report, diagnostic-report, and lockfile shape, invokes the production doctor, and retains the run report until **Restore all**; the renderer cannot supply a package, path, or arbitrary payload. Current-Profile fixtures never replace global Host overrides. Restore all performs a forced offline dependency rebuild and verifies managed-file hashes, run-attributed pnpm links, and a final Doctor result before Harness resumes; failed recovery remains visible and retryable.
 
 ### Exploring market plugins
 

@@ -3,7 +3,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import {
-  mkdir, readFile, readdir, rename, rm, stat, writeFile,
+  lstat, mkdir, readFile, readdir, readlink, rename, rm, stat, unlink, writeFile,
 } from 'node:fs/promises'
 import {
   dirname, isAbsolute, join, relative, resolve, sep,
@@ -122,7 +122,7 @@ export interface DiagnosticLabManagerOptions {
   readonly logDirectory: string
   suspendHarness(): Promise<void>
   resumeHarness(): void
-  installProfile(home: string): Promise<void>
+  installProfile(home: string, force: boolean): Promise<void>
   /** Install one closed, integrity-checked diagnostic resource through the product CLI. */
   installDiagnosticPlugin(home: string, packageName: 'dsh-font'): Promise<void>
   runDoctor(home: string, repair: boolean): Promise<DiagnosticLabDoctorResult>
@@ -155,6 +155,10 @@ const PRODUCTION_REPAIR_STATUS = {
   'orphaned-bundle': 'quarantined',
   'quarantine-removal-residue': 'repaired',
 } as const
+const PRODUCTION_DOCTOR_SCENARIOS = Object.keys(PRODUCTION_REPAIR_STATUS) as Array<
+  keyof typeof PRODUCTION_REPAIR_STATUS
+>
+const DIAGNOSTIC_PACKAGE_SCOPE = '@dsh-diagnostic-lab'
 const MANAGED_PROFILE_FILES = [
   'profiles/web/package.json',
   'profiles/web/pnpm-workspace.yaml',
@@ -231,6 +235,55 @@ async function atomicWrite(path: string, content: string): Promise<void> {
   await rename(temporary, path)
 }
 
+async function removeWithoutFollowing(path: string): Promise<void> {
+  let metadata
+  try {
+    metadata = await lstat(path)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+    throw error
+  }
+  if (metadata.isSymbolicLink()) {
+    await unlink(path)
+    return
+  }
+  await rm(path, { recursive: true, force: true })
+}
+
+async function treeLinksToRun(root: string, runId: string): Promise<boolean> {
+  const runMarker = runId.slice(0, 16)
+  const pending = [root]
+  for (let directory = pending.pop(); directory !== undefined; directory = pending.pop()) {
+    let entries
+    try {
+      entries = await readdir(directory, { withFileTypes: true })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw error
+    }
+    for (const entry of entries) {
+      const path = join(directory, entry.name)
+      if (entry.isSymbolicLink()) {
+        const target = await readlink(path)
+        if (target.includes('diagnostic-fixtures') && target.includes(runMarker)) return true
+      } else if (entry.isDirectory()) {
+        pending.push(path)
+      }
+    }
+  }
+  return false
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path)
+    return true
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw error
+  }
+}
+
 function cloneSnapshot(snapshot: DiagnosticLabRunSnapshot): DiagnosticLabRunSnapshot {
   return structuredClone(snapshot)
 }
@@ -290,12 +343,21 @@ export class DiagnosticLabManager {
       if (!entry.isDirectory()) continue
       const runRoot = join(runsRoot, entry.name)
       const journal = await this.#readJournal(runRoot)
-      if (journal?.state === 'clean') continue
+      if (journal?.state === 'clean' && !await this.#hasRunResidue(journal)) continue
       if (journal?.schema === 2 && journal.state === 'active') {
         retained.push(await this.#readReport(runRoot))
         continue
       }
-      if (journal !== undefined) await this.#restoreRun(runRoot, journal)
+      if (journal !== undefined) {
+        try {
+          await this.#restoreRun(runRoot, { ...journal, state: 'restoring' })
+        } catch (error) {
+          const failed = await this.#recoveryFailureSnapshot(runRoot, journal, error)
+          this.#active = failed
+          this.#publish(failed)
+          return
+        }
+      }
     }
     if (retained.length > 1) {
       throw new Error('desktop: multiple retained diagnostic lab runs require manual recovery')
@@ -307,7 +369,10 @@ export class DiagnosticLabManager {
 
   /** Start one validated serial run and return its initial state. */
   start(request: DiagnosticLabStartRequest): DiagnosticLabRunSnapshot {
-    if (this.#active !== undefined && ['queued', 'running', 'active', 'restoring'].includes(this.#active.phase)) {
+    if (this.#active !== undefined && (
+      ['queued', 'running', 'active', 'restoring'].includes(this.#active.phase)
+      || this.#active.recovery === 'failed'
+    )) {
       throw new Error('desktop: another diagnostic lab run is active')
     }
     if (!isTarget(request.target)) {
@@ -376,12 +441,12 @@ export class DiagnosticLabManager {
   async restoreAll(runId: string): Promise<DiagnosticLabRunSnapshot> {
     const snapshot = this.get(runId)
     if (snapshot.phase === 'restored') return snapshot
-    if (snapshot.phase !== 'active') {
+    if (snapshot.phase !== 'active' && snapshot.recovery !== 'failed') {
       throw new Error('desktop: diagnostic lab run is not awaiting restoration')
     }
     const runRoot = join(this.#options.root, 'runs', runId)
     const journal = await this.#readJournal(runRoot)
-    if (journal?.schema !== 2 || (journal.state !== 'active' && journal.state !== 'restoring')) {
+    if (journal?.schema !== 2 || !['active', 'restoring', 'clean'].includes(journal.state)) {
       throw new Error('desktop: retained diagnostic recovery journal is unavailable')
     }
     this.#replace({ ...snapshot, phase: 'restoring', recovery: 'recovering' })
@@ -407,6 +472,10 @@ export class DiagnosticLabManager {
       }
       await this.#writeReport(runRoot, restored)
       this.#replace(restored)
+      if (suspended) {
+        this.#options.resumeHarness()
+        suspended = false
+      }
       return cloneSnapshot(restored)
     } catch (error) {
       const failed: DiagnosticLabRunSnapshot = {
@@ -418,8 +487,6 @@ export class DiagnosticLabManager {
       await this.#writeReport(runRoot, failed)
       this.#replace(failed)
       throw error
-    } finally {
-      if (suspended) this.#options.resumeHarness()
     }
   }
 
@@ -490,6 +557,10 @@ export class DiagnosticLabManager {
     let recovery: DiagnosticLabRecoveryState = 'recovering'
     let recoveryFailure: unknown
     try {
+      if (initial.target === 'active-profile' && !suspended) {
+        await this.#options.suspendHarness()
+        suspended = true
+      }
       await this.#writeJournal(runRoot, { ...journal, state: 'restoring' })
       await this.#restoreRun(runRoot, { ...journal, state: 'restoring' })
       recovery = 'clean'
@@ -497,9 +568,10 @@ export class DiagnosticLabManager {
       recovery = 'failed'
       recoveryFailure = error
     }
-    if (suspended) {
+    if (suspended && recovery === 'clean') {
       try {
         this.#options.resumeHarness()
+        suspended = false
       } catch (error) {
         recovery = 'failed'
         recoveryFailure ??= error
@@ -576,8 +648,7 @@ export class DiagnosticLabManager {
       const expectedDisposition = productionFixture
         ? PRODUCTION_REPAIR_STATUS[scenarioId as keyof typeof PRODUCTION_REPAIR_STATUS]
         : undefined
-      if ((productionFixture && expectedDisposition === 'repaired' && verified.issueCodes.includes(fixture.code))
-        || (productionFixture && expectedDisposition === 'quarantined' && !verified.issueCodes.includes(fixture.code))
+      if ((productionFixture && verified.issueCodes.includes(fixture.code))
         || (!productionFixture && await this.#detectScenario(fixturePath, fixture) === fixture.code)) {
         throw new Error(`diagnostic scenario ${scenarioId} remained unhealthy after repair`)
       }
@@ -830,13 +901,7 @@ export class DiagnosticLabManager {
     const packageName = `@dsh-diagnostic-lab/${scenarioId}`
     const fixtureRoot = join(home, 'diagnostic-fixtures', this.#requireActive().runId)
     const fixtureDir = join(fixtureRoot, scenarioId)
-    const shadowDir = join(fixtureRoot, `${scenarioId}-dsh-tools`)
-    if (scenarioId !== 'orphaned-bundle') {
-      await atomicWrite(join(shadowDir, 'package.json'), `${JSON.stringify({
-        name: '@deepseek-ai/dsh-tools',
-        version: '0.0.0-diagnostic',
-      }, undefined, 2)}\n`)
-    }
+    const installedDir = join(profileDir, 'node_modules', packageName)
     await atomicWrite(join(fixtureDir, 'package.json'), `${JSON.stringify({
       name: packageName,
       version: '1.0.0',
@@ -856,17 +921,20 @@ export class DiagnosticLabManager {
     if (!manifest.dsh.profile.bundles.includes(packageName)) manifest.dsh.profile.bundles.push(packageName)
     await atomicWrite(manifestPath, `${JSON.stringify(manifest, undefined, 2)}\n`)
     if (scenarioId !== 'orphaned-bundle') {
-      const workspacePath = join(profileDir, 'pnpm-workspace.yaml')
-      const workspace = await readFile(workspacePath, 'utf8')
-      const shadowSpec = `file:${relative(profileDir, shadowDir).split(sep).join('/')}`
-      const document = parseDocument(workspace)
-      if (document.errors.length > 0) throw new Error(`diagnostic fixture workspace is invalid: ${document.errors[0]?.message ?? 'unknown YAML error'}`)
-      if (scenarioId === 'host-shadow-incompatible') document.set('nodeLinker', 'isolated')
-      document.setIn(['overrides', '@deepseek-ai/dsh-tools'], shadowSpec)
-      await atomicWrite(workspacePath, document.toString())
-    }
-    await this.#options.installProfile(home)
-    if (scenarioId === 'orphaned-bundle') {
+      await atomicWrite(join(installedDir, 'package.json'), `${JSON.stringify({
+        name: packageName,
+        version: '1.0.0',
+        dependencies: scenarioId === 'host-shadow-compatible'
+          ? { '@deepseek-ai/dsh-tools': '*' }
+          : { '@deepseek-ai/dsh-tools': '<0.0.0' },
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      }, undefined, 2)}\n`)
+      await atomicWrite(join(installedDir, 'cordis.patch.yml'), '[]\n')
+      await atomicWrite(join(installedDir, 'node_modules', '@deepseek-ai', 'dsh-tools', 'package.json'), `${JSON.stringify({
+        name: '@deepseek-ai/dsh-tools',
+        version: '0.0.0-diagnostic',
+      }, undefined, 2)}\n`)
+    } else {
       manifest.dependencies = Object.fromEntries(
         Object.entries(manifest.dependencies).filter(([name]) => name !== packageName),
       )
@@ -928,10 +996,10 @@ export class DiagnosticLabManager {
   async #restoreRun(runRoot: string, journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal): Promise<void> {
     if (journal.target === 'active-profile' && journal.backupRoot !== undefined) {
       await this.#restoreActiveProfile(runRoot, journal)
-      await rm(join(this.#options.activeDshHome, 'profiles', 'web', '.diagnostic-lab', journal.runId), { recursive: true, force: true })
-      await rm(join(this.#options.activeDshHome, 'diagnostic-fixtures', journal.runId), { recursive: true, force: true })
-      await this.#options.installProfile(this.#options.activeDshHome)
+      await this.#removeRunResidue(journal)
+      await this.#options.installProfile(this.#options.activeDshHome, true)
       await this.#restoreActiveProfile(runRoot, journal)
+      await this.#verifyRestoredProfile(journal)
     } else {
       await rm(join(runRoot, 'runtime'), { recursive: true, force: true })
     }
@@ -941,6 +1009,90 @@ export class DiagnosticLabManager {
       state: 'clean',
     }
     await this.#writeJournal(runRoot, clean)
+  }
+
+  async #removeRunResidue(journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal): Promise<void> {
+    const profileDir = join(this.#options.activeDshHome, 'profiles', 'web')
+    const runMarker = journal.runId.slice(0, 16)
+    await removeWithoutFollowing(join(profileDir, '.diagnostic-lab', journal.runId))
+    await removeWithoutFollowing(join(this.#options.activeDshHome, 'diagnostic-fixtures', journal.runId))
+    for (const scenarioId of PRODUCTION_DOCTOR_SCENARIOS) {
+      await removeWithoutFollowing(join(profileDir, 'node_modules', DIAGNOSTIC_PACKAGE_SCOPE, scenarioId))
+    }
+    const virtualStore = join(profileDir, 'node_modules', '.pnpm')
+    if (await pathExists(virtualStore)) {
+      for (const entry of await readdir(virtualStore, { withFileTypes: true })) {
+        const path = join(virtualStore, entry.name)
+        const ownedEntry = entry.name.includes('diagnostic-fixtures') && entry.name.includes(runMarker)
+        const linksToRun = !ownedEntry && entry.isDirectory() && await treeLinksToRun(path, journal.runId)
+        if (ownedEntry || linksToRun) await removeWithoutFollowing(path)
+      }
+    }
+  }
+
+  async #hasRunResidue(journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal): Promise<boolean> {
+    if (journal.target !== 'active-profile') return false
+    const profileDir = join(this.#options.activeDshHome, 'profiles', 'web')
+    const runMarker = journal.runId.slice(0, 16)
+    if (await pathExists(join(profileDir, '.diagnostic-lab', journal.runId))
+      || await pathExists(join(this.#options.activeDshHome, 'diagnostic-fixtures', journal.runId))) return true
+    for (const scenarioId of PRODUCTION_DOCTOR_SCENARIOS) {
+      if (await pathExists(join(profileDir, 'node_modules', DIAGNOSTIC_PACKAGE_SCOPE, scenarioId))) return true
+    }
+    const virtualStore = join(profileDir, 'node_modules', '.pnpm')
+    if (!await pathExists(virtualStore)) return false
+    for (const entry of await readdir(virtualStore, { withFileTypes: true })) {
+      if (entry.name.includes('diagnostic-fixtures') && entry.name.includes(runMarker)) return true
+      if (entry.isDirectory() && await treeLinksToRun(join(virtualStore, entry.name), journal.runId)) return true
+    }
+    return false
+  }
+
+  async #verifyRestoredProfile(journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal): Promise<void> {
+    for (const file of journal.files) {
+      const destination = join(this.#options.activeDshHome, file.relativePath)
+      if (!file.existed) {
+        if (await pathExists(destination)) throw new Error(`desktop: diagnostic recovery retained ${file.relativePath}`)
+        continue
+      }
+      const content = await readFile(destination)
+      if (sha256(content) !== file.sha256) throw new Error(`desktop: diagnostic recovery changed ${file.relativePath}`)
+    }
+    if (await this.#hasRunResidue(journal)) throw new Error('desktop: diagnostic recovery retained a test dependency link')
+    const doctor = await this.#options.runDoctor(this.#options.activeDshHome, false)
+    if (!['healthy', 'repaired', 'quarantined'].includes(doctor.status)) {
+      throw new Error(`desktop: diagnostic recovery Doctor failed with status ${doctor.status}`)
+    }
+  }
+
+  async #recoveryFailureSnapshot(
+    runRoot: string,
+    journal: DiagnosticLabJournal | LegacyDiagnosticLabJournal,
+    error: unknown,
+  ): Promise<DiagnosticLabRunSnapshot> {
+    let previous: DiagnosticLabRunSnapshot | undefined
+    try {
+      previous = await this.#readAnyReport(runRoot)
+    } catch (reportError) {
+      console.warn('desktop: could not reuse the previous diagnostic lab report during recovery', reportError)
+    }
+    const failed: DiagnosticLabRunSnapshot = {
+      schema: 2,
+      runId: journal.runId,
+      target: journal.target,
+      scenarioIds: previous?.scenarioIds ?? [],
+      phase: 'failed',
+      completedSteps: previous?.completedSteps ?? 0,
+      totalSteps: previous?.totalSteps ?? 0,
+      recovery: 'failed',
+      startedAt: previous?.startedAt ?? (this.#options.now ?? (() => new Date()))().toISOString(),
+      finishedAt: (this.#options.now ?? (() => new Date()))().toISOString(),
+      results: previous?.results ?? [],
+      diagnostic: sanitize(describeUnknown(error), this.#options.activeDshHome),
+    }
+    await this.#writeJournal(runRoot, { ...journal, schema: 2, state: 'restoring' })
+    await this.#writeReport(runRoot, failed)
+    return failed
   }
 
   async #readJournal(runRoot: string): Promise<DiagnosticLabJournal | LegacyDiagnosticLabJournal | undefined> {
@@ -974,6 +1126,15 @@ export class DiagnosticLabManager {
     const value = JSON.parse(await readFile(path, 'utf8')) as Partial<DiagnosticLabRunSnapshot>
     if (value.schema !== 2 || value.runId !== runRoot.split(/[\\/]/u).at(-1) || value.phase !== 'active') {
       throw new Error(`desktop: unsupported retained diagnostic report ${path}`)
+    }
+    return value as DiagnosticLabRunSnapshot
+  }
+
+  async #readAnyReport(runRoot: string): Promise<DiagnosticLabRunSnapshot> {
+    const path = join(runRoot, 'report.json')
+    const value = JSON.parse(await readFile(path, 'utf8')) as Partial<DiagnosticLabRunSnapshot>
+    if (value.schema !== 2 || value.runId !== runRoot.split(/[\\/]/u).at(-1)) {
+      throw new Error(`desktop: unsupported diagnostic report ${path}`)
     }
     return value as DiagnosticLabRunSnapshot
   }
