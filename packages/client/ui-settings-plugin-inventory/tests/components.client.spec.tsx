@@ -776,6 +776,102 @@ describe('PluginDiagnosticsSection', () => {
     await waitFor(() => { expect(uninstallQuarantine).toHaveBeenCalledWith({ quarantineId: 'quarantine-1' }) })
   })
 
+  it('removes an incompatible client-generation plugin before opening its market update', async () => {
+    const quarantinedSnapshot = {
+      entries: [],
+      dependencyHealth: {
+        lastRepair: null,
+        issues: [],
+        safeMode: null,
+        quarantined: [{
+          quarantineId: 'quarantine-task-board',
+          profile: 'web',
+          packageName: '@linxin666/dsh-client-ui-task-board',
+          packageSpec: '^0.3.6',
+          installedVersion: '0.3.6',
+          quarantinedAt: '2026-08-31T08:00:00.000Z',
+          reason: 'client-module-unavailable',
+          conflicts: [],
+        }],
+      },
+    } as unknown as Snapshot
+    const startQuarantineRetry = vi.fn()
+    const uninstallQuarantine = vi.fn(async () => true)
+    const openPluginMarket = vi.fn()
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => quarantinedSnapshot,
+      startDependencyDoctor: vi.fn(),
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(),
+      startUninstall: vi.fn(),
+      startQuarantineRetry,
+      uninstallQuarantine,
+      dismissDependencyHealth: vi.fn(),
+      openPluginMarket,
+    } as PluginDiagnosticsSectionProps)} />)
+
+    expect((await screen.findAllByText(en['health.quarantine.solution.client-module-unavailable'])).length).toBe(2)
+    expect(screen.getByText('0.3.6')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en['health.quarantine.action.findUpdate'] }))
+    expect(screen.getByRole('heading', { name: en['health.update.confirm.title'] })).toBeTruthy()
+    fireEvent.click(screen.getByRole('checkbox', { name: en['health.update.confirm.acknowledge'] }))
+    fireEvent.click(screen.getByRole('button', { name: en['health.update.confirm.action'] }))
+
+    await waitFor(() => {
+      expect(uninstallQuarantine).toHaveBeenCalledWith({ quarantineId: 'quarantine-task-board' })
+      expect(openPluginMarket).toHaveBeenCalledWith('@linxin666/dsh-client-ui-task-board')
+    })
+    expect(startQuarantineRetry).not.toHaveBeenCalled()
+  })
+
+  it('offers dependency convergence as the direct repair for a convergence quarantine', async () => {
+    const quarantinedSnapshot = {
+      entries: [],
+      dependencyHealth: {
+        lastRepair: null,
+        issues: [],
+        safeMode: null,
+        quarantined: [{
+          quarantineId: 'quarantine-convergence',
+          profile: 'web',
+          packageName: 'fixture-plugin',
+          packageSpec: '^1.2.0',
+          installedVersion: '1.2.3',
+          quarantinedAt: '2026-08-31T08:00:00.000Z',
+          reason: 'convergence-failed',
+          conflicts: [],
+        }],
+      },
+    } as unknown as Snapshot
+    const running = {
+      installId: 'retry-convergence' as PluginInstallId,
+      profile: 'web',
+      packageSpec: '^1.2.0',
+      command: 'dsh plugin --profile web doctor --retry quarantine-convergence',
+      phase: 'running',
+    } satisfies PluginInstallSnapshot
+    const startQuarantineRetry = vi.fn(async () => running)
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => quarantinedSnapshot,
+      startDependencyDoctor: vi.fn(),
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(async () => running),
+      startUninstall: vi.fn(),
+      startQuarantineRetry,
+      uninstallQuarantine: vi.fn(),
+      dismissDependencyHealth: vi.fn(),
+      openPluginMarket: vi.fn(),
+    } as PluginDiagnosticsSectionProps)} />)
+
+    expect((await screen.findAllByText(en['health.quarantine.solution.convergence-failed'])).length).toBe(2)
+    fireEvent.click(screen.getByRole('button', { name: en['health.quarantine.action.convergeRetry'] }))
+    await waitFor(() => {
+      expect(startQuarantineRetry).toHaveBeenCalledWith({ quarantineId: 'quarantine-convergence' })
+    })
+  })
+
   it('reports enabled Loader entries whose root Fiber failed', async () => {
     render(<PluginDiagnosticsSection {...({
       t,
