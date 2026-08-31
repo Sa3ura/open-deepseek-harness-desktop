@@ -12,13 +12,13 @@ Status: implemented
 
 ## 决策
 
-桌面宿主通过窄范围 Electron Bridge 提供版本化诊断演练中心。目录包含十个固定场景标识和固定样本字节：兼容与不兼容 Host 影子副本、孤立 Bundle、安装包内 `dsh-font` 客户端不兼容、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断。渲染层只能选择这些标识，以及隔离沙箱或需明确确认的当前 Profile。
+桌面宿主通过窄范围 Electron Bridge 提供版本化诊断演练中心。目录包含十一个固定场景标识和固定样本字节：兼容与不兼容 Host 影子副本、孤立 Bundle、旧版隔离卸载残留、安装包内 `dsh-font` 客户端不兼容、缺失模块、无效 Patch、重复 Loader、生命周期失败、构建许可被阻止和修复中断。渲染层只能选择这些标识，以及隔离沙箱或需明确确认的当前 Profile。
 
 每个选中场景只注入一次。成功运行进入持久的 `active` 阶段，不再自动清理。本次运行的文件、包管理器状态、修复处置和隔离记录会一直保留，直到用户点击**全部恢复**。报告保留预期与实际产品错误码、修复处置、耗时和经过限长脱敏的诊断。
 
 默认沙箱会在 Electron `userData` 下使用本次运行专属的 home。它会经过正式 Doctor 边界并保留运行时，但不会影响当前 Profile 顶部统计。这是刻意的边界：沙箱证据显示在演练卡片与报告里，不能伪装成用户真实 Profile 的问题。
 
-当前 Profile 模式只开放四种经过真实产品链路验证的场景：兼容 Host 影子副本、不兼容 Host 依赖、孤立 Bundle，以及安装包内 `dsh-font 1.1.0` 的客户端不兼容。写入前 Harness 会暂停，桌面宿主会备份白名单内的 Profile 清单、Workspace 策略、锁文件、Patch、隔离记录和健康报告。前三种样本通过内置 pnpm 与正式 `dsh plugin --profile web doctor --repair` 完成真实的依赖统一或隔离。`dsh-font` 被固定为完整性校验的 `diagnostic` 资源，普通启动与手动预装流程都不会安装；只有演练中心会通过 `dsh plugin add` 临时装入，再恢复真实浏览器，等待客户端 Loader 恢复链路写入 `profile.module-resolution`、撤下 Bundle 并隔离插件。因此常规诊断看到的就是保护真实用户启动的同一种记录。
+当前 Profile 模式只开放五种经过真实产品链路验证的场景：兼容 Host 影子副本、不兼容 Host 依赖、孤立 Bundle、旧版隔离卸载残留，以及安装包内 `dsh-font 1.1.0` 的客户端不兼容。写入前 Harness 会暂停，桌面宿主会备份白名单内的 Profile 清单、Workspace 策略、锁文件、Patch、隔离记录和健康报告。前四种样本通过内置 pnpm 与正式 `dsh plugin --profile web doctor --repair` 完成真实的依赖统一、隔离或状态收敛。隔离卸载演练会重建旧卸载器留下的精确不一致形态：插件、活动 manifest 条目与持久隔离已经消失，但受限的修复报告、诊断报告和 lockfile 引用仍然存在。正式 Doctor 必须报告 `profile.quarantine-removal-residue`，只清理这些派生状态，并保留其他无关 incident。`dsh-font` 被固定为完整性校验的 `diagnostic` 资源，普通启动与手动预装流程都不会安装；只有演练中心会通过 `dsh plugin add` 临时装入，再恢复真实浏览器，等待客户端 Loader 恢复链路写入 `profile.module-resolution`、撤下 Bundle 并隔离插件。因此常规诊断看到的就是保护真实用户启动的同一种记录。
 
 恢复日志区分四种状态。`injecting` 与 `restoring` 表示未完成事务，进程中断后必须在加载 Profile 插件前自动回滚；`active` 表示用户主动保留的演练，应用重启后应重新连接到界面；`clean` 表示全部恢复已经完成。这样既不会让崩溃恢复误删演示现场，也不会放行只写了一半的修改。
 
@@ -42,4 +42,4 @@ Status: implemented
 
 活动任务由 Electron 主进程和 schema 2 恢复日志/报告持有。`current` Bridge 操作使重载后的渲染页面能够重新连接；根级 `shell.overlay` 卡片显示注入进度、现场保留状态、通过/失败数量和“全部恢复”。隐藏卡片只改变展示。
 
-聚焦测试固定了单次注入、沙箱持久状态、真实 Profile 隔离统计、显式全部恢复、重启后重新连接、取消回滚、报告脱敏、受限 Preload Bridge、设置页呈现和类型安全的本地化。本桌面能力的验证通道不包含浏览器回放或 Playwright。
+聚焦测试固定了单次注入、沙箱持久状态、真实 Profile 隔离统计、旧版卸载残留的写入与有界清理、显式全部恢复、重启后重新连接、取消回滚、报告脱敏、受限 Preload Bridge、设置页呈现和类型安全的本地化。本桌面能力的验证通道不包含浏览器回放或 Playwright。

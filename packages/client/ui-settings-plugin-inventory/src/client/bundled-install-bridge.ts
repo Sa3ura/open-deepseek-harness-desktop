@@ -34,6 +34,7 @@ export type DiagnosticLabScenarioId =
   | 'host-shadow-compatible'
   | 'host-shadow-incompatible'
   | 'orphaned-bundle'
+  | 'quarantine-removal-residue'
   | 'client-module-unavailable'
   | 'module-resolution-missing'
   | 'patch-invalid'

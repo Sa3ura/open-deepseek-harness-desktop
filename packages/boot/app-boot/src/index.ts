@@ -64,6 +64,7 @@ export {
   clearLastProfileRepairReport,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  inspectQuarantineRemovalResidue,
   listQuarantinedProfilePlugins,
   PROFILE_QUARANTINE_SCHEMA,
   quarantineProfilePluginAfterLoadFailure,
@@ -79,6 +80,7 @@ export {
   type ProfileRepairOptions,
   type ProfileRepairReport,
   type ProfileQuarantineRetryOptions,
+  type QuarantineRemovalResidue,
   type QuarantinedProfilePlugin,
 } from './profile-health.ts'
 
@@ -91,6 +93,7 @@ export {
   PROFILE_DIAGNOSTIC_SCHEMA,
   profileDiagnosticRuleCatalog,
   profileDependencyConflictDiagnostic,
+  quarantineRemovalResidueDiagnostic,
   quarantinedPluginDiagnostic,
   readProfileDiagnosticReport,
   sanitizeProfileDiagnostic,

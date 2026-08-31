@@ -57,6 +57,7 @@ export type ProfileDiagnosticCode =
   | 'profile.bundle-invalid'
   | 'profile.module-resolution'
   | 'profile.patch-invalid'
+  | 'profile.quarantine-removal-residue'
   | 'loader.duplicate-entry'
   | 'loader.duplicate-registration'
   | 'loader.unresolved-injection'
@@ -239,6 +240,9 @@ const RULES: readonly DiagnosticRule[] = [
   {
     code: 'profile.patch-invalid', source: 'profile', severity: 'blocked', actions: ['open-config', 'export'],
     pattern: /cordis\.patch\.yml|home patch|patch target|!!js|top-level YAML array|empty patch/iu,
+  },
+  {
+    code: 'profile.quarantine-removal-residue', source: 'profile', severity: 'warning', actions: ['repair', 'export'],
   },
   {
     code: 'loader.duplicate-entry', source: 'loader', severity: 'blocked', actions: ['isolate', 'open-config', 'export'],
@@ -445,6 +449,28 @@ export function orphanedBundleDiagnostic(packageName: string): ProfileDiagnostic
     attribution: { rootPackage: packageName },
     actions: ['repair', 'isolate', 'export'],
     evidence: [],
+  }
+}
+
+/**
+ * Build one repairable issue for derived state left after a quarantined plugin was removed.
+ * @param packageName - Inactive plugin named by the stale quarantine report.
+ * @param evidence - Bounded state components that still reference the plugin.
+ * @returns Client-safe warning whose only mutation is the guarded Profile repair.
+ */
+export function quarantineRemovalResidueDiagnostic(
+  packageName: string,
+  evidence: readonly string[],
+): ProfileDiagnostic {
+  return {
+    diagnosticId: randomUUID(),
+    code: 'profile.quarantine-removal-residue',
+    source: 'profile',
+    phase: 'preflight',
+    severity: 'warning',
+    attribution: { rootPackage: packageName },
+    actions: ['repair', 'export'],
+    evidence,
   }
 }
 

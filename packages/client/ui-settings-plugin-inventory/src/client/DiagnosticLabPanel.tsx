@@ -34,6 +34,7 @@ const SCENARIO_KEYS: Record<DiagnosticLabScenarioId, {
   'host-shadow-compatible': { title: 'lab.scenario.hostCompatible.title', body: 'lab.scenario.hostCompatible.body' },
   'host-shadow-incompatible': { title: 'lab.scenario.hostIncompatible.title', body: 'lab.scenario.hostIncompatible.body' },
   'orphaned-bundle': { title: 'lab.scenario.orphan.title', body: 'lab.scenario.orphan.body' },
+  'quarantine-removal-residue': { title: 'lab.scenario.quarantineRemoval.title', body: 'lab.scenario.quarantineRemoval.body' },
   'client-module-unavailable': { title: 'lab.scenario.clientModule.title', body: 'lab.scenario.clientModule.body' },
   'module-resolution-missing': { title: 'lab.scenario.module.title', body: 'lab.scenario.module.body' },
   'patch-invalid': { title: 'lab.scenario.patch.title', body: 'lab.scenario.patch.body' },

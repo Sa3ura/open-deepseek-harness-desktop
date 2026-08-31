@@ -17,7 +17,10 @@ import {
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
   listQuarantinedProfilePlugins,
+  inspectQuarantineRemovalResidue,
   quarantineProfilePluginAfterLoadFailure,
+  readLastProfileRepairReport,
+  readProfileDiagnosticReport,
   readProfileManifest,
   repairProfileDependencies,
   retryQuarantinedProfilePlugin,
@@ -825,6 +828,7 @@ describe('profile shared Host dependency repair', () => {
   })
 
   it('uninstalls an inactive quarantined plugin before clearing its record', () => {
+    const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')
     const { profileDir, pluginDir } = stageProfile(home, {})
     const manifest = readProfileManifest('test', profileDir)
@@ -834,13 +838,226 @@ describe('profile shared Host dependency repair', () => {
       dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
     })
     const quarantined = stageQuarantineRecord(home)
+    const lockfile = stageLockfile(profileDir, ['fixture-plugin'])
+    const issue = {
+      diagnosticId: '00000000-0000-4000-8000-000000000002',
+      code: 'profile.module-resolution' as const,
+      source: 'profile' as const,
+      phase: 'import' as const,
+      severity: 'blocked' as const,
+      attribution: { rootPackage: 'fixture-plugin', moduleName: 'fixture-plugin' },
+      actions: ['restore', 'export'] as const,
+      evidence: ['fixture-plugin missed the module table'],
+    }
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: [],
+      quarantined: [{ ...quarantined, packageName: 'fixture-plugin' }],
+      issues: [issue],
+    })
+    writeManifest(join(home, 'profile-health', 'web.diagnostics.json'), {
+      schema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      generatedAt: '2026-08-30T00:00:00.000Z',
+      status: 'issues',
+      issues: [issue],
+    })
 
     expect(existsSync(pluginDir)).toBe(true)
     expect(readProfileManifest('test', profileDir).dependencies?.['fixture-plugin']).toBeUndefined()
     expect(uninstallQuarantinedProfilePlugin(quarantined.quarantineId, home)).toBe(true)
     expect(existsSync(pluginDir)).toBe(false)
+    expect(readFileSync(lockfile, 'utf8')).not.toContain('fixture-plugin')
     expect(listQuarantinedProfilePlugins(home)).toEqual([])
+    expect(readLastProfileRepairReport('web', home)).toBeUndefined()
+    expect(readProfileDiagnosticReport('web', home)).toBeUndefined()
+    expect(repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => { throw new Error('healthy removal must not invoke pnpm') },
+    }).status).toBe('healthy')
     expect(uninstallQuarantinedProfilePlugin(quarantined.quarantineId, home)).toBe(false)
+  })
+
+  it('preserves unrelated profile incidents when uninstalling a quarantined plugin', () => {
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir } = stageProfile(home, {})
+    const manifest = readProfileManifest('test', profileDir)
+    writeProfileManifest(profileDir, {
+      ...manifest,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+    })
+    const quarantined = stageQuarantineRecord(home)
+    const removedIssue = {
+      diagnosticId: '00000000-0000-4000-8000-000000000002',
+      code: 'profile.module-resolution' as const,
+      source: 'profile' as const,
+      phase: 'import' as const,
+      severity: 'blocked' as const,
+      attribution: { rootPackage: 'fixture-plugin', moduleName: 'fixture-plugin' },
+      actions: ['restore', 'export'] as const,
+      evidence: ['fixture-plugin missed the module table'],
+    }
+    const retainedIssue = {
+      diagnosticId: '00000000-0000-4000-8000-000000000003',
+      code: 'profile.patch-invalid' as const,
+      source: 'profile' as const,
+      phase: 'parse' as const,
+      severity: 'warning' as const,
+      attribution: { rootPackage: 'other-plugin', moduleName: 'other-plugin' },
+      actions: ['open-config', 'export'] as const,
+      evidence: ['other-plugin has an unrelated configuration warning'],
+    }
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: [],
+      quarantined: [{ ...quarantined, packageName: 'fixture-plugin' }],
+      issues: [removedIssue, retainedIssue],
+    })
+    writeManifest(join(home, 'profile-health', 'web.diagnostics.json'), {
+      schema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      generatedAt: '2026-08-30T00:00:00.000Z',
+      status: 'issues',
+      issues: [removedIssue, retainedIssue],
+    })
+
+    expect(uninstallQuarantinedProfilePlugin(quarantined.quarantineId, home)).toBe(true)
+    expect(readLastProfileRepairReport('web', home)).toMatchObject({
+      status: 'repaired',
+      quarantined: [],
+      issues: [{ diagnosticId: retainedIssue.diagnosticId }],
+    })
+    expect(readProfileDiagnosticReport('web', home)).toMatchObject({
+      status: 'issues',
+      issues: [{ diagnosticId: retainedIssue.diagnosticId }],
+    })
+  })
+
+  it('detects and repairs state left by an older quarantine uninstaller', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir, pluginDir } = stageProfile(home, {})
+    const manifest = readProfileManifest('test', profileDir)
+    writeProfileManifest(profileDir, {
+      ...manifest,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+    })
+    rmSync(pluginDir, { recursive: true, force: true })
+    const lockfile = stageLockfile(profileDir, ['fixture-plugin'])
+    const record = {
+      quarantineId: '00000000-0000-4000-8000-000000000001',
+      profile: 'web',
+      packageName: 'fixture-plugin',
+      packageSpec: '^2.3.0',
+      installedVersion: '2.3.4',
+      bundleIndex: 1,
+      quarantinedAt: '2026-08-19T01:02:03.000Z',
+      reason: 'client-module-unavailable',
+      conflicts: [],
+    }
+    const issue = {
+      diagnosticId: '00000000-0000-4000-8000-000000000002',
+      code: 'profile.module-resolution',
+      source: 'profile',
+      phase: 'repair',
+      severity: 'blocked',
+      attribution: { rootPackage: 'fixture-plugin' },
+      actions: ['restore', 'export'],
+      evidence: [],
+    }
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: [],
+      quarantined: [record],
+      issues: [issue],
+    })
+    writeManifest(join(home, 'profile-health', 'web.diagnostics.json'), {
+      schema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      generatedAt: '2026-08-30T00:00:00.000Z',
+      status: 'issues',
+      issues: [issue],
+    })
+
+    expect(inspectQuarantineRemovalResidue({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+    })).toEqual([expect.objectContaining({
+      packageName: 'fixture-plugin',
+      staleComponents: ['repair-report', 'diagnostic-report', 'lockfile-importer'],
+    })])
+
+    const repaired = repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => { throw new Error('metadata cleanup must not invoke pnpm') },
+    })
+    expect(repaired).toMatchObject({ status: 'repaired' })
+    expect(repaired.diagnostic).toContain('removed stale quarantine state: fixture-plugin')
+    expect(readFileSync(lockfile, 'utf8')).not.toContain('fixture-plugin')
+    expect(readProfileDiagnosticReport('web', home)).toBeUndefined()
+    expect(inspectQuarantineRemovalResidue({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+    })).toEqual([])
+    expect(repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      runPackageManager: () => { throw new Error('healthy follow-up must not invoke pnpm') },
+    }).status).toBe('healthy')
+  })
+
+  it('does not treat an ordinary durable quarantine as removal residue', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const { profileDir, pluginDir } = stageProfile(home, {})
+    const manifest = readProfileManifest('test', profileDir)
+    writeProfileManifest(profileDir, {
+      ...manifest,
+      dependencies: {},
+      dsh: { profile: { bundles: ['@deepseek-ai/dsh-base'] } },
+    })
+    rmSync(pluginDir, { recursive: true, force: true })
+    const quarantined = stageQuarantineRecord(home)
+    writeManifest(join(home, 'profile-health', 'web.json'), {
+      schema: 'dsh/profile-dependency-repair/v1',
+      diagnosticSchema: 'dsh/profile-diagnostic/v2',
+      profile: 'web',
+      status: 'quarantined',
+      conflicts: [],
+      quarantined: [{ ...quarantined, packageName: 'fixture-plugin' }],
+      issues: [],
+    })
+
+    expect(inspectQuarantineRemovalResidue({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+    })).toEqual([])
+    expect(listQuarantinedProfilePlugins(home)).toHaveLength(1)
   })
 
   it('refuses to uninstall a quarantined plugin restored to the active profile', () => {

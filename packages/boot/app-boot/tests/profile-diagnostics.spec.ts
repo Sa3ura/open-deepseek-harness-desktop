@@ -7,6 +7,8 @@ import {
   clearProfileDiagnosticReport,
   createProfileDiagnosticReport,
   extractProfileBuildApprovalKey,
+  profileDiagnosticRuleCatalog,
+  quarantineRemovalResidueDiagnostic,
   readProfileDiagnosticReport,
   sanitizeProfileDiagnostic,
   writeProfileDiagnosticReport,
@@ -74,6 +76,27 @@ describe('profile diagnostic v2', () => {
         moduleName: 'dsh-font',
       },
       actions: ['repair', 'isolate', 'export'],
+    })
+  })
+
+  it('describes stale quarantine removal state as a repair-only warning', () => {
+    expect(quarantineRemovalResidueDiagnostic('dsh-font', [
+      'repair-report',
+      'lockfile-importer',
+    ])).toMatchObject({
+      code: 'profile.quarantine-removal-residue',
+      source: 'profile',
+      phase: 'preflight',
+      severity: 'warning',
+      attribution: { rootPackage: 'dsh-font' },
+      actions: ['repair', 'export'],
+      evidence: ['repair-report', 'lockfile-importer'],
+    })
+    expect(profileDiagnosticRuleCatalog()).toContainEqual({
+      code: 'profile.quarantine-removal-residue',
+      severity: 'warning',
+      actions: ['repair', 'export'],
+      nativeCodes: [],
     })
   })
 
