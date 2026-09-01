@@ -8,7 +8,24 @@ Langues : [简体中文](README.md) · [English](README.en.md) · [日本語](RE
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1 est disponible — téléchargez-la et essayez-la](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1).** Cette version intègre DeepSeek Harness 0.1.2-alpha.1 et ajoute le centre d’exercices de diagnostic, la découverte de plugins en temps réel, une isolation renforcée et une navigation des réglages réorganisable.
+> **[v0.1.2-alpha.1.1 est disponible. Cette mise à niveau corrective de v0.1.2-alpha.1 est prête à être téléchargée et essayée](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** Cette version conserve DeepSeek Harness 0.1.2-alpha.1 comme base amont tout en renforçant la gestion des environnements Desktop, la récupération des plugins et la stabilité multiplateforme.
+>
+> **Principaux ajouts et améliorations :**
+>
+> - Choisissez ou changez en toute sécurité entre un dossier propre à Desktop, le dossier DSH officiel, un autre dossier pris en charge ou un dossier vide pendant la configuration initiale et dans les réglages généraux. Le changement ne copie, ne fusionne, n’écrase et ne supprime aucune donnée source.
+> - Configurez l’accès depuis un téléphone sur le réseau local et les connexions IM grâce à la nouvelle étape d’accès mobile du guide initial.
+> - Identifiez le plugin responsable, le motif de sa mise en quarantaine et l’action de récupération. Le diagnostic peut nettoyer un état obsolète de suppression de quarantaine et maintenir l’application arrêtée en toute sécurité si la récupération échoue.
+> - Détectez les versions communautaires publiées sous les tags `odsh-v*`, les anciens tags `dsh-v*` et les tags `v*` ordinaires. Windows et macOS peuvent télécharger et vérifier l’installeur correspondant et fournir un retour précis en cas d’échec.
+> - Sous Windows/Linux, la barre de titre et le contenu des plugins Harness utilisent des vues natives séparées ; un plugin en plein écran ne peut donc plus couvrir les boutons de réduction, d’agrandissement ou de fermeture.
+>
+> **Corrections importantes :**
+>
+> - Correction des erreurs pnpm `EPERM`/rename sous Windows lorsqu’un antivirus, un indexeur ou un processus résiduel bloque brièvement le dossier d’un plugin pendant son installation ou sa mise à jour.
+> - Correction des enregistrements de quarantaine restant après la désinstallation d’un plugin problématique et empêchant le démarrage de l’application ou la réinstallation du plugin.
+> - Correction du chargement des anciennes conversations lorsqu’un appel d’outil vide ne possède pas de `tool source`.
+> - Correction de la recherche des Releases communautaires lorsqu’elle ne détectait pas la dernière version, restait bloquée ou sélectionnait une mauvaise préversion.
+> - Renforcement du diagnostic des modules client absents, des conflits de dépendances et des échecs de chargement avec des actions explicites de réinstallation, de nouvelle tentative ou de désinstallation.
+> - Mise à jour du marché de plugins intégré, d’IM, de Better Sidebar, de Pocket et d’autres plugins, tout en conservant des versions figées et des contrôles d’intégrité SHA-512. Les plugins explicitement désinstallés ne sont pas restaurés automatiquement.
 >
 > Il s’agit d’une préversion Alpha. Sauvegardez les configurations importantes avant la mise à niveau et joignez les journaux ou rapports de diagnostic utiles à vos signalements.
 

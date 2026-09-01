@@ -8,7 +8,24 @@ Idiomas: [简体中文](README.md) · [English](README.en.md) · [日本語](REA
 
 > [!IMPORTANT]
 >
-> **[A v0.1.2-alpha.1 já está disponível — baixe e experimente](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1).** A versão integra o DeepSeek Harness 0.1.2-alpha.1 e adiciona o laboratório de diagnóstico, descoberta de plugins em tempo real, isolamento reforçado e navegação de Configurações reordenável.
+> **[A v0.1.2-alpha.1.1 já está disponível. Esta atualização corretiva da v0.1.2-alpha.1 está pronta para baixar e experimentar](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** Esta versão continua usando o DeepSeek Harness 0.1.2-alpha.1 como base upstream e reforça o gerenciamento do ambiente Desktop, a recuperação de plugins e a estabilidade multiplataforma.
+>
+> **Principais novidades e melhorias:**
+>
+> - Escolha ou alterne com segurança entre um diretório próprio do Desktop, o diretório oficial do DSH, outro diretório compatível ou um diretório vazio durante a configuração inicial e nas Configurações gerais. A troca não copia, mescla, sobrescreve nem exclui os dados originais.
+> - Configure o acesso pelo celular na rede local e as conexões IM na nova etapa de acesso móvel do guia inicial.
+> - Veja o plugin responsável, o motivo da quarentena e a ação de recuperação quando um plugin é isolado. O diagnóstico pode limpar estados obsoletos de remoção da quarentena e manter o aplicativo interrompido com segurança se a recuperação falhar.
+> - Encontre versões da comunidade publicadas com tags `odsh-v*`, tags antigas `dsh-v*` e tags `v*` comuns. Windows e macOS podem baixar e verificar o instalador correspondente e exibem informações claras em caso de falha.
+> - No Windows/Linux, a barra de título e o conteúdo dos plugins do Harness usam visualizações nativas separadas, impedindo que plugins em tela cheia cubram os botões de minimizar, maximizar ou fechar.
+>
+> **Correções importantes:**
+>
+> - Corrige erros `EPERM`/rename do pnpm no Windows quando antivírus, indexadores ou processos residuais bloqueiam brevemente o diretório de um plugin durante a instalação ou atualização.
+> - Corrige registros de quarentena que permaneciam após desinstalar um plugin problemático e impediam o aplicativo de iniciar ou o plugin de ser instalado novamente.
+> - Corrige o carregamento de conversas antigas quando uma chamada de ferramenta vazia não contém `tool source`.
+> - Corrige a verificação de Releases da comunidade quando ela não encontrava a versão mais recente, permanecia em andamento ou selecionava a prévia errada.
+> - Reforça o diagnóstico de módulos de cliente ausentes, conflitos de dependências e falhas de carregamento com orientações práticas para reinstalar, tentar novamente ou desinstalar.
+> - Atualiza o mercado de plugins incluído, IM, Better Sidebar, Pocket e outros plugins, mantendo versões fixadas e verificações de integridade SHA-512. Plugins desinstalados explicitamente pelo usuário não são restaurados automaticamente.
 >
 > Esta é uma prévia Alpha. Faça backup das configurações importantes antes de atualizar e inclua logs ou relatórios de diagnóstico relevantes ao comunicar problemas.
 

@@ -12,7 +12,24 @@ Languages: [简体中文](README.md) · English · [日本語](README.ja.md) · 
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1 is available now — download it and give it a try](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1).** It integrates DeepSeek Harness 0.1.2-alpha.1 and adds the Diagnostics Lab, live plugin discovery, stronger plugin isolation, and reorderable Settings navigation, alongside fixes for Windows PATH handling, the title bar, configuration-file opening, and packaged startup checks.
+> **[v0.1.2-alpha.1.1 is available now. It is a maintenance upgrade to v0.1.2-alpha.1—download it and give it a try](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** This release continues to use DeepSeek Harness 0.1.2-alpha.1 as its upstream baseline while strengthening desktop environment management, plugin recovery, and cross-platform reliability.
+>
+> **Key additions and improvements:**
+>
+> - Safely choose or switch among a Desktop-owned directory, the official DSH directory, another supported directory, or an empty directory during first-run setup and in General Settings. Switching never copies, merges, overwrites, or deletes data in the original directory.
+> - Complete local-network phone access and IM connection setup from the new phone-access step in the first-run guide.
+> - See the responsible plugin, quarantine reason, and recovery action when a plugin is quarantined. Diagnostics can clear stale quarantine removal state and keep the app safely stopped if recovery fails.
+> - Discover community releases across `odsh-v*`, legacy `dsh-v*`, and ordinary `v*` tags. Windows and macOS can download and verify matching installers and show actionable failure details.
+> - Windows and Linux place the title bar and Harness plugin content in separate native views, so full-screen plugins cannot cover the minimize, maximize, or close buttons.
+>
+> **Important fixes:**
+>
+> - Fixed pnpm `EPERM`/rename failures on Windows when antivirus software, indexers, or residual processes briefly hold a plugin directory during installation or update.
+> - Fixed stale quarantine records that could remain after uninstalling a problem plugin and prevent the app from starting or the plugin from being installed again.
+> - Fixed legacy conversations failing to load when an empty tool call has no `tool source`.
+> - Fixed community Release checks that could miss the latest version, remain stuck in progress, or choose the wrong pre-release.
+> - Strengthened diagnostics for missing client modules, dependency conflicts, and loading failures with actionable reinstall, retry, or uninstall guidance.
+> - Updated the bundled plugin market, IM, Better Sidebar, Pocket, and related plugins while retaining pinned versions and SHA-512 integrity checks. Plugins that users explicitly uninstall are not restored automatically.
 >
 > This is an Alpha pre-release. Back up important configuration before upgrading, and include relevant logs or diagnostic reports when reporting problems.
 
