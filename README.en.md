@@ -30,14 +30,22 @@ Installers include Node.js, pnpm, and the Harness runtime, so users do not need 
 >
 > This repository is not an official DeepSeek product. It is an open-source community project built on DeepSeek Harness and remains in preview; local data formats, plugin compatibility policies, and installation details may continue to evolve.
 
-## Highlights in this release
+## Current feature highlights
 
+- [AI conversation workspace](#ai-conversation-workspace): adjustable content, turn navigation, exact token usage, queued messages, and richer image and file handling.
 - [First launch and independent data environments](#first-launch-and-independent-data-environments): import an official configuration, share a directory directly, or start fresh.
-- [Plugin selection and restoration after import](#plugin-selection-and-restoration-after-import): online source checks plus safe restoration from source directories or `.tgz` archives.
-- [Supercharged diagnostics](#supercharged-diagnostics): turn difficult pnpm and Cordis failures into actionable diagnoses and guarded repair.
-- [Text selection and context-menu actions](#text-selection-and-context-menu-actions): copy, ask in a new conversation, or append to the current draft.
-- [Desktop enhancements](#desktop-enhancements-to-the-upstream-web-experience): tray operation, quick restart, notifications, logs, in-app updates, and CLI registration.
-- [Download and install](#installation): native Windows, macOS, and Linux packages are available.
+- [Plugin discovery, installation, and updates](#plugin-discovery-installation-and-updates): live market data, categories, local status, direct installation, and online updates.
+- [Supercharged diagnostics](#supercharged-diagnostics): inspect pnpm, Cordis, and Loader state before startup, then exercise, quarantine, or recover plugins.
+- [Customizable Settings navigation](#customizable-settings-navigation): scroll, reorder, and preserve the user's Settings layout.
+- [Desktop enhancements](#desktop-enhancements-to-the-upstream-web-experience): native installers, tray operation, quick restart, notifications, logs, updates, and system integration.
+
+## AI conversation workspace
+
+The desktop client includes the complete DeepSeek Harness conversation experience. Completed answers can fold process content and the System Prompt. Conversation width and font size are adjustable, Markdown tables scale with the body text, compact turn navigation and exact token usage make long sessions easier to inspect, and streamed code retains syntax highlighting while it is generated.
+
+Question history uses readable question-and-answer cards with completed, cancelled, and interrupted states. Switching sessions preserves an unsubmitted question card. While a session is still running, users can continue typing; the primary action becomes Send and the new message enters the send queue.
+
+Images appear immediately while compression and upload continue in the background. Long screenshots balance size and clarity, image usage participates in context-compaction accounting, and the trace can display images from users, assistants, and tool results. Local-filesystem mode can locate uploaded images, and editing adjacent text does not invalidate file or session references in the composer.
 
 ## First launch and independent data environments
 
@@ -75,7 +83,39 @@ Create an empty, desktop-owned data directory without importing existing setting
   <sub>Start fresh: do not read or modify an existing DSH configuration</sub>
 </p>
 
-After entry, the setup wizard can configure a model API key, WeChat or Feishu and other IM bots, and an optional Codex connection. Every task can be skipped and completed later from Settings.
+### Choose a custom independent data directory
+
+Both **Import into an independent environment** and **Start fresh** offer a choice between the managed default and a custom data directory before continuing. A custom target must be an empty folder and becomes this client's independent data root; the source configuration is not modified or kept in sync. On Windows, sessions, plugin Profiles, and other growing data can live on drive D: or another non-system volume instead of putting continued pressure on drive C:.
+
+<p align="center">
+  <img src="./assets/readme/data-home-import-custom-location-zh.png" width="900" alt="Choose an empty custom data directory while importing official configuration">
+  <br>
+  <sub>Independent import: choose the managed default or an empty folder before copying data</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/data-home-fresh-custom-location-zh.png" width="900" alt="Choose an empty custom data directory when starting fresh">
+  <br>
+  <sub>Start fresh: place the new independent data root in a user-selected location</sub>
+</p>
+
+After initial setup, the data directory can still be changed from **Settings → General settings**. Return to the client-managed directory, use the official `~/.dsh`, select another existing DSH directory, or create a new configuration in an empty folder. Switching only selects the directory used after restart; it does not copy, move, merge, or delete data in the original directory. An empty folder starts the first-install flow again after restart.
+
+<p align="center">
+  <img src="./assets/readme/data-home-switch-after-start-zh.png" width="900" alt="Switch the data directory from General settings after entering the client">
+  <br>
+  <sub>Switch safely to an existing configuration or create a new independent configuration in an empty folder</sub>
+</p>
+
+After entry, the setup wizard can configure a model API key, connect phone access, set up WeChat or Feishu and other IM bots, and optionally connect Codex. Every task can be skipped and completed later from Settings.
+
+## Plugin discovery, installation, and updates
+
+**Explore plugins** reads the live Plugin Marketplace catalog instead of a fixed recommendation list. The dialog provides popular and category views with Stars, 30-day downloads, and local installation state. An uninstalled plugin can enter the guarded installation flow directly or open in the complete marketplace; an installed plugin opens in market management.
+
+A successful catalog response is cached for 24 hours, so changing categories does not repeatedly fetch the complete registry, and users can force a refresh at any time. Installed state is fetched separately on every open, so a recent install, removal, or pending-restart state is not replaced by recommendation cache data. Network and registry failures show the actual reason; stale cached recommendations remain available with a clear warning.
+
+Plugins installed from local directories or archives retain verifiable package and source-repository identities when available. This lets the market identify a compatible online source and offer **Restore**, but the local source itself is not updated in place; restore the online version before it can participate in normal update checks. Installation, upgrade, removal, and diagnostics continue through the shared plugin-management flow; a market card is not an arbitrary command input.
 
 ## Plugin selection and restoration after import
 
@@ -104,6 +144,28 @@ Online and local restoration both continue through build approval, shared-depend
 Third-party plugins share the Host's Node.js process and Cordis service graph. Even code without an obvious defect can destabilize the runtime through a transitive dependency, pnpm linking behavior, or a stale Loader entry. These failures often happen before Settings or an ordinary diagnostic plugin can start, leaving users with an empty tool call, `Cannot read properties of undefined (reading 'prepare')`, a missing plugin list, or a pnpm stack that never identifies the responsible plugin.
 
 Diagnostics therefore live in the Profile composition and boot layer rather than another ordinary plugin. Before third-party code executes, the client reads the Profile manifest, `pnpm-lock.yaml`, Workspace settings, Bundle order, installed dependency graph, and the shared runtime supplied by the current installation. It decides whether the Profile can safely enter one process before loading, repairing, or quarantining anything.
+
+### From startup quarantine to an actionable repair
+
+Protection spans startup and the main UI: the boot layer first identifies and removes an incompatible plugin, the client clearly reports what was quarantined, and Diagnostics then shows the responsible plugin, cause, original version, and concrete update or uninstall actions. One faulty plugin does not take down the entire client, and the user is not left with an unactionable stack trace.
+
+<p align="center">
+  <img src="./assets/readme/diagnostics-startup-quarantine-zh.png" width="900" alt="Startup isolates an incompatible dsh-font plugin">
+  <br>
+  <sub>Detect and quarantine an incompatible plugin during startup</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/diagnostics-quarantine-notice-zh.png" width="900" alt="The client reports quarantined plugins after startup">
+  <br>
+  <sub>Enter the main UI safely, then report exactly what was quarantined</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/diagnostics-repair-guidance-zh.png" width="900" alt="Diagnostics shows the quarantine cause and repair actions">
+  <br>
+  <sub>Show the cause, version, original source, and actionable recovery choices</sub>
+</p>
 
 ### Why identical version numbers can still conflict
 
@@ -135,7 +197,31 @@ If a declared range is incompatible, repair fails, or a second shared instance r
 
 Quarantine is not merely a disabled badge in the UI. It completes only after the root package is physically absent from the active Profile, shared Host packages point to canonical copies, and reinspection succeeds. Users can retry recovery or confirm uninstall from Diagnostics. Crash recovery and interrupted pnpm operations are also handled: only recorded and disabled roots are cleaned, and startup fails closed while the manifest, package tree, or shared identity remains inconsistent.
 
+Diagnostics shows the responsible plugin, its version, the quarantine reason, and a dependency-chain summary. Available actions include relinking and retrying recovery, approving the exact build item named by diagnostics, opening the market to find a compatible update, and removing the plugin completely. Recovery uses the same dependency inspection and reinspection policy; a completed button action is not enough, and the plugin returns to the runtime only after the active Profile is healthy.
+
 The boundary is deliberate: **inspect before plugin execution, decide from the real dependency graph and physical module identity, preserve plugins through lossless convergence where possible, quarantine only when safety cannot be demonstrated, and verify every repair before startup.** In short, pnpm and Cordis errors no longer have to read like passwords; the client tries to explain who failed, why, which protection was applied, whether it can be repaired, and what to do next.
+
+### Diagnostics Lab
+
+Development and installed builds both provide Diagnostics Lab. Its bundled offline fault samples exercise shared-Host shadow copies, orphaned Bundles, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
+
+<p align="center">
+  <img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="Select isolated sandbox scenarios in Diagnostics Lab">
+  <br>
+  <sub>Isolated sandbox: exercise multiple offline faults without changing the user Profile</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/diagnostics-lab-live-profile-zh.png" width="900" alt="Run the advanced active-Profile target in Diagnostics Lab">
+  <br>
+  <sub>Advanced active-Profile target: verify the real quarantine, recovery, and reinspection path</sub>
+</p>
+
+Users can select one or more scenarios, which run sequentially while the UI reports the current scenario, phase, remaining scenarios, pass state, and duration. A global progress card retains the job across Harness renderer reloads. The default isolated target does not change the user's Profile. The advanced active-Profile target pauses Harness, records managed-file hashes and a recovery journal, then restores and reinspects when the run finishes. If clean recovery cannot be proven, Profile plugins do not restart. Each run persists redacted JSON and text summaries without usernames, local paths, or credentials, and the UI can export the JSON report.
+
+> [!CAUTION]
+>
+> The real-Profile exercise is not guaranteed to succeed in this release. Back up your configuration or use an isolated data directory before running it because it carries a significant crash risk. Do not use this mode in production. If a real test is necessary, enable only one scenario at a time.
 
 ## Text selection and context-menu actions
 
@@ -167,13 +253,47 @@ Electron is more than a wrapper around a Web page. The desktop host supervises t
 
 The tray can reopen the window, reveal the log, toggle notifications and launch at login, and quit safely. Abnormal exits, repeated startup failures, and recovery produce throttled native notifications. Every bridge is capability-scoped: Web content may manage these desktop preferences, reveal the fixed `harness.log`, or query this project's Releases, but it receives no generic shell, filesystem, or arbitrary-URL capability.
 
+On Windows and Linux, the native titlebar and Harness content use separate views. A plugin's `100vh`, fixed positioning, portals, and high-level overlays remain inside the content view and cannot cover the minimize, maximize, or close controls. macOS retains native window behavior.
+
+### Customizable Settings navigation
+
+The Settings sidebar has its own scroll region, so plugin-provided sections remain reachable when the list exceeds the dialog height. Users can drag Settings sections into a preferred order with placeholder and automatic-scroll feedback. The order is stored locally and merges predictably when plugins are installed or removed. Configuration files, logs, and other supported paths use the desktop host to open the platform file manager.
+
+<p align="center">
+  <img src="./assets/readme/settings-navigation-reorder-zh.png" width="900" alt="Drag the three-line handles to reorder the Settings sidebar">
+  <br>
+  <sub>Drag Settings sections freely; surrounding rows make room smoothly and the final order is saved</sub>
+</p>
+
 ### Copy from the desktop client
 
 The Electron host grants sanitized clipboard-write permission to the supervised Harness page, so message, code, and conversation copy controls work in the desktop client just as they do in the upstream Web client. Clipboard reads and unrelated browser permissions remain denied.
 
-### Preset plugin foundation
+### Preset plugins
 
-The installer starts with the Plugin Marketplace, IM connections, Skill picker, font support, and Pocket ready to use. They remain ordinary Harness dependencies: users can uninstall them, and the desktop app respects that decision instead of silently restoring them. Connected installations retain exact npm or pinned Git identities so the market can discover later releases; integrity-checked archives provide an offline fallback. The larger Better Sidebar archive is carried by the installer and prepared only after the main interface becomes usable, with a visible non-blocking progress card.
+The installer carries integrity-checked archives for five startup presets: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, and Pocket. `dsh-font` is supplied only as a Diagnostics Lab sample. Initial preparation can use the local archives without fetching the plugin packages on demand, while package and source identities remain available for compatible online update discovery. They remain ordinary Harness dependencies: users can uninstall them, and the desktop app respects that decision instead of silently restoring them.
+
+<p align="center">
+  <img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Connect a phone through the Pocket QR code or LAN address">
+  <br>
+  <sub>Mobile access: scan on the same network or explicitly enable public access when needed</sub>
+</p>
+
+<p align="center">
+  <img src="./assets/readme/preset-im-robot-zh.png" width="900" alt="Connect WeChat and other IM bots through dsh-im">
+  <br>
+  <sub>IM bots: connect WeChat, Feishu, DingTalk, WeCom, QQ, Slack, Telegram, Discord, and WhatsApp</sub>
+</p>
+
+> [!TIP]
+>
+> First startup uses the local plugin archives carried by the installer. They are useful for offline preparation, but a local source does not follow marketplace updates directly. Once online, open **Plugin Marketplace → Installed** and choose **Restore** for each preset: the client removes the local version and reinstalls it from the online source, after which normal update checks can deliver new versions promptly. Restore cannot roll back automatically; keep the local version if a fixed offline package is preferable.
+
+<p align="center">
+  <img src="./assets/readme/preset-plugin-restore-online-zh.png" width="900" alt="Restore bundled local plugins as online plugins in the marketplace">
+  <br>
+  <sub>Recommended after going online: restore each local preset as an online package that can receive update checks</sub>
+</p>
 
 ### Dependency safety before plugin execution
 
@@ -240,13 +360,7 @@ Switch between system, light, dark, and eight product themes; pair them with eig
 
 ### Synchronized with DeepSeek Harness 0.1.2-alpha.1
 
-The current desktop baseline incorporates upstream `dsh-v0.1.2-alpha.1`, including folded process details, adjustable conversation width and font size, exact token usage, turn navigation, authorized subagent model selection, third-party languages, the improved image pipeline, expanded ACP support, and more efficient page and conversation initialization. Existing file and Session references, concurrent `web_search`, reasoning passback, persistent PowerShell PTY, dynamic client packages, build Profiles, and branding slots remain available. Upstream also fixes Windows paths containing Chinese characters, persistent terminal output on macOS and Linux, lost Agent Preset directories, and idle WebSocket disconnects. Electron always passes `--no-open` to `dsh web`, so launching the desktop app does not also open a system browser.
-
-### Diagnostics Lab
-
-The source-only **Install diagnostic test plugin** action has been replaced by a production Diagnostics Lab available in development and installed builds. Its isolated offline catalog exercises shared-Host shadow copies, orphaned Bundles, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
-
-Quick, standard, and soak presets run 1, 3, or 10 rounds. The default target never changes the user's Profile. The advanced active-Profile target requires a second confirmation, pauses Harness, records managed-file hashes and a recovery journal, then restores and reinspects after every round. If clean recovery cannot be proven, Profile plugins do not restart. Every run produces redacted JSON and text reports without usernames, local paths, or credentials.
+The desktop baseline uses upstream `dsh-v0.1.2-alpha.1`. Conversation, model, subagent, image, and file capabilities come from the same Harness runtime, while the desktop distribution adds environment selection, plugin management, diagnostic protection, and system integration. File and Session references, concurrent `web_search`, reasoning passback, persistent PowerShell PTY, dynamic client packages, build Profiles, and branding slots remain available. Electron passes `--no-open` to `dsh web`, so starting the desktop app does not also open a system browser.
 
 ## What you can do
 
@@ -259,7 +373,7 @@ Quick, standard, and soak presets run 1, 3, or 10 rounds. The default target nev
 
 ## Installation
 
-Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) page. [`v0.1.2-alpha.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1) provides the following artifacts:
+Download builds only from this project's [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) page. [`v0.1.2-alpha.1.1`](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1) provides the following artifacts:
 
 | Platform | Architecture | Release package | Status |
 | --- | --- | --- | --- |
