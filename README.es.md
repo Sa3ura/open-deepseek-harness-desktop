@@ -10,23 +10,6 @@ Idiomas: [简体中文](README.md) · [English](README.en.md) · [日本語](REA
 >
 > **[v0.1.2-alpha.1.1 ya está disponible. Es una actualización de corrección y mejora de v0.1.2-alpha.1: descárgala y pruébala](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** Esta versión mantiene DeepSeek Harness 0.1.2-alpha.1 como base del proyecto original y refuerza la gestión de entornos de escritorio, la recuperación de plugins y la estabilidad multiplataforma.
 >
-> **Principales novedades y mejoras:**
->
-> - Permite elegir o cambiar de forma segura entre un directorio propio de Desktop, el directorio oficial de DSH, otro directorio compatible o un directorio vacío durante la configuración inicial y desde Ajustes generales. El cambio no copia, combina, sobrescribe ni elimina los datos originales.
-> - Añade un paso de acceso desde el teléfono a la guía inicial para configurar el acceso por red local y las conexiones IM.
-> - Muestra el plugin responsable, el motivo de la cuarentena y la acción de recuperación cuando se aísla un plugin. El diagnóstico puede limpiar estados obsoletos de eliminación de cuarentena y mantener la aplicación detenida de forma segura si falla la recuperación.
-> - Detecta versiones comunitarias mediante etiquetas `odsh-v*`, las antiguas `dsh-v*` y las etiquetas `v*` normales. Windows y macOS pueden descargar y verificar el instalador correspondiente y muestran información clara cuando falla el proceso.
-> - En Windows/Linux, la barra de título y el contenido de plugins de Harness se ejecutan en vistas nativas separadas, por lo que un plugin a pantalla completa no puede cubrir los botones de minimizar, maximizar o cerrar.
->
-> **Correcciones importantes:**
->
-> - Corrige los errores `EPERM`/rename de pnpm en Windows cuando un antivirus, indexador o proceso residual bloquea brevemente el directorio de un plugin durante su instalación o actualización.
-> - Corrige registros de cuarentena que permanecían después de desinstalar un plugin problemático e impedían iniciar la aplicación o volver a instalar el plugin.
-> - Corrige la carga de conversaciones antiguas cuando una llamada de herramienta vacía no contiene `tool source`.
-> - Corrige la búsqueda de Releases comunitarias cuando no detectaba la última versión, quedaba bloqueada o elegía una versión preliminar incorrecta.
-> - Refuerza el diagnóstico de módulos de cliente ausentes, conflictos de dependencias y fallos de carga con instrucciones concretas para reinstalar, reintentar o desinstalar.
-> - Actualiza el mercado de plugins incluido, IM, Better Sidebar, Pocket y otros plugins, manteniendo versiones fijadas y comprobaciones de integridad SHA-512. Los plugins que el usuario desinstala expresamente no se restauran de forma automática.
->
 > Esta es una versión Alpha preliminar. Haz una copia de seguridad de la configuración importante antes de actualizar y adjunta registros o informes de diagnóstico al comunicar problemas.
 
 Open DeepSeek Harness Desktop es una distribución independiente y mantenida por la comunidad de [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). Los instaladores incluyen Node.js, pnpm y el runtime de Harness, de modo que puedes configurar modelos, ejecutar sesiones de programación, inspeccionar la ejecución, administrar plugins y Skills, y conectar herramientas externas o bots IM sin preparar un entorno de desarrollo.
