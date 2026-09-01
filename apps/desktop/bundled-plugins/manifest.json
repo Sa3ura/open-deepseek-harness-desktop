@@ -4,22 +4,22 @@
     {
       "seedId": "dshmarket",
       "packageName": "dshmarket",
-      "version": "1.38.1",
+      "version": "1.39.0",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "dshmarket@1.38.1",
-      "archive": "dshmarket-1.38.1.tgz",
-      "integrity": "sha512-Z9VleLtCXwk5OlbSJKayWtbMaKACL8JUMyb/JHpErS4N3q//GJS+cgOhhxNkZYmXxB8/lv9IbhX1CBzlMhJeJg=="
+      "registrySpec": "dshmarket@1.39.0",
+      "archive": "dshmarket-1.39.0.tgz",
+      "integrity": "sha512-URuXIuuNRfX6k0Flo7CJxeA7EVLhLGYDm3Lk4BoEXW1Qlg+boX/LI8wCE8hGC0FMBftFr9j8D/ulGNTdFM67nQ=="
     },
     {
       "seedId": "xmanrui-dsh-im",
       "packageName": "@xmanrui/dsh-im",
-      "version": "4.2.1",
+      "version": "4.4.0",
       "profile": "web",
       "installPolicy": "startup",
-      "registrySpec": "@xmanrui/dsh-im@4.2.1",
-      "archive": "xmanrui-dsh-im-4.2.1.tgz",
-      "integrity": "sha512-ciklkZVeBYvX1FNbqktb5GeVLJlyln2kN1ZRAQtq5vVAVahLXiP1pEG/sLbkc1fCXGB0h6qu9BNRNP6mupRL3w=="
+      "registrySpec": "@xmanrui/dsh-im@4.4.0",
+      "archive": "xmanrui-dsh-im-4.4.0.tgz",
+      "integrity": "sha512-aZIcnDJCUljPOnuAVJPjklI8YSCotw5qGQadFMfLcnI5jennmdsYbkzlJ8xyiK9LpyxdnnFfnVbXSqFc3AJfnw=="
     },
     {
       "seedId": "dsh-skill-picker",
