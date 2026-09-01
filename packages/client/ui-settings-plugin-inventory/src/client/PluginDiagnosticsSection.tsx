@@ -95,6 +95,7 @@ const QUARANTINE_REASON_KEYS = {
   'orphaned-bundle': 'health.quarantine.reason.orphanedBundle',
   'build-script-blocked': 'health.quarantine.reason.buildScriptBlocked',
   'client-module-unavailable': 'health.quarantine.reason.clientModuleUnavailable',
+  'loader-module-unresolvable': 'health.quarantine.reason.loaderModuleUnresolvable',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 const QUARANTINE_SOLUTION_KEYS = {
@@ -103,6 +104,7 @@ const QUARANTINE_SOLUTION_KEYS = {
   'orphaned-bundle': 'health.quarantine.solution.orphaned-bundle',
   'build-script-blocked': 'health.quarantine.solution.build-script-blocked',
   'client-module-unavailable': 'health.quarantine.solution.client-module-unavailable',
+  'loader-module-unresolvable': 'health.quarantine.solution.loader-module-unresolvable',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 const QUARANTINE_RETRY_KEYS = {
@@ -111,6 +113,7 @@ const QUARANTINE_RETRY_KEYS = {
   'orphaned-bundle': 'health.quarantine.action.restoreSource',
   'build-script-blocked': 'health.approveBuild',
   'client-module-unavailable': 'health.quarantine.action.findUpdate',
+  'loader-module-unresolvable': 'health.quarantine.action.findUpdate',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 type DiagnosticIssue = PluginInventorySnapshot['dependencyHealth']['issues'][number]
@@ -645,7 +648,7 @@ export function PluginDiagnosticsSection({
                   </div>
                 </div>
                 <div className={css.actions}>
-                  {record.reason === 'client-module-unavailable' ? (
+                  {record.reason === 'client-module-unavailable' || record.reason === 'loader-module-unresolvable' ? (
                     <Button
                       variant="primary"
                       disabled={removal?.phase === 'running'}

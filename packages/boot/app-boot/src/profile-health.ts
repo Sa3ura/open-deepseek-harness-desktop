@@ -16,12 +16,17 @@ import { createRequire } from 'node:module'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { satisfies, validRange } from 'semver'
 import { isMap, parseDocument, YAMLMap } from 'yaml'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import {
+  composeEntries,
   DEFAULT_PROFILE_BUNDLES,
+  loadProfile,
   PROFILE_TEMPLATES,
   PROFILES_DIR,
   readProfileManifest,
+  resolveProfileLoaderModule,
   resolveProfileDir,
   writeProfileManifest,
   type ProfileManifest,
@@ -90,6 +95,24 @@ export interface OrphanedProfileBundle {
   readonly resolvedPath?: string
 }
 
+/** A uniquely attributable Loader entry whose declared module cannot resolve from the active Profile. */
+export interface UnresolvableProfileBundleEntry {
+  readonly profile: string
+  readonly rootPackage: string
+  readonly entryId: string
+  readonly moduleName: string
+  readonly patchPath: string
+}
+
+/** Closed reason set persisted with each automatically isolated plugin. */
+export type ProfileQuarantineReason =
+  | 'incompatible-host-dependency'
+  | 'convergence-failed'
+  | 'orphaned-bundle'
+  | 'build-script-blocked'
+  | 'client-module-unavailable'
+  | 'loader-module-unresolvable'
+
 /** Durable information required to explain or retry an automatically isolated plugin. */
 export interface QuarantinedProfilePlugin {
   readonly quarantineId: string
@@ -99,7 +122,7 @@ export interface QuarantinedProfilePlugin {
   readonly installedVersion?: string
   readonly bundleIndex: number | null
   readonly quarantinedAt: string
-  readonly reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable'
+  readonly reason: ProfileQuarantineReason
   readonly buildApprovalKey?: string
   readonly conflicts: readonly ProfileDependencyConflict[]
 }
@@ -375,6 +398,113 @@ export function inspectOrphanedProfileBundles(options: ProfileDependencyOptions)
       bundleIndex,
       ...(version === undefined ? {} : { installedVersion: version }),
       resolvedPath,
+    })
+  }
+  return issues
+}
+
+function nestedLoaderEntries(entries: readonly EntryOptions[]): EntryOptions[] {
+  const result: EntryOptions[] = []
+  const visit = (entry: EntryOptions): void => {
+    result.push(entry)
+    if (Array.isArray(entry.config)) {
+      for (const child of entry.config as EntryOptions[]) visit(child)
+    }
+  }
+  for (const entry of entries) visit(entry)
+  return result
+}
+
+function insertedLoaderEntries(patches: readonly PatchOptions[]): EntryOptions[] {
+  return patches.flatMap((patch) => {
+    const insert = (patch as PatchOptions & { insert?: EntryOptions[] }).insert
+    return Array.isArray(insert) ? nestedLoaderEntries(insert) : []
+  })
+}
+
+function loaderModuleDiagnostic(issue: UnresolvableProfileBundleEntry): ProfileDiagnostic {
+  return {
+    diagnosticId: randomUUID(),
+    code: 'profile.module-resolution',
+    source: 'profile',
+    phase: 'import',
+    severity: 'blocked',
+    attribution: {
+      rootPackage: issue.rootPackage,
+      entryId: issue.entryId,
+      moduleName: issue.moduleName,
+    },
+    actions: ['repair', 'isolate', 'export'],
+    evidence: [`Loader module ${issue.moduleName} from bundle patch ${issue.patchPath} cannot be resolved`],
+  }
+}
+
+/**
+ * Inspect final Loader entries for a missing bare module that can be proven to
+ * originate from exactly one directly enabled external bundle. User-targeted
+ * rows and ambiguous duplicate declarations are intentionally excluded.
+ * @param options - Profile identity, installation anchor, and optional Harness home.
+ * @returns Safe-to-quarantine module failures in Loader order.
+ */
+export function inspectUnresolvableProfileBundleEntries(
+  options: ProfileDependencyOptions,
+): UnresolvableProfileBundleEntry[] {
+  const home = options.home ?? resolveDshHome()
+  let profile: ReturnType<typeof loadProfile>
+  try {
+    profile = loadProfile(options.binName, options.profile, options.installAnchor, home)
+  } catch {
+    // Other Profile diagnostics own unreadable manifests, missing bundle
+    // patches, and malformed YAML. This classifier only claims a fully
+    // composed entry whose bare module alone is missing.
+    return []
+  }
+  const manifest = readProfileManifest(options.binName, profile.dir)
+  const dependencies = manifest.dependencies ?? {}
+  const bundles = new Set(manifest.dsh?.profile?.bundles ?? [])
+  const installationOwned = new Set(PROFILE_TEMPLATES[options.profile]?.bundles ?? DEFAULT_PROFILE_BUNDLES)
+  const userTargetedIds = new Set(profile.patches.flatMap(patch => (
+    typeof patch.id === 'string' ? [patch.id] : []
+  )))
+  const homePatchPath = join(home, 'cordis.patch.yml')
+  const homePatchSource = existsSync(homePatchPath) ? readFileSync(homePatchPath, 'utf8') : ''
+  const origins = new Map<string, Array<{ rootPackage: string; patchPath: string }>>()
+  for (const layer of profile.layers) {
+    if (installationOwned.has(layer.packageName)
+      || dependencies[layer.packageName] === undefined
+      || !bundles.has(layer.packageName)) continue
+    for (const entry of insertedLoaderEntries(layer.patches)) {
+      if (typeof entry.id !== 'string' || typeof entry.name !== 'string') continue
+      const key = `${entry.id}\0${entry.name}`
+      const candidates = origins.get(key) ?? []
+      candidates.push({ rootPackage: layer.packageName, patchPath: layer.patchPath })
+      origins.set(key, candidates)
+    }
+  }
+
+  const issues: UnresolvableProfileBundleEntry[] = []
+  for (const entry of nestedLoaderEntries(composeEntries([
+    profile.layers.flatMap(layer => layer.patches),
+    profile.patches,
+  ]))) {
+    if (typeof entry.id !== 'string' || typeof entry.name !== 'string'
+      || userTargetedIds.has(entry.id)
+      || new RegExp(`^\\s*-\\s+id:\\s*["']?${entry.id.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}["']?\\s*$`, 'mu')
+        .test(homePatchSource)
+      || entry.name.startsWith('cordis:')
+      || entry.name.startsWith('file:')
+      || entry.name.startsWith('.')
+      || entry.name.startsWith('/')) continue
+    const candidates = origins.get(`${entry.id}\0${entry.name}`) ?? []
+    if (candidates.length !== 1 || resolveProfileLoaderModule(profile.dir, entry.name) !== undefined) continue
+    const [candidate] = candidates
+    if (candidate === undefined) continue
+    issues.push({
+      profile: options.profile,
+      rootPackage: candidate.rootPackage,
+      entryId: entry.id,
+      moduleName: entry.name,
+      patchPath: candidate.patchPath,
     })
   }
   return issues
@@ -819,12 +949,14 @@ function retainMaterialReport(home: string, value: ProfileRepairReport): Profile
  * @param options - profile inputs plus the caller-owned package-manager runner.
  * @param packageName - exact direct dependency and active bundle attributed by the Loader error.
  * @param issue - structured import failure retained for Diagnostics.
+ * @param reason - Proven Loader failure class persisted for targeted recovery guidance.
  * @returns a quarantined report, or a failed report after restoring the original manifest.
  */
 export function quarantineProfilePluginAfterLoadFailure(
   options: ProfileRepairOptions,
   packageName: string,
   issue: ProfileDiagnostic,
+  reason: Extract<ProfileQuarantineReason, 'client-module-unavailable' | 'loader-module-unresolvable'> = 'client-module-unavailable',
 ): ProfileRepairReport {
   const home = options.home ?? resolveDshHome()
   const profileDir = resolveProfileDir(options.profile, home)
@@ -860,7 +992,7 @@ export function quarantineProfilePluginAfterLoadFailure(
     ...(version === undefined ? {} : { installedVersion: version }),
     bundleIndex,
     quarantinedAt: (options.now ?? (() => new Date()))().toISOString(),
-    reason: 'client-module-unavailable',
+    reason,
     conflicts: [],
   }
   writeProfileManifest(profileDir, withoutRoots(originalManifest, new Set([packageName])))
@@ -1095,6 +1227,21 @@ export function repairProfileDependencies(options: ProfileRepairOptions): Profil
   const initial = inspectProfileDependencies({ ...options, home })
   const initialOrphans = inspectOrphanedProfileBundles({ ...options, home })
   if (initial.length === 0 && initialOrphans.length === 0) {
+    const loaderFailures = inspectUnresolvableProfileBundleEntries({ ...options, home })
+    let loaderOutcome: ProfileRepairReport | undefined
+    const quarantinedRoots = new Set<string>()
+    for (const failure of loaderFailures) {
+      if (quarantinedRoots.has(failure.rootPackage)) continue
+      loaderOutcome = quarantineProfilePluginAfterLoadFailure(
+        options,
+        failure.rootPackage,
+        loaderModuleDiagnostic(failure),
+        'loader-module-unresolvable',
+      )
+      if (loaderOutcome.status !== 'quarantined') return loaderOutcome
+      quarantinedRoots.add(failure.rootPackage)
+    }
+    if (loaderOutcome !== undefined) return loaderOutcome
     const recovered = recoverInterruptedQuarantine(options, home, profileDir)
     if (recovered !== undefined) return recovered
     if (prunedLockfileDependencies.length > 0

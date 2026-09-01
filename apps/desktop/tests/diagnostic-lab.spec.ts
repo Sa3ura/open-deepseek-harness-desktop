@@ -23,7 +23,7 @@ async function bench(): Promise<{
   suspendHarness: Mock<() => Promise<void>>
   resumeHarness: Mock<() => void>
   installProfile: Mock<(home: string, force: boolean) => Promise<void>>
-  installDiagnosticPlugin: Mock<() => Promise<void>>
+  installDiagnosticPlugin: Mock<(home: string, packageName: 'dsh-font' | '@dsh-diagnostic-lab/scoped-loader-mismatch') => Promise<void>>
   runDoctor: Mock<() => Promise<{ status: string; issueCodes: string[]; output: string }>>
 }> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-diagnostic-lab-'))
@@ -35,7 +35,26 @@ async function bench(): Promise<{
   const suspendHarness = vi.fn<() => Promise<void>>(async () => {})
   const resumeHarness = vi.fn<() => void>(() => {})
   const installProfile = vi.fn<(home: string, force: boolean) => Promise<void>>(async () => {})
-  const installDiagnosticPlugin = vi.fn<() => Promise<void>>(async () => {})
+  const installDiagnosticPlugin = vi.fn(async (
+    targetHome: string,
+    packageName: 'dsh-font' | '@dsh-diagnostic-lab/scoped-loader-mismatch',
+  ) => {
+    if (packageName !== '@dsh-diagnostic-lab/scoped-loader-mismatch') return
+    await mkdir(join(targetHome, 'profiles', 'web'), { recursive: true })
+    await mkdir(join(targetHome, 'quarantine'), { recursive: true })
+    await mkdir(join(targetHome, 'profile-health'), { recursive: true })
+    await writeFile(join(targetHome, 'profiles', 'web', 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web', private: true, dependencies: {}, dsh: { profile: { bundles: [] } },
+    }))
+    const record = { packageName, reason: 'loader-module-unresolvable' }
+    await writeFile(join(targetHome, 'quarantine', 'profile-plugins.json'), JSON.stringify({
+      schema: 1, plugins: [record],
+    }))
+    await writeFile(join(targetHome, 'profile-health', 'web.json'), JSON.stringify({
+      status: 'quarantined', quarantined: [record],
+      issues: [{ code: 'profile.module-resolution', attribution: { rootPackage: packageName } }],
+    }))
+  })
   const runDoctor = vi.fn(async () => ({ status: 'healthy', issueCodes: [], output: '{}' }))
   const manager = new DiagnosticLabManager({
     root: join(root, 'lab'),
@@ -73,11 +92,11 @@ describe('DiagnosticLabManager', () => {
     expect(b.manager.current()?.runId).toBe(initial.runId)
     const final = await waitForTerminal(b.manager, initial.runId)
 
-    expect(final.phase).toBe('active')
+    expect(final.phase, final.diagnostic).toBe('active')
     expect(final.results).toHaveLength(scenarioIds.length)
     expect(final.results.every(result => result.phase === 'passed' && result.retained)).toBe(true)
     expect(final.completedSteps).toBe(final.totalSteps)
-    expect(b.runDoctor).toHaveBeenCalledTimes(scenarioIds.length * 4)
+    expect(b.runDoctor).toHaveBeenCalledTimes((scenarioIds.length - 1) * 4 + 1)
     expect(b.suspendHarness).not.toHaveBeenCalled()
     expect(b.resumeHarness).not.toHaveBeenCalled()
     expect(existsSync(join(b.root, 'lab', 'runs', initial.runId, 'runtime'))).toBe(true)
@@ -246,7 +265,10 @@ describe('DiagnosticLabManager', () => {
   it('installs packaged dsh-font only for the active exercise and observes real client quarantine', async () => {
     const b = await bench()
     const manifestPath = join(b.home, 'profiles', 'web', 'package.json')
-    const installDiagnosticPlugin = vi.fn(async (home: string, packageName: 'dsh-font') => {
+    const installDiagnosticPlugin = vi.fn(async (
+      home: string,
+      packageName: 'dsh-font' | '@dsh-diagnostic-lab/scoped-loader-mismatch',
+    ) => {
       expect(home).toBe(b.home)
       expect(packageName).toBe('dsh-font')
       await writeFile(manifestPath, `${JSON.stringify({

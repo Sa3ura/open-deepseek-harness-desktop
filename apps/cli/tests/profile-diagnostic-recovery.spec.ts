@@ -1,13 +1,36 @@
 import { describe, expect, it } from 'vitest'
-import { classifyProfileDiagnostic } from '@deepseek-ai/dsh-app-boot'
+import { createRequire } from 'node:module'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import {
+  classifyProfileDiagnostic,
+  healProfilesModuleFallback,
+  loadDiagnosticProfile,
+} from '@deepseek-ai/dsh-app-boot'
 import { fileURLToPath } from 'node:url'
-import { INSTALL_ANCHOR, INSTALL_MODULE_BASE_URL } from '../src/install-anchor.ts'
-import { isDeterministicSafeModeFailure, loaderClientModuleFailure } from '../src/profile-boot.ts'
+import { join } from 'node:path'
+import { INSTALL_ANCHOR } from '../src/install-anchor.ts'
+import { diagnosticProfileModuleBaseUrl, isDeterministicSafeModeFailure, loaderClientModuleFailure } from '../src/profile-boot.ts'
 
 describe('Profile diagnostic recovery policy', () => {
-  it('provides the Loader a valid file URL for packaged safe-mode imports', () => {
-    expect(new URL(INSTALL_MODULE_BASE_URL).protocol).toBe('file:')
-    expect(fileURLToPath(INSTALL_MODULE_BASE_URL)).toBe(INSTALL_ANCHOR)
+  it('anchors safe-mode imports at the installation-maintained profiles fallback', () => {
+    const profileDir = join('/fixture', 'dsh-home', 'profiles', 'web')
+    const baseUrl = diagnosticProfileModuleBaseUrl(profileDir)
+    expect(new URL(baseUrl).protocol).toBe('file:')
+    expect(fileURLToPath(baseUrl)).toBe(join('/fixture', 'dsh-home', 'profiles', 'package.json'))
+  })
+
+  it('resolves installation transitive modules from the healed diagnostic fallback', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-safe-mode-modules-'))
+    try {
+      const profile = loadDiagnosticProfile('test', 'web', INSTALL_ANCHOR, home)
+      await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile, home })
+      const requireFromFallback = createRequire(fileURLToPath(diagnosticProfileModuleBaseUrl(profile.dir)))
+      expect(existsSync(requireFromFallback.resolve('@deepseek-ai/dsh-tools'))).toBe(true)
+      expect(existsSync(requireFromFallback.resolve('@deepseek-ai/dsh-typert-registry'))).toBe(true)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('does not divert transient, waiting-period, unknown, or broken-runtime failures into safe mode', () => {
@@ -44,5 +67,16 @@ describe('Profile diagnostic recovery policy', () => {
     expect(loaderClientModuleFailure(
       new Error('failed to import loader entry 71626ed6 (dsh-font): plugin apply threw'),
     )).toBeUndefined()
+  })
+
+  it('selects the deepest Loader import from a generic module-resolution cause chain', () => {
+    const missing = new Error("Cannot find package 'wrong-loader-name' imported from /fixture/cordis.yml")
+    const inner = new Error('failed to import loader entry inner-entry (wrong-loader-name)', { cause: missing })
+    const outer = new Error('failed to import loader entry outer-entry (cordis:include)', { cause: inner })
+
+    expect(loaderClientModuleFailure(outer)).toEqual({
+      entryId: 'inner-entry',
+      moduleName: 'wrong-loader-name',
+    })
   })
 })

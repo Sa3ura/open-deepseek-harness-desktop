@@ -21,6 +21,7 @@ import {
   initProfile,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  inspectUnresolvableProfileBundleEntries,
   inspectQuarantineRemovalResidue,
   orphanedBundleDiagnostic,
   PROFILE_TEMPLATES,
@@ -303,6 +304,11 @@ export function runPlugin(profile: string, args: readonly string[]): number {
         profile,
         installAnchor: INSTALL_ANCHOR,
       })
+      const loaderFailures = inspectUnresolvableProfileBundleEntries({
+        binName: NAME,
+        profile,
+        installAnchor: INSTALL_ANCHOR,
+      })
       outcome = {
         schema: 'dsh/profile-dependency-repair/v1' as const,
         diagnosticSchema: 'dsh/profile-diagnostic/v2' as const,
@@ -321,6 +327,16 @@ export function runPlugin(profile: string, args: readonly string[]): number {
             residue.packageName,
             residue.staleComponents,
           )),
+          ...loaderFailures.map(failure => classifyProfileDiagnostic({
+            source: 'profile',
+            phase: 'import',
+            value: `failed to import loader entry ${failure.entryId} (${failure.moduleName}): ERR_MODULE_NOT_FOUND`,
+            attribution: {
+              rootPackage: failure.rootPackage,
+              entryId: failure.entryId,
+              moduleName: failure.moduleName,
+            },
+          })),
         ],
       }
     }
@@ -384,7 +400,9 @@ export function runPlugin(profile: string, args: readonly string[]): number {
       process.stderr.write(`${NAME}: profile dependency health ${JSON.stringify(dependencyHealth)}\n`)
     }
     const packageName = addedRegistryPackageName(args)
-    const verificationFailure = packageName === undefined
+    const quarantinedAfterInstall = packageName !== undefined
+      && dependencyHealth.quarantined.some(record => record.packageName === packageName)
+    const verificationFailure = packageName === undefined || quarantinedAfterInstall
       ? undefined
       : verifyRegistryPackageInstall(dir, packageName)
     if (verificationFailure !== undefined) {

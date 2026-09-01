@@ -139,7 +139,7 @@ const POSIX_USER_PATH = /\/(?:Users|home)\/[^/\r\n]+/gu
 const PNPM_CODE = /\bERR_PNPM_[A-Z0-9_]+\b/u
 const NODE_CODE = /\b(?:ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|EACCES|EPERM|EBUSY|ENOENT|ERR_FS_EISDIR)\b/u
 const RETAINED_BUILD_KEY = /^dsh: pnpm allowBuilds key (".*")$/mu
-const LOADER_ENTRY = /failed to (?:apply|import) loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/iu
+const LOADER_ENTRY = /failed to (?:apply|import) loader entry\s+([^\s(:]+)(?:\s+\(([^)\r\n]+)\))?/giu
 const FAILED_MODULE = /plugin\(s\) failed to load:\s*([^,\s]+)/iu
 
 const RULES: readonly DiagnosticRule[] = [
@@ -328,7 +328,7 @@ function inferredAttribution(
   diagnostic: string,
   supplied: ProfileDiagnosticAttribution | undefined,
 ): ProfileDiagnosticAttribution | undefined {
-  const loader = LOADER_ENTRY.exec(diagnostic)
+  const loader = [...diagnostic.matchAll(LOADER_ENTRY)].at(-1)
   const failedModule = FAILED_MODULE.exec(diagnostic)?.[1]
   const entryId = supplied?.entryId ?? loader?.[1]
   const moduleName = supplied?.moduleName ?? loader?.[2] ?? failedModule
@@ -482,13 +482,13 @@ export function quarantineRemovalResidueDiagnostic(
  */
 export function quarantinedPluginDiagnostic(
   packageName: string,
-  reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable',
+  reason: 'incompatible-host-dependency' | 'convergence-failed' | 'orphaned-bundle' | 'build-script-blocked' | 'client-module-unavailable' | 'loader-module-unresolvable',
 ): ProfileDiagnostic {
   const code = reason === 'orphaned-bundle'
     ? 'profile.orphaned-bundle'
     : reason === 'build-script-blocked'
       ? 'pnpm.build-script-blocked'
-      : reason === 'client-module-unavailable'
+      : reason === 'client-module-unavailable' || reason === 'loader-module-unresolvable'
         ? 'profile.module-resolution'
         : 'profile.host-dependency-conflict'
   return {

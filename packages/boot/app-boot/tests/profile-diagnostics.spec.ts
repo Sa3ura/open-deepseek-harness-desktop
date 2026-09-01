@@ -79,6 +79,17 @@ describe('profile diagnostic v2', () => {
     })
   })
 
+  it('does not attribute a nested import failure to the outer include row', () => {
+    const inner = new Error('failed to import loader entry scoped-mismatch (missing-unscoped-module)', {
+      cause: new Error("Cannot find package 'missing-unscoped-module'"),
+    })
+    const outer = new Error('failed to import loader entry include (cordis:include)', { cause: inner })
+    expect(classifyProfileDiagnostic({ source: 'loader', phase: 'import', value: outer }).attribution).toEqual({
+      entryId: 'scoped-mismatch',
+      moduleName: 'missing-unscoped-module',
+    })
+  })
+
   it('describes stale quarantine removal state as a repair-only warning', () => {
     expect(quarantineRemovalResidueDiagnostic('dsh-font', [
       'repair-report',

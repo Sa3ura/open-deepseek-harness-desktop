@@ -36,6 +36,7 @@ export type DiagnosticLabScenarioId =
   | 'orphaned-bundle'
   | 'quarantine-removal-residue'
   | 'client-module-unavailable'
+  | 'loader-package-name-mismatch'
   | 'module-resolution-missing'
   | 'patch-invalid'
   | 'loader-duplicate'

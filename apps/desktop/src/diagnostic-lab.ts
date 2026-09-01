@@ -17,6 +17,7 @@ export type DiagnosticLabScenarioId =
   | 'orphaned-bundle'
   | 'quarantine-removal-residue'
   | 'client-module-unavailable'
+  | 'loader-package-name-mismatch'
   | 'module-resolution-missing'
   | 'patch-invalid'
   | 'loader-duplicate'
@@ -124,7 +125,10 @@ export interface DiagnosticLabManagerOptions {
   resumeHarness(): void
   installProfile(home: string, force: boolean): Promise<void>
   /** Install one closed, integrity-checked diagnostic resource through the product CLI. */
-  installDiagnosticPlugin(home: string, packageName: 'dsh-font'): Promise<void>
+  installDiagnosticPlugin(
+    home: string,
+    packageName: 'dsh-font' | '@dsh-diagnostic-lab/scoped-loader-mismatch',
+  ): Promise<void>
   runDoctor(home: string, repair: boolean): Promise<DiagnosticLabDoctorResult>
   onSnapshot(snapshot: DiagnosticLabRunSnapshot): void
   readonly now?: () => Date
@@ -139,6 +143,7 @@ const SCENARIOS: readonly DiagnosticLabScenario[] = [
   { id: 'host-shadow-incompatible', title: 'Incompatible Host dependency', description: 'Traces an incompatible dsh-tools edge and verifies quarantine.', expectedCode: 'profile.host-dependency-conflict', targets: ['isolated', 'active-profile'] },
   { id: 'orphaned-bundle', title: 'Orphaned Loader bundle', description: 'Finds a bundle retained after its manageable dependency disappeared.', expectedCode: 'profile.orphaned-bundle', targets: ['isolated', 'active-profile'] },
   { id: 'quarantine-removal-residue', title: 'Incomplete quarantine removal', description: 'Recreates a legacy uninstall that removed the plugin and quarantine record but left derived Profile state, then verifies bounded cleanup.', expectedCode: 'profile.quarantine-removal-residue', targets: ['isolated', 'active-profile'] },
+  { id: 'loader-package-name-mismatch', title: 'Scoped Loader package-name mismatch', description: 'Installs a safe scoped package whose Bundle Patch names a missing unscoped module, then verifies immediate attribution and quarantine.', expectedCode: 'profile.module-resolution', targets: ['isolated', 'active-profile'] },
   { id: 'client-module-unavailable', title: 'Packaged dsh-font client incompatibility', description: 'Installs the packaged dsh-font 1.1.0 fixture and verifies that the real browser boot path quarantines it without blocking the main UI.', expectedCode: 'profile.module-resolution', targets: ['active-profile'] },
   { id: 'module-resolution-missing', title: 'Missing plugin module', description: 'Attributes a missing module directory to the owning plugin.', expectedCode: 'profile.module-resolution', targets: ['isolated'] },
   { id: 'patch-invalid', title: 'Invalid Profile patch', description: 'Locates malformed Profile YAML without touching the user patch.', expectedCode: 'profile.patch-invalid', targets: ['isolated'] },
@@ -175,6 +180,7 @@ const FIXTURES: Record<DiagnosticLabScenarioId, ScenarioFixture> = {
   'host-shadow-incompatible': { code: 'profile.host-dependency-conflict', file: 'node_modules/fixture/node_modules/@deepseek-ai/dsh-tools/package.json', content: '{"name":"@deepseek-ai/dsh-tools","version":"0.0.0-diagnostic","diagnostic":"incompatible-shadow"}\n', checksum: '03d594435d63e8791fa1ca3732ec08e2206a170c148ade9374fb96e3aacd36ee', repairedContent: '{"quarantined":true}\n' },
   'orphaned-bundle': { code: 'profile.orphaned-bundle', file: 'profile/orphaned-bundle.json', content: '{"bundle":"@hecoococ/dsh-lab-orphan","dependency":false}\n', checksum: 'd87932d81021cb20134cfed70aa15bff6ac11cea20304e17dd54382fa91d5e26', repairedContent: '{"bundles":[]}\n' },
   'quarantine-removal-residue': { code: 'profile.quarantine-removal-residue', file: 'profile/quarantine-removal-residue.json', content: '{"package":"@dsh-diagnostic-lab/quarantine-removal-residue","state":"legacy-uninstall-residue"}\n', checksum: 'fabaf15aaf1b81b1a5b018761927a15a60f823153692439c2b23c5256fe5921b', repairedContent: '{"removed":true}\n' },
+  'loader-package-name-mismatch': { code: 'profile.module-resolution', file: 'profile/scoped-loader-mismatch.json', content: '{"package":"@dsh-diagnostic-lab/scoped-loader-mismatch","version":"1.0.0"}\n', checksum: '891275ddb0053315f3d9ec6f90aa0d7cbee3a5720364d3a8fd10122ff3104967' },
   'client-module-unavailable': { code: 'profile.module-resolution', file: 'profile/dsh-font.json', content: '{"package":"dsh-font","version":"1.1.0","source":"packaged-diagnostic"}\n', checksum: 'ff3cf467522316802d16c7ad88863be9becc9789b2e61f94b121c44e786ffec7' },
   'module-resolution-missing': { code: 'profile.module-resolution', file: 'profile/missing-module.json', content: '{"module":"@hecoococ/dsh-lab-missing","exists":false}\n', checksum: '089ed0ccd5e318ad94cae5ea48017bc946676bfa6f4a66e041740369fbc2f221', repairedContent: '{"disabled":true}\n' },
   'patch-invalid': { code: 'profile.patch-invalid', file: 'profile/cordis.patch.yml', content: '- id: diagnostic-lab\n  config: [unterminated\n', checksum: '69ba3a95f37f79f029ade77436be37cb78c1b8d03c57d9133ae37eab3ea61dd5', repairedContent: '[]\n' },
@@ -524,6 +530,8 @@ export class DiagnosticLabManager {
             this.#options.resumeHarness()
             suspended = false
           })
+        } else if (scenarioId === 'loader-package-name-mismatch') {
+          await this.#runLoaderPackageNameMismatchScenario(runRoot)
         } else {
           await this.#runScenario(runRoot, scenarioId)
         }
@@ -590,6 +598,71 @@ export class DiagnosticLabManager {
     }
     await this.#writeReport(runRoot, terminalSnapshot)
     this.#replace(terminalSnapshot)
+  }
+
+  /** Install the scoped mismatch fixture through the normal CLI and verify immediate quarantine. */
+  async #runLoaderPackageNameMismatchScenario(runRoot: string): Promise<void> {
+    const scenarioId = 'loader-package-name-mismatch' as const
+    const fixture = FIXTURES[scenarioId]
+    const active = this.#requireActive()
+    const home = active.target === 'active-profile'
+      ? this.#options.activeDshHome
+      : join(runRoot, 'runtime', 'doctor-homes', scenarioId)
+    const scenarioRoot = active.target === 'active-profile'
+      ? join(home, 'profiles', 'web', '.diagnostic-lab', active.runId, scenarioId)
+      : join(runRoot, 'runtime', 'scenarios', scenarioId)
+    const boundary = active.target === 'active-profile'
+      ? join(home, 'profiles', 'web', '.diagnostic-lab')
+      : join(runRoot, 'runtime')
+    assertInside(boundary, scenarioRoot)
+    const fixturePath = join(scenarioRoot, fixture.file)
+    const packageName = '@dsh-diagnostic-lab/scoped-loader-mismatch' as const
+    const started = Date.now()
+    let actualCode: string | undefined
+    try {
+      await this.#step(scenarioId, 'baseline')
+      if (existsSync(scenarioRoot)) throw new Error('diagnostic scenario baseline contains stale files')
+      await this.#step(scenarioId, 'inject')
+      await atomicWrite(fixturePath, fixture.content)
+      if (sha256(await readFile(fixturePath)) !== fixture.checksum) {
+        throw new Error('diagnostic fixture integrity check failed')
+      }
+      await this.#options.installDiagnosticPlugin(home, packageName)
+      await this.#step(scenarioId, 'detect')
+      if (!await this.#hasQuarantine(home, packageName, 'loader-module-unresolvable')) {
+        throw new Error('scoped Loader mismatch was not quarantined by post-install preflight')
+      }
+      actualCode = fixture.code
+      await this.#step(scenarioId, 'repair')
+      await this.#step(scenarioId, 'verify')
+      const doctor = await this.#options.runDoctor(home, false)
+      if (!['healthy', 'repaired', 'quarantined'].includes(doctor.status)) {
+        throw new Error(`Profile remained unhealthy after scoped Loader quarantine: ${doctor.status}`)
+      }
+      await this.#step(scenarioId, 'retain')
+      this.#appendResult({
+        scenarioId,
+        phase: 'passed',
+        expectedCode: fixture.code,
+        actualCode,
+        repaired: true,
+        retained: true,
+        disposition: 'quarantined',
+        durationMs: Date.now() - started,
+      })
+    } catch (error) {
+      this.#appendResult({
+        scenarioId,
+        phase: this.#cancelled.has(active.runId) ? 'cancelled' : 'failed',
+        expectedCode: fixture.code,
+        ...(actualCode === undefined ? {} : { actualCode }),
+        repaired: false,
+        retained: existsSync(scenarioRoot),
+        durationMs: Date.now() - started,
+        diagnostic: sanitize(describeUnknown(error), this.#options.activeDshHome),
+      })
+      throw error
+    }
   }
 
   async #runScenario(runRoot: string, scenarioId: DiagnosticLabScenarioId): Promise<void> {
@@ -750,8 +823,11 @@ export class DiagnosticLabManager {
   }
 
   async #hasClientModuleQuarantine(packageName: 'dsh-font'): Promise<boolean> {
+    return await this.#hasQuarantine(this.#options.activeDshHome, packageName, 'client-module-unavailable')
+  }
+
+  async #hasQuarantine(home: string, packageName: string, reason: string): Promise<boolean> {
     try {
-      const home = this.#options.activeDshHome
       const quarantine = JSON.parse(await readFile(join(home, 'quarantine', 'profile-plugins.json'), 'utf8')) as {
         plugins?: Array<{ packageName?: unknown; reason?: unknown }>
       }
@@ -765,11 +841,11 @@ export class DiagnosticLabManager {
         dsh?: { profile?: { bundles?: unknown[] } }
       }
       const durableRecord = quarantine.plugins?.some(record => (
-        record.packageName === packageName && record.reason === 'client-module-unavailable'
+        record.packageName === packageName && record.reason === reason
       )) === true
       const durableReport = report.status === 'quarantined'
         && report.quarantined?.some(record => (
-          record.packageName === packageName && record.reason === 'client-module-unavailable'
+          record.packageName === packageName && record.reason === reason
         )) === true
         && report.issues?.some(issue => (
           issue.code === 'profile.module-resolution' && issue.attribution?.rootPackage === packageName

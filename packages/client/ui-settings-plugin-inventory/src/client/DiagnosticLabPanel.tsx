@@ -36,6 +36,7 @@ const SCENARIO_KEYS: Record<DiagnosticLabScenarioId, {
   'orphaned-bundle': { title: 'lab.scenario.orphan.title', body: 'lab.scenario.orphan.body' },
   'quarantine-removal-residue': { title: 'lab.scenario.quarantineRemoval.title', body: 'lab.scenario.quarantineRemoval.body' },
   'client-module-unavailable': { title: 'lab.scenario.clientModule.title', body: 'lab.scenario.clientModule.body' },
+  'loader-package-name-mismatch': { title: 'lab.scenario.loaderPackageNameMismatch.title', body: 'lab.scenario.loaderPackageNameMismatch.body' },
   'module-resolution-missing': { title: 'lab.scenario.module.title', body: 'lab.scenario.module.body' },
   'patch-invalid': { title: 'lab.scenario.patch.title', body: 'lab.scenario.patch.body' },
   'loader-duplicate': { title: 'lab.scenario.duplicate.title', body: 'lab.scenario.duplicate.body' },

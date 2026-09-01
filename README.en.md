@@ -203,7 +203,7 @@ The boundary is deliberate: **inspect before plugin execution, decide from the r
 
 ### Diagnostics Lab
 
-Development and installed builds both provide Diagnostics Lab. Its bundled offline fault samples exercise shared-Host shadow copies, orphaned Bundles, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
+Development and installed builds both provide Diagnostics Lab. Its bundled offline fault samples exercise shared-Host shadow copies, orphaned Bundles, scoped-root versus unscoped-Loader name mismatches, missing modules, invalid patches, duplicate Loader entries, lifecycle failures, blocked build approval, and interrupted repair while showing the complete inject, detect, repair, verify, and cleanup timeline.
 
 <p align="center">
   <img src="./assets/readme/diagnostics-lab-sandbox-zh.png" width="900" alt="Select isolated sandbox scenarios in Diagnostics Lab">
@@ -271,7 +271,7 @@ The Electron host grants sanitized clipboard-write permission to the supervised 
 
 ### Preset plugins
 
-The installer carries integrity-checked archives for five startup presets: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, and Pocket. `dsh-font` is supplied only as a Diagnostics Lab sample. Initial preparation can use the local archives without fetching the plugin packages on demand, while package and source identities remain available for compatible online update discovery. They remain ordinary Harness dependencies: users can uninstall them, and the desktop app respects that decision instead of silently restoring them.
+The installer carries integrity-checked archives for five startup presets: Plugin Marketplace, IM connections, Skill picker, Better Sidebar, and Pocket. `dsh-font` and the minimal offline `@dsh-diagnostic-lab/scoped-loader-mismatch` package are supplied only as Diagnostics Lab samples. Initial preparation can use the local archives without fetching the plugin packages on demand, while package and source identities remain available for compatible online update discovery. They remain ordinary Harness dependencies: users can uninstall them, and the desktop app respects that decision instead of silently restoring them.
 
 <p align="center">
   <img src="./assets/readme/preset-mobile-access-zh.png" width="900" alt="Connect a phone through the Pocket QR code or LAN address">

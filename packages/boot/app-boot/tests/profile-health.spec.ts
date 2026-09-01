@@ -16,6 +16,7 @@ import {
   initProfile,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  inspectUnresolvableProfileBundleEntries,
   listQuarantinedProfilePlugins,
   inspectQuarantineRemovalResidue,
   quarantineProfilePluginAfterLoadFailure,
@@ -219,6 +220,130 @@ describe('profile shared Host dependency inspection', () => {
 })
 
 describe('profile composition inspection', () => {
+  it('attributes a scoped bundle whose patch loads a missing unscoped module and quarantines it', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, [])
+    const packageName = '@dsh-diagnostic-lab/scoped-loader-mismatch'
+    const pluginDir = join(profileDir, 'node_modules', packageName)
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: packageName,
+      version: '1.0.0',
+      exports: './index.js',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    writeFileSync(join(pluginDir, 'index.js'), 'export function apply() {}\n')
+    writeFileSync(join(pluginDir, 'cordis.patch.yml'), '- insert:\n  - id: diagnostic-scoped-loader-mismatch\n    name: diagnostic-scoped-loader-mismatch\n    config: {}\n')
+    writeProfileManifest(profileDir, {
+      name: 'dsh-profile-web',
+      dependencies: { [packageName]: '1.0.0' },
+      dsh: { profile: { bundles: [packageName] } },
+    })
+
+    expect(inspectUnresolvableProfileBundleEntries({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([expect.objectContaining({
+      rootPackage: packageName,
+      entryId: 'diagnostic-scoped-loader-mismatch',
+      moduleName: 'diagnostic-scoped-loader-mismatch',
+      patchPath: join(pluginDir, 'cordis.patch.yml'),
+    })])
+
+    const result = repairProfileDependencies({
+      binName: 'test',
+      profile: 'web',
+      installAnchor: anchor,
+      home,
+      now: () => new Date('2026-09-01T08:00:00.000Z'),
+      runPackageManager: () => {
+        if (readProfileManifest('test', profileDir).dependencies?.[packageName] === undefined) {
+          rmSync(pluginDir, { recursive: true, force: true })
+        }
+        return { exitCode: 0 }
+      },
+    })
+
+    expect(result).toMatchObject({
+      status: 'quarantined',
+      quarantined: [{ packageName, reason: 'loader-module-unresolvable' }],
+      issues: [{
+        code: 'profile.module-resolution',
+        attribution: {
+          rootPackage: packageName,
+          entryId: 'diagnostic-scoped-loader-mismatch',
+          moduleName: 'diagnostic-scoped-loader-mismatch',
+        },
+      }],
+    })
+    expect(readProfileManifest('test', profileDir).dependencies?.[packageName]).toBeUndefined()
+  })
+
+  it('does not claim a missing Loader module when the user patch targets its entry', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, [])
+    const packageName = '@dsh-diagnostic-lab/scoped-loader-mismatch'
+    const pluginDir = join(profileDir, 'node_modules', packageName)
+    writeManifest(join(pluginDir, 'package.json'), {
+      name: packageName,
+      version: '1.0.0',
+      dsh: { bundle: { patch: './cordis.patch.yml' } },
+    })
+    writeFileSync(join(pluginDir, 'cordis.patch.yml'), '- insert:\n  - id: diagnostic-entry\n    name: missing-loader-module\n')
+    writeFileSync(join(profileDir, 'cordis.patch.yml'), '- id: diagnostic-entry\n  disabled: true\n')
+    writeProfileManifest(profileDir, {
+      dependencies: { [packageName]: '1.0.0' },
+      dsh: { profile: { bundles: [packageName] } },
+    })
+
+    expect(inspectUnresolvableProfileBundleEntries({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([])
+  })
+
+  it('does not quarantine resolvable aliases, Loader directives, relative modules, or ambiguous bundle owners', () => {
+    const { anchor } = stageHarness()
+    const home = temporaryDirectory('dsh-health-home-')
+    const profileDir = resolveProfileDir('web', home)
+    initProfile(profileDir, [])
+    const bundles = ['fixture-origin-a', 'fixture-origin-b', 'fixture-origin-c']
+    for (const packageName of bundles) {
+      const packageDir = join(profileDir, 'node_modules', packageName)
+      writeManifest(join(packageDir, 'package.json'), {
+        name: packageName,
+        version: '1.0.0',
+        dsh: { bundle: { patch: './cordis.patch.yml' } },
+      })
+    }
+    writeFileSync(join(profileDir, 'node_modules', 'fixture-origin-a', 'inside.js'), 'export default {}\n')
+    writeFileSync(join(profileDir, 'node_modules', 'fixture-origin-a', 'cordis.patch.yml'), [
+      '- insert:',
+      '  - id: alias-entry',
+      '    name: alias-loader',
+      '  - id: relative-entry',
+      '    name: ./inside.js',
+      '  - id: include-entry',
+      '    name: cordis:include',
+      '',
+    ].join('\n'))
+    for (const packageName of bundles.slice(1)) {
+      writeFileSync(join(profileDir, 'node_modules', packageName, 'cordis.patch.yml'), '- insert:\n  - id: ambiguous-entry\n    name: missing-ambiguous-loader\n')
+    }
+    const aliasDir = join(profileDir, 'node_modules', 'alias-loader')
+    writeManifest(join(aliasDir, 'package.json'), { name: 'actual-loader', version: '1.0.0', main: './index.js' })
+    writeFileSync(join(aliasDir, 'index.js'), 'module.exports = {}\n')
+    writeProfileManifest(profileDir, {
+      dependencies: Object.fromEntries(bundles.map(packageName => [packageName, '1.0.0'])),
+      dsh: { profile: { bundles } },
+    })
+
+    expect(inspectUnresolvableProfileBundleEntries({
+      binName: 'test', profile: 'web', installAnchor: anchor, home,
+    })).toEqual([])
+  })
+
   it('treats an uninstalled official add-on as orphaned instead of an in-box layer', () => {
     const { anchor } = stageHarness()
     const home = temporaryDirectory('dsh-health-home-')

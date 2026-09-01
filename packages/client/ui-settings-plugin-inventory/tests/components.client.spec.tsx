@@ -827,7 +827,10 @@ describe('PluginDiagnosticsSection', () => {
     await waitFor(() => { expect(uninstallQuarantine).toHaveBeenCalledWith({ quarantineId: 'quarantine-1' }) })
   })
 
-  it('removes an incompatible client-generation plugin before opening its market update', async () => {
+  it.each([
+    'client-module-unavailable',
+    'loader-module-unresolvable',
+  ] as const)('removes a %s plugin before opening its market update', async (reason) => {
     const quarantinedSnapshot = {
       entries: [],
       dependencyHealth: {
@@ -841,7 +844,7 @@ describe('PluginDiagnosticsSection', () => {
           packageSpec: '^0.3.6',
           installedVersion: '0.3.6',
           quarantinedAt: '2026-08-31T08:00:00.000Z',
-          reason: 'client-module-unavailable',
+          reason,
           conflicts: [],
         }],
       },
@@ -862,7 +865,7 @@ describe('PluginDiagnosticsSection', () => {
       openPluginMarket,
     } as PluginDiagnosticsSectionProps)} />)
 
-    expect((await screen.findAllByText(en['health.quarantine.solution.client-module-unavailable'])).length).toBe(2)
+    expect((await screen.findAllByText(en[`health.quarantine.solution.${reason}`])).length).toBe(2)
     expect(screen.getByText('0.3.6')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: en['health.quarantine.action.findUpdate'] }))
     expect(screen.getByRole('heading', { name: en['health.update.confirm.title'] })).toBeTruthy()
