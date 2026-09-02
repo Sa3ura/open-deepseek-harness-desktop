@@ -22,6 +22,7 @@ export interface ExternalToolCompatibilityManifest {
   readonly schema: 'dsh/desktop-external-tool-compatibility/v1'
   readonly revision: number
   readonly desktopVersionLine: string
+  readonly reviewedSourceVersion: string
   readonly issuedAt: string
   readonly expiresAt: string
   readonly tools: Readonly<Record<DesktopExternalToolId, ExternalToolCoordinate>>
@@ -42,15 +43,16 @@ export interface ExternalToolInstallResolution {
 /** Last-known-good pins shipped in the application and used only after signed lookup fails. */
 export const EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY: ExternalToolCompatibilityManifest = {
   schema: 'dsh/desktop-external-tool-compatibility/v1',
-  revision: 2,
+  revision: 3,
   desktopVersionLine: '0.1.2',
+  reviewedSourceVersion: '0.1.2-alpha.5',
   issuedAt: '2026-09-02T00:00:00.000Z',
   expiresAt: '2027-03-02T00:00:00.000Z',
   tools: {
     codex: {
       packageName: '@deepseek-ai/dsh-subagent-codex',
-      version: '0.1.2-alpha.4',
-      integrity: 'sha512-xdkWFMorGj1gVby50K8V62YJv5JJCyQig0Gy5Ol3ADTyBTY8n8Zytr08JWTlVVUOKGJ0Wm1aZFz7khoV0XjuZw==',
+      version: '0.1.2-alpha.5',
+      integrity: 'sha512-bljSiUTmsS8G+YOEMw3HYNDf5RSXqDae916LZq2vuFhUMASdiF0JnV+zPCGGV2jk85iIW7Q43q9cV9vNtKHDEQ==',
       runtimePackage: {
         packageName: '@openai/codex',
         version: '0.149.1',
@@ -60,8 +62,8 @@ export const EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY: ExternalToolCompatibilityMani
     },
     'claude-code': {
       packageName: '@deepseek-ai/dsh-subagent-claude-code',
-      version: '0.1.2-alpha.4',
-      integrity: 'sha512-stDXjv3U/uLGQa46AFFysFc5ioht4kvYjoVgMC/AsVeSgdONjceWtA/BkoOAkZ90K3rLaV5tlWqGg5MB8k1PSA==',
+      version: '0.1.2-alpha.5',
+      integrity: 'sha512-LQN7aEJ3UVBkPfBLdGQcU1q0EPSk56/grDgZpb98FbjdnW8ydnVfIoj4S0L+S/iEcTKjfCXghjEVoH0aVgjXzQ==',
       runtimePackage: {
         packageName: '@anthropic-ai/claude-agent-sdk',
         version: '0.3.241',
@@ -137,6 +139,7 @@ export function parseExternalToolCompatibilityManifest(value: unknown): External
     schema: record.schema,
     revision: record.revision as number,
     desktopVersionLine: requireString(record, 'desktopVersionLine', VERSION_LINE),
+    reviewedSourceVersion: requireString(record, 'reviewedSourceVersion', VERSION),
     issuedAt,
     expiresAt,
     tools: {

@@ -20,6 +20,8 @@ The exact dynamic projection is logged as `external-tools/resolved` once per mod
 
 The browser never receives a filesystem path or composition document. A typed `pluginInventory` Remote accepts only the closed `codex` and `claude-code` ids and delegates preset ownership to `AgentPresets`. This keeps package installation, roster authoring, and UI presentation in their existing owners while giving the product a single discoverable entry point.
 
+The manifest records the source version reviewed for its pins separately from the Provider version. Packaging rejects a stale source-review baseline or runtime mismatch rather than assuming an upstream merge also reviewed desktop compatibility; registry checks still reject unpublished coordinates. Desktop refreshes on each install request and shares only an in-flight lookup, so offline failures and successful responses do not freeze the selection for the application's lifetime. Signature, expiry, version-line and revision-rollback checks apply on every lookup. Tests cover a network recovery, a newer signed revision in the same process, and concurrent requests sharing one refresh.
+
 ## Alternatives considered
 
 **Put connection buttons inside Agent presets.** Rejected because provider installation and Loader activation are profile deployment state, not preset authoring state. A disabled tool row cannot explain whether its provider is missing, still installing, or waiting for restart without importing the plugin-management capability into the roster UI.

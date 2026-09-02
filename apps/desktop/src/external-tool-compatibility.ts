@@ -93,20 +93,25 @@ async function atomicWrite(path: string, bytes: Uint8Array): Promise<void> {
   await rename(temporary, path)
 }
 
-/** Resolves signed remote pins once per application run and otherwise fails closed. */
+/** Refreshes signed pins per install request; overlapping requests share one lookup. */
 export class ExternalToolCompatibilityManager {
   private readonly options: ExternalToolCompatibilityManagerOptions
   private readonly embedded = parseExternalToolCompatibilityManifest(EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY)
-  private refreshed?: Promise<{ manifest: ExternalToolCompatibilityManifest; source: 'remote' | 'cache' } | undefined>
+  private refreshed: Promise<{ manifest: ExternalToolCompatibilityManifest; source: 'remote' | 'cache' } | undefined> | undefined
 
   constructor(options: ExternalToolCompatibilityManagerOptions) {
     this.options = options
   }
 
   async resolve(toolId: DesktopExternalToolId): Promise<ExternalToolInstallResolution> {
-    const signed = await (this.refreshed ??= this.loadSigned())
-    if (signed !== undefined) return resolveExternalToolCoordinate(signed.manifest, toolId, signed.source)
-    return resolveExternalToolCoordinate(this.embedded, toolId, 'embedded')
+    const lookup = this.refreshed ??= this.loadSigned()
+    try {
+      const signed = await lookup
+      if (signed !== undefined) return resolveExternalToolCoordinate(signed.manifest, toolId, signed.source)
+      return resolveExternalToolCoordinate(this.embedded, toolId, 'embedded')
+    } finally {
+      if (this.refreshed === lookup) this.refreshed = undefined
+    }
   }
 
   private assertCompatible(manifest: ExternalToolCompatibilityManifest): void {

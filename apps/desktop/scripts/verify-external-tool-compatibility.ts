@@ -79,6 +79,18 @@ assert.deepEqual(manifest, EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY, 'embedded pins 
 
 for (const toolId of EXTERNAL_TOOL_IDS) {
   const coordinate = manifest.tools[toolId]
+  const provider = JSON.parse(await readFile(
+    resolve(`packages/subagent/subagent-${toolId}/package.json`), 'utf8',
+  )) as { name: string; version: string; dependencies: Record<string, string> }
+  assert.equal(coordinate.packageName, provider.name, 'external-tool gate: provider identity drifted')
+  assert.equal(
+    manifest.reviewedSourceVersion, provider.version,
+    `external-tool gate: ${toolId} compatibility review must be renewed for the current source baseline`,
+  )
+  assert.equal(
+    coordinate.runtimePackage.version, provider.dependencies[coordinate.runtimePackage.packageName],
+    `external-tool gate: ${toolId} reviewed runtime must match the current source baseline`,
+  )
   assert.equal(
     BROWSER_FALLBACK_EXTERNAL_TOOL_SPECS[toolId],
     `${coordinate.packageName}@${coordinate.version}`,

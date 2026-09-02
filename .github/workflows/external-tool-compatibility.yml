@@ -7,6 +7,9 @@ on:
       - apps/desktop/external-tools/compatibility.v1.json
       - apps/desktop/scripts/verify-external-tool-compatibility.ts
       - apps/desktop/src/external-tool-compatibility-manifest.ts
+      - packages/subagent/subagent-codex/package.json
+      - packages/subagent/subagent-claude-code/package.json
+      - packages/client/ui-settings-plugin-inventory/src/client/external-tool-compatibility-bridge.ts
       - .github/workflows/external-tool-compatibility.yml
   workflow_dispatch:
 
@@ -58,7 +61,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release view external-tools-compatibility-v1 >/dev/null 2>&1 || \
-            gh release create external-tools-compatibility-v1 --title "External tool compatibility v1" \
+            gh release create external-tools-compatibility-v1 --title "External tool compatibility v1" --prerelease --latest=false \
               --notes "Signed compatibility coordinates consumed by released desktop clients."
           gh release upload external-tools-compatibility-v1 \
             external-tools-compatibility.v1.json \
