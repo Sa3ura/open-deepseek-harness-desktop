@@ -68,6 +68,8 @@ export interface DesktopShellBridge {
   updatePreferences(patch: DesktopPreferencesPatch): Promise<DesktopPreferences>
   onPreferences(callback: (preferences: DesktopPreferences) => void): () => void
   openLog(): Promise<OpenLogResult>
+  openSettingsDocument(): Promise<{ error: string }>
+  backupAndResetSettings(): Promise<{ backupName?: string; restarting: true }>
   restart(): Promise<{ restarting: true }>
   getCommandLine(): Promise<DesktopCliStatus>
   installCommandLine(force: boolean): Promise<DesktopCliStatus>
@@ -152,6 +154,10 @@ const shellBridge: DesktopShellBridge = {
     return () => { ipcRenderer.removeListener('dsh:desktop:preferences', listener) }
   },
   openLog: () => ipcRenderer.invoke('dsh:desktop:log:open') as Promise<OpenLogResult>,
+  openSettingsDocument: () => ipcRenderer.invoke('dsh:desktop:settings:open') as Promise<{ error: string }>,
+  backupAndResetSettings: () => ipcRenderer.invoke(
+    'dsh:desktop:settings:reset',
+  ) as Promise<{ backupName?: string; restarting: true }>,
   restart: () => ipcRenderer.invoke('dsh:desktop:restart') as Promise<{ restarting: true }>,
   getCommandLine: () => ipcRenderer.invoke('dsh:desktop:cli:get') as Promise<DesktopCliStatus>,
   installCommandLine: force => ipcRenderer.invoke('dsh:desktop:cli:install', force) as Promise<DesktopCliStatus>,

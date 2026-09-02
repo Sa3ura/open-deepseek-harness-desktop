@@ -71,6 +71,15 @@
       "installPolicy": "diagnostic",
       "archive": "dsh-diagnostic-lab-scoped-loader-mismatch-1.0.0.tgz",
       "integrity": "sha512-AVs8NsGQdMcEr7ATNQqUjmMjUzLgvQoisz5C9fwcAj7oUARQdTo+74ANKzEez2LbNWNOKGwCbilwstPSgVAYxQ=="
+    },
+    {
+      "seedId": "diagnostic-loader-dependency-unavailable",
+      "packageName": "@dsh-diagnostic-lab/loader-dependency-unavailable",
+      "version": "1.0.0",
+      "profile": "web",
+      "installPolicy": "diagnostic",
+      "archive": "dsh-diagnostic-lab-loader-dependency-unavailable-1.0.0.tgz",
+      "integrity": "sha512-sEjViwufnwVG4bWMMIFLwzOMLBUX3pyt/IZzVsSCf53wFIAiDgDWihDUdTVVIL4v5vMIZw8Aa4zZIQA8SQvhLQ=="
     }
   ]
 }

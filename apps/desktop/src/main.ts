@@ -2,7 +2,7 @@
 
 import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir, userInfo } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -110,6 +110,7 @@ import {
   type PluginSnapshotRestoreSnapshot,
   type PluginSnapshotSummary,
 } from './plugin-snapshot-manager.ts'
+import { backupAndResetDesktopSettings } from './settings-recovery.ts'
 
 const APP_NAME = 'DeepSeek Harness'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
@@ -1200,6 +1201,24 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:log:open', (event) => {
     assertMainRenderer(event.sender)
     return openHarnessLog()
+  })
+  ipcMain.handle('dsh:desktop:settings:open', async (event): Promise<{ error: string }> => {
+    assertMainRenderer(event.sender)
+    const settingsPath = join(dshHome, 'settings.yaml')
+    try {
+      await lstat(settingsPath)
+      shell.showItemInFolder(settingsPath)
+      return { error: '' }
+    } catch {
+      const error = await shell.openPath(dshHome)
+      return { error }
+    }
+  })
+  ipcMain.handle('dsh:desktop:settings:reset', async (event): Promise<{ backupName?: string; restarting: true }> => {
+    assertMainRenderer(event.sender)
+    const { backupName } = await backupAndResetDesktopSettings(dshHome)
+    setTimeout(() => { requestDesktopRestart() }, 250)
+    return { ...(backupName === undefined ? {} : { backupName }), restarting: true }
   })
   ipcMain.handle('dsh:desktop:cli:get', async (event): Promise<DesktopCliStatus> => {
     assertMainRenderer(event.sender)

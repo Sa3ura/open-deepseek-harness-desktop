@@ -65,6 +65,7 @@ export {
   clearLastProfileRepairReport,
   inspectProfileDependencies,
   inspectOrphanedProfileBundles,
+  inspectProfileBundleEntryOwnership,
   inspectUnresolvableProfileBundleEntries,
   inspectQuarantineRemovalResidue,
   listQuarantinedProfilePlugins,
@@ -77,6 +78,7 @@ export {
   uninstallQuarantinedProfilePlugin,
   type ProfileDependencyConflict,
   type OrphanedProfileBundle,
+  type ProfileBundleEntryOwnership,
   type ProfileQuarantineReason,
   type ProfileDependencyOptions,
   type ProfilePackageManagerResult,
@@ -113,6 +115,12 @@ export {
   type ProfileDiagnosticSeverity,
   type ProfileDiagnosticSource,
 } from './profile-diagnostics.ts'
+
+export {
+  backupAndResetInvalidSettings,
+  prepareDiagnosticSettingsDocument,
+  type ResetInvalidSettingsResult,
+} from './settings-diagnostics.ts'
 
 export {
   acquireProfilePluginMutationLock,

@@ -29,6 +29,8 @@ kind: "package-reference"
 
 打开**诊断**可检查 Profile 依赖、Loader、隔离与卸载一致性。`profile.quarantine-removal-residue` 卡片表示插件已停用且物理安装已经消失，但派生 lockfile 或诊断状态仍引用它；**清理卸载残留**会调用受控 Profile doctor，既不重新安装，也不再次隔离该插件。
 
+诊断会区分 Loader 模块自身缺失与 Loader 已存在但其发布代码导入依赖缺失，并把两类故障都归属到唯一负责的外部 Bundle。内部 `@deepseek-ai/dsh-*` 包缺失会显示为 DSH 代际不兼容，不会引导用户安装 Host 内部包。`settings.yaml` 无效时，桌面安全模式保持原文件不动，并提供固定路径操作：打开文件，或先逐字节保留原文，再重置为空的有效映射并重启 Harness。
+
 桌面专属的**诊断演练中心**为隔离 home 和需明确确认的当前 Profile 都提供了**隔离卸载残留**场景。它会写入经过审核的旧版修复报告、诊断报告和 lockfile 组合，调用正式 Doctor，并将演练报告保留到用户点击**全部恢复**；渲染层不能传入软件包、路径或任意载荷。当前 Profile 样本绝不替换全局 Host override。“全部恢复”会执行离线强制依赖重建，并在 Harness 恢复前验证受管文件哈希、本次运行的 pnpm 链接和最终 Doctor 结果；恢复失败仍会显示并允许重试。
 
 ### 探索市场插件

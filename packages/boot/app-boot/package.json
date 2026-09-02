@@ -33,6 +33,7 @@
   "license": "MIT",
   "dependencies": {
     "@deepseek-ai/dsh-atomic-write": "workspace:^",
+    "es-module-lexer": "^2.1.0",
     "js-yaml": "^4.2.0",
     "resolve.exports": "^2.0.3",
     "semver": "^7.7.4",

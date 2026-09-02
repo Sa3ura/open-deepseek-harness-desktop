@@ -439,6 +439,61 @@ describe('profile plugin package manager', () => {
     }
   })
 
+  it('quarantines an aggregate Loader with a missing published dependency immediately after add', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-loader-dependency-'))
+    const pnpmEntry = join(home, 'pnpm-loader-dependency.mjs')
+    const packageName = '@dsh-diagnostic-lab/loader-dependency-unavailable'
+    writeFileSync(pnpmEntry, `
+      import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+      import { dirname, join } from 'node:path'
+      const profileDir = process.cwd()
+      const manifestPath = join(profileDir, 'package.json')
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+      const packageName = ${JSON.stringify(packageName)}
+      const packageDir = join(profileDir, 'node_modules', packageName)
+      if (process.argv.includes('add')) {
+        manifest.dependencies = { ...manifest.dependencies, [packageName]: '1.0.0' }
+        mkdirSync(packageDir, { recursive: true })
+        writeFileSync(join(packageDir, 'package.json'), JSON.stringify({
+          name: packageName,
+          version: '1.0.0',
+          type: 'module',
+          exports: './index.js',
+          dsh: { bundle: { patch: './cordis.patch.yml' } },
+        }))
+        writeFileSync(join(packageDir, 'index.js'), 'import "@deepseek-ai/dsh-diagnostic-missing-host"\\nexport function apply() {}\\n')
+        writeFileSync(join(packageDir, 'cordis.patch.yml'), '- insert:\\n  - id: diagnostic-loader-dependency-unavailable\\n    name: "' + packageName + '"\\n')
+      } else if (manifest.dependencies?.[packageName] === undefined) {
+        rmSync(packageDir, { recursive: true, force: true })
+      }
+      mkdirSync(dirname(manifestPath), { recursive: true })
+      writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\\n')
+    `)
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_PNPM_BIN', pnpmEntry)
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['add', `${packageName}@1.0.0`])).toBe(0)
+      expect(stderr).toHaveBeenCalledWith(expect.stringContaining('loader-dependency-unavailable'))
+      const quarantineState = JSON.parse(readFileSync(join(home, 'quarantine', 'profile-plugins.json'), 'utf8')) as unknown
+      const report = JSON.parse(readFileSync(join(home, 'profile-health', 'web.json'), 'utf8')) as unknown
+      expect(quarantineState).toMatchObject({
+        plugins: [{ packageName, reason: 'loader-dependency-unavailable' }],
+      })
+      expect(report).toMatchObject({
+        issues: [{
+          code: 'loader.dependency-unavailable',
+          attribution: {
+            rootPackage: packageName,
+            missingModule: '@deepseek-ai/dsh-diagnostic-missing-host',
+          },
+        }],
+      })
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('rejects a registry add when pnpm exits zero without materializing the requested plugin', () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-empty-success-'))
     const pnpmEntry = join(home, 'pnpm-empty-success.mjs')

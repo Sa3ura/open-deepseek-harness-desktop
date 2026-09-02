@@ -503,7 +503,12 @@ describe('PluginDiagnosticsSection', () => {
     expect(await screen.findByRole('heading', { name: en['lab.title'] })).toBeTruthy()
     expect(listScenarios).toHaveBeenCalledOnce()
     expect(screen.getByText(en['lab.scenario.quarantineRemoval.title'])).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: en['lab.start'] }))
+    const scenarioCheckbox = screen.getByRole('checkbox') as HTMLInputElement
+    const startButton = screen.getByRole('button', { name: en['lab.start'] })
+    expect(scenarioCheckbox.checked).toBe(false)
+    expect(startButton.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(scenarioCheckbox)
+    fireEvent.click(startButton)
     await waitFor(() => {
       expect(start).toHaveBeenCalledWith({
         scenarioIds: ['quarantine-removal-residue'],
@@ -514,6 +519,44 @@ describe('PluginDiagnosticsSection', () => {
     expect(startUninstall).not.toHaveBeenCalled()
     expect(startQuarantineRetry).not.toHaveBeenCalled()
     expect(uninstallQuarantine).not.toHaveBeenCalled()
+  })
+
+  it('clears Diagnostics Lab selections when the target changes', async () => {
+    const scenario = {
+      id: 'orphaned-bundle',
+      title: 'Orphaned bundle',
+      description: 'Exercise either target.',
+      expectedCode: 'profile.orphaned-bundle',
+      targets: ['isolated', 'active-profile'],
+    } satisfies DiagnosticLabScenario
+    render(<PluginDiagnosticsSection {...({
+      t,
+      list: async () => diagnosticsSnapshot,
+      startDependencyDoctor: vi.fn(),
+      getDependencyDoctor: vi.fn(),
+      getInstall: vi.fn(),
+      startUninstall: vi.fn(),
+      startQuarantineRetry: vi.fn(),
+      uninstallQuarantine: vi.fn(),
+      dismissDependencyHealth: vi.fn(),
+      diagnosticLab: {
+        listScenarios: vi.fn(async () => [scenario]),
+        current: vi.fn(async () => undefined),
+        start: vi.fn(),
+        getRun: vi.fn(),
+        cancel: vi.fn(),
+        restoreAll: vi.fn(),
+        exportReport: vi.fn(),
+        subscribe: vi.fn(() => () => {}),
+      },
+    } as PluginDiagnosticsSectionProps)} />)
+
+    const scenarioCheckbox = await screen.findByRole('checkbox') as HTMLInputElement
+    fireEvent.click(scenarioCheckbox)
+    expect(scenarioCheckbox.checked).toBe(true)
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'active-profile' } })
+    expect(scenarioCheckbox.checked).toBe(false)
+    expect(screen.getByRole('button', { name: en['lab.start'] }).hasAttribute('disabled')).toBe(true)
   })
 
   it('keeps a completed exercise visible until the user restores everything', async () => {
@@ -830,6 +873,7 @@ describe('PluginDiagnosticsSection', () => {
   it.each([
     'client-module-unavailable',
     'loader-module-unresolvable',
+    'loader-dependency-unavailable',
   ] as const)('removes a %s plugin before opening its market update', async (reason) => {
     const quarantinedSnapshot = {
       entries: [],

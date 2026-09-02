@@ -22,6 +22,7 @@ import type { PluginInventoryLocaleKey } from './locales.ts'
 import { DiagnosticLabPanel, type DiagnosticLabInjected } from './DiagnosticLabPanel.tsx'
 import { PluginSnapshotPanel } from './PluginSnapshotPanel.tsx'
 import type { PluginSnapshotsInjected } from './plugin-snapshot-bridge.ts'
+import type { SettingsRecoveryInjected } from './settings-recovery-bridge.ts'
 import css from './PluginDiagnosticsSection.module.css'
 
 /** Remote operations owned by the dedicated Diagnostics settings page. */
@@ -30,6 +31,8 @@ export interface PluginDiagnosticsSectionInjected {
   readonly diagnosticLab?: DiagnosticLabInjected
   /** Durable plugin rollback points; present only in Electron Desktop. */
   readonly pluginSnapshots?: PluginSnapshotsInjected
+  /** Fixed-path settings recovery owned by Electron; never accepts a renderer path. */
+  readonly settingsRecovery?: SettingsRecoveryInjected
   /** Read retained repair and quarantine state. */
   list: () => Promise<PluginInventorySnapshot>
   /** Start a current dependency-tree check or repair. */
@@ -100,6 +103,7 @@ const QUARANTINE_REASON_KEYS = {
   'build-script-blocked': 'health.quarantine.reason.buildScriptBlocked',
   'client-module-unavailable': 'health.quarantine.reason.clientModuleUnavailable',
   'loader-module-unresolvable': 'health.quarantine.reason.loaderModuleUnresolvable',
+  'loader-dependency-unavailable': 'health.quarantine.reason.loaderDependencyUnavailable',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 const QUARANTINE_SOLUTION_KEYS = {
@@ -109,6 +113,7 @@ const QUARANTINE_SOLUTION_KEYS = {
   'build-script-blocked': 'health.quarantine.solution.build-script-blocked',
   'client-module-unavailable': 'health.quarantine.solution.client-module-unavailable',
   'loader-module-unresolvable': 'health.quarantine.solution.loader-module-unresolvable',
+  'loader-dependency-unavailable': 'health.quarantine.solution.loader-dependency-unavailable',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 const QUARANTINE_RETRY_KEYS = {
@@ -118,6 +123,7 @@ const QUARANTINE_RETRY_KEYS = {
   'build-script-blocked': 'health.approveBuild',
   'client-module-unavailable': 'health.quarantine.action.findUpdate',
   'loader-module-unresolvable': 'health.quarantine.action.findUpdate',
+  'loader-dependency-unavailable': 'health.quarantine.action.findUpdate',
 } satisfies Record<PluginInventorySnapshot['dependencyHealth']['quarantined'][number]['reason'], PluginInventoryLocaleKey>
 
 type DiagnosticIssue = PluginInventorySnapshot['dependencyHealth']['issues'][number]
@@ -129,6 +135,7 @@ const DIAGNOSTIC_ACTION_KEYS = {
   isolate: 'diagnostics.action.isolate',
   restore: 'diagnostics.action.restore',
   'open-config': 'diagnostics.action.openConfig',
+  'reset-config': 'diagnostics.action.resetConfig',
   export: 'diagnostics.action.export',
 } satisfies Record<DiagnosticIssue['actions'][number], PluginInventoryLocaleKey>
 
@@ -176,6 +183,7 @@ function uninstallSucceeded(snapshot: PluginInstallSnapshot | undefined): boolea
 export function PluginDiagnosticsSection({
   diagnosticLab,
   pluginSnapshots,
+  settingsRecovery,
   list,
   startDependencyDoctor,
   getDependencyDoctor,
@@ -486,6 +494,8 @@ export function PluginDiagnosticsSection({
                 <code>{issue.attribution.dependencyChain.join(' → ')}</code>
               ) : null}
               {issue.attribution?.moduleName !== undefined ? <code>{issue.attribution.moduleName}</code> : null}
+              {issue.attribution?.importerPackage !== undefined ? <code>{issue.attribution.importerPackage}</code> : null}
+              {issue.attribution?.missingModule !== undefined ? <code>{issue.attribution.missingModule}</code> : null}
               {issue.attribution?.entryId !== undefined ? <code>{issue.attribution.entryId}</code> : null}
               <p>{t('diagnostics.issue.phase')}: {issue.phase} · {t('diagnostics.issue.actions')}: {issue.actions.map(action => t(DIAGNOSTIC_ACTION_KEYS[action])).join(', ')}</p>
               {issue.evidence.length > 0 ? (
@@ -506,6 +516,31 @@ export function PluginDiagnosticsSection({
                       && diagnosticBuildInstall.snapshot.phase === 'running'
                       ? t('health.retry.running')
                       : t('health.approveBuild')}
+                  </Button>
+                </div>
+              ) : null}
+              {issue.code === 'config.settings-invalid' && settingsRecovery !== undefined ? (
+                <div className={css.actions}>
+                  <Button onClick={() => {
+                    setActionError(null)
+                    void settingsRecovery.openSettingsDocument().then(
+                      ({ error }) => { if (error !== '') setActionError(error) },
+                      (error: unknown) => { setActionError(errorMessage(error)) },
+                    )
+                  }}>
+                    {t('diagnostics.settings.open')}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    onClick={() => {
+                      if (!globalThis.confirm(t('diagnostics.settings.resetConfirm'))) return
+                      setActionError(null)
+                      void settingsRecovery.backupAndResetSettings().catch(
+                        (error: unknown) => { setActionError(errorMessage(error)) },
+                      )
+                    }}
+                  >
+                    {t('diagnostics.settings.reset')}
                   </Button>
                 </div>
               ) : null}
@@ -653,39 +688,41 @@ export function PluginDiagnosticsSection({
                   </div>
                 </div>
                 <div className={css.actions}>
-                  {record.reason === 'client-module-unavailable' || record.reason === 'loader-module-unresolvable' ? (
-                    <Button
-                      variant="primary"
-                      disabled={removal?.phase === 'running'}
-                      onClick={() => {
-                        setUninstallAcknowledged(false)
-                        setUninstallTarget({
-                          kind: 'quarantine',
-                          quarantineId: record.quarantineId,
-                          packageName: record.packageName,
-                          after: 'market',
-                        })
-                      }}
-                    >
-                      {removal?.phase === 'running'
-                        ? t('health.uninstall.running')
-                        : t(QUARANTINE_RETRY_KEYS[record.reason])}
-                    </Button>
-                  ) : (
-                    <Button variant="primary" disabled={active?.phase === 'running' || removal?.phase === 'running'} onClick={() => {
-                      setActionError(null)
-                      if (record.reason === 'build-script-blocked' && record.buildApprovalKey !== undefined) {
-                        setBuildApprovalTarget({ kind: 'quarantine', record })
-                        return
-                      }
-                      void startQuarantineRetry({ quarantineId: record.quarantineId }).then(
-                        (snapshot) => { setQuarantineInstall({ quarantineId: record.quarantineId, snapshot }) },
-                        (error: unknown) => { setActionError(errorMessage(error)) },
-                      )
-                    }}>{active?.phase === 'running'
-                        ? t('health.retry.running')
-                        : t(QUARANTINE_RETRY_KEYS[record.reason])}</Button>
-                  )}
+                  {record.reason === 'client-module-unavailable'
+                    || record.reason === 'loader-module-unresolvable'
+                    || record.reason === 'loader-dependency-unavailable' ? (
+                      <Button
+                        variant="primary"
+                        disabled={removal?.phase === 'running'}
+                        onClick={() => {
+                          setUninstallAcknowledged(false)
+                          setUninstallTarget({
+                            kind: 'quarantine',
+                            quarantineId: record.quarantineId,
+                            packageName: record.packageName,
+                            after: 'market',
+                          })
+                        }}
+                      >
+                        {removal?.phase === 'running'
+                          ? t('health.uninstall.running')
+                          : t(QUARANTINE_RETRY_KEYS[record.reason])}
+                      </Button>
+                    ) : (
+                      <Button variant="primary" disabled={active?.phase === 'running' || removal?.phase === 'running'} onClick={() => {
+                        setActionError(null)
+                        if (record.reason === 'build-script-blocked' && record.buildApprovalKey !== undefined) {
+                          setBuildApprovalTarget({ kind: 'quarantine', record })
+                          return
+                        }
+                        void startQuarantineRetry({ quarantineId: record.quarantineId }).then(
+                          (snapshot) => { setQuarantineInstall({ quarantineId: record.quarantineId, snapshot }) },
+                          (error: unknown) => { setActionError(errorMessage(error)) },
+                        )
+                      }}>{active?.phase === 'running'
+                          ? t('health.retry.running')
+                          : t(QUARANTINE_RETRY_KEYS[record.reason])}</Button>
+                    )}
                   <Button variant="outline" disabled={active?.phase === 'running' || removal?.phase === 'running' || removal?.phase === 'succeeded'} onClick={() => {
                     setUninstallAcknowledged(false)
                     setUninstallTarget({
