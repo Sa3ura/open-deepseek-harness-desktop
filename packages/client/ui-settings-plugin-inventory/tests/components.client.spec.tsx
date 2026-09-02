@@ -324,7 +324,7 @@ describe('ExternalToolsSection', () => {
       list: async () => inventory,
       externalTools: async () => ({ scope: 'complete-presets', codex: false, claudeCode: false }),
       setExternalTool: vi.fn(),
-      startInstall: vi.fn(),
+      installExternalTool: vi.fn(),
       getInstall: vi.fn(),
     } as ExternalToolsSectionProps)} />)
 
@@ -348,7 +348,7 @@ describe('ExternalToolsSection', () => {
       list: async () => inventory,
       externalTools: async () => ({ scope: 'complete-presets', codex: false, claudeCode: false }),
       setExternalTool,
-      startInstall: vi.fn(),
+      installExternalTool: vi.fn(),
       getInstall: vi.fn(),
     } as ExternalToolsSectionProps)} />)
 
@@ -364,7 +364,7 @@ describe('ExternalToolsSection', () => {
       list: async () => inventory,
       externalTools: async () => ({ scope: 'complete-presets', codex: false, claudeCode: false }),
       setExternalTool: vi.fn(),
-      startInstall: vi.fn(),
+      installExternalTool: vi.fn(),
       getInstall: vi.fn(),
     } as ExternalToolsSectionProps)} />)
 
@@ -373,11 +373,11 @@ describe('ExternalToolsSection', () => {
     expect(en['external.codex.description']).not.toContain('hecoococ')
   })
 
-  it('installs the reviewed published Codex and Claude Code bundle versions', async () => {
-    const startInstall = vi.fn(async (request: PluginInstallRequest) => ({
-      installId: `install-${String(startInstall.mock.calls.length)}`,
-      profile: request.profile,
-      packageSpec: request.packageSpec,
+  it('installs Codex and Claude Code through closed tool identifiers', async () => {
+    const installExternalTool = vi.fn(async (toolId: 'codex' | 'claude-code') => ({
+      installId: `install-${String(installExternalTool.mock.calls.length)}`,
+      profile: 'web',
+      packageSpec: `resolved:${toolId}`,
       command: 'dsh plugin add',
       phase: 'failed' as const,
       exitCode: 1,
@@ -387,7 +387,7 @@ describe('ExternalToolsSection', () => {
       list: async () => ({ ...inventory, entries: [] }),
       externalTools: async () => ({ scope: 'complete-presets', codex: false, claudeCode: false }),
       setExternalTool: vi.fn(),
-      startInstall,
+      installExternalTool,
       getInstall: vi.fn(),
     } as ExternalToolsSectionProps)} />)
 
@@ -396,15 +396,11 @@ describe('ExternalToolsSection', () => {
     if (codexCard === null || claudeCard === null) throw new Error('expected external-tool cards')
     fireEvent.click(codexCard.querySelector('button')!)
     await waitFor(() => {
-      expect(startInstall).toHaveBeenCalledWith({
-        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2',
-      })
+      expect(installExternalTool).toHaveBeenCalledWith('codex')
     })
     fireEvent.click(claudeCard.querySelector('button')!)
     await waitFor(() => {
-      expect(startInstall).toHaveBeenCalledWith({
-        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2',
-      })
+      expect(installExternalTool).toHaveBeenCalledWith('claude-code')
     })
   })
 })

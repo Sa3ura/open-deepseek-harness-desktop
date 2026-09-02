@@ -30,6 +30,10 @@ import type {
   PluginSnapshotRestoreSnapshot,
   PluginSnapshotSummary,
 } from './plugin-snapshot-manager.ts'
+import type {
+  DesktopExternalToolId,
+  ExternalToolInstallResolution,
+} from './external-tool-compatibility-manifest.ts'
 import {
   parseDesktopStartupProgress,
   type DesktopStartupProgress,
@@ -95,6 +99,11 @@ export interface DesktopBundledPluginsBridge {
   startInstall(request: { profile: string; packageSpec: string }): Promise<BundledPluginStartResult>
   startDeferred(request: { profile: string; packageSpec: string }): Promise<BundledPluginDeferredStartResult>
   getInstall(installId: string): Promise<BundledPluginInstallSnapshot>
+}
+
+/** Closed external-tool ids resolved to signed, exact coordinates by main. */
+export interface DesktopExternalToolsBridge {
+  resolve(toolId: DesktopExternalToolId): Promise<ExternalToolInstallResolution>
 }
 
 /** Opaque-id restore operations; package specs never cross from renderer to main. */
@@ -199,6 +208,12 @@ const bundledPluginsBridge: DesktopBundledPluginsBridge = {
   getInstall: installId => ipcRenderer.invoke('dsh:desktop:bundled-plugins:get', installId) as Promise<BundledPluginInstallSnapshot>,
 }
 
+const externalToolsBridge: DesktopExternalToolsBridge = {
+  resolve: toolId => ipcRenderer.invoke(
+    'dsh:desktop:external-tools:resolve', toolId,
+  ) as Promise<ExternalToolInstallResolution>,
+}
+
 const importedPluginsBridge: DesktopImportedPluginsBridge = {
   get: () => ipcRenderer.invoke('dsh:desktop:imported-plugins:get') as Promise<ImportedPluginRestoreSnapshot | undefined>,
   checkSources: () => ipcRenderer.invoke(
@@ -267,6 +282,7 @@ contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   shell: Object.freeze(shellBridge),
   releases: Object.freeze(releasesBridge),
   bundledPlugins: Object.freeze(bundledPluginsBridge),
+  externalTools: Object.freeze(externalToolsBridge),
   importedPlugins: Object.freeze(sourceMode
     ? { ...importedPluginsBridge, development: true as const }
     : importedPluginsBridge),

@@ -41,6 +41,8 @@ import {
 import { DesktopReleaseChecker, isAllowedReleaseUrl, type DesktopReleaseStatus } from './release-checker.ts'
 import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import { SourceUpdater } from './source-updater.ts'
+import { ExternalToolCompatibilityManager } from './external-tool-compatibility.ts'
+import { EXTERNAL_TOOL_IDS, type DesktopExternalToolId } from './external-tool-compatibility-manifest.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
 import { isDesktopRenderer, withDesktopWindowMetadata } from './window-frame.ts'
 import {
@@ -150,6 +152,7 @@ let hiddenLaunch = false
 let harnessLogPath = ''
 let releaseChecker: DesktopReleaseChecker | undefined
 let releaseDownloader: DesktopReleaseDownloader | undefined
+let externalToolCompatibility: ExternalToolCompatibilityManager | undefined
 let bundledPluginInstaller: BundledPluginInstaller | undefined
 let importedPluginRestoreManager: ImportedPluginRestoreManager | undefined
 let desktopCliManager: DesktopCliManager | undefined
@@ -1040,6 +1043,10 @@ async function startApplication(): Promise<void> {
     getRelease: () => releaseChecker?.status ?? { phase: 'unsupported' },
     openPath: path => shell.openPath(path),
   })
+  externalToolCompatibility = new ExternalToolCompatibilityManager({
+    cacheDirectory: join(app.getPath('userData'), 'external-tool-compatibility'),
+    desktopVersion: app.getVersion(),
+  })
   releaseChecker?.subscribe((status) => {
     releaseDownloader?.resetForRelease(status)
     mainSurface?.send('dsh:desktop:release-status', status)
@@ -1340,6 +1347,16 @@ async function startApplication(): Promise<void> {
       throw new TypeError('desktop: invalid bundled plugin request')
     }
     return bundledPluginInstaller?.startManual(profile, packageSpec) ?? { handled: false }
+  })
+  ipcMain.handle('dsh:desktop:external-tools:resolve', async (event, toolId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof toolId !== 'string' || !EXTERNAL_TOOL_IDS.includes(toolId as DesktopExternalToolId)) {
+      throw new TypeError('desktop: invalid external tool id')
+    }
+    if (externalToolCompatibility === undefined) {
+      throw new Error('desktop: external-tool compatibility resolver is unavailable')
+    }
+    return externalToolCompatibility.resolve(toolId as DesktopExternalToolId)
   })
   ipcMain.handle('dsh:desktop:bundled-plugins:start-deferred', async (
     event,

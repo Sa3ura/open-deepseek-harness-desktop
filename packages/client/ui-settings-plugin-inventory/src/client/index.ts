@@ -11,6 +11,7 @@ import { PluginDiagnosticsSection, type PluginDiagnosticsSectionInjected } from 
 import { PluginDiscovery } from './PluginDiscovery.tsx'
 import type { PluginDiscoveryInjected } from './PluginDiscovery.tsx'
 import { ExternalToolsSection, type ExternalToolsSectionInjected } from './ExternalToolsSection.tsx'
+import { resolveExternalToolInstallRequest } from './external-tool-compatibility-bridge.ts'
 import { DiagnosticLabProgressCard } from './DiagnosticLabProgressCard.tsx'
 import { QuarantineNotice, type QuarantineNoticeInjected } from './QuarantineNotice.tsx'
 import {
@@ -181,7 +182,7 @@ export function apply(ctx: ClientContext): void {
   const externalToolsInjected = (): ExternalToolsSectionInjected => ({
     list,
     getInstall,
-    startInstall: request => startControlledInstall(request),
+    installExternalTool: async toolId => startControlledInstall(await resolveExternalToolInstallRequest(toolId)),
     externalTools: async () => {
       const result = await ctx.remote.pluginInventory.externalTools()
       if (!result.ok) throw new Error(`pluginInventory.externalTools failed: ${result.error.code}: ${result.error.message}`)
