@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 14px;
   padding: 16px;
   background: var(--dsw-alias-bg-layer-3);
@@ -20,7 +20,7 @@
 .create input {
   min-width: 0;
   flex: 1;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   padding: 7px 10px;
   background: var(--dsw-alias-bg-layer-2);
@@ -34,7 +34,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   padding: 11px 12px;
   background: var(--dsw-alias-bg-layer-2);

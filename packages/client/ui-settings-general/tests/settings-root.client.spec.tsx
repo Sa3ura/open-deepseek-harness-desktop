@@ -346,7 +346,7 @@ describe('SettingsPanel navigation', () => {
       expect.stringContaining('Agent presets'),
     ])
 
-    const modelsHandle = screen.getByRole('button', { name: 'nav.reorder: Models' })
+    const modelsHandle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
     fireEvent.pointerDown(modelsHandle, {
       button: 0, isPrimary: true, pointerId: 7, clientX: 150, clientY: 120,
     })
@@ -376,7 +376,7 @@ describe('SettingsPanel navigation', () => {
     const { setSectionOrder } = mount()
     openPanel()
     const { items, flushFrame } = installPointerGeometry()
-    const handle = screen.getByRole('button', { name: 'nav.reorder: Agent presets' })
+    const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Agent presets` })
     fireEvent.pointerDown(handle, {
       button: 0, isPrimary: true, pointerId: 10, clientX: 150, clientY: 208,
     })
@@ -394,7 +394,7 @@ describe('SettingsPanel navigation', () => {
     mount()
     openPanel()
     const { list, flushFrame } = installPointerGeometry()
-    const handle = screen.getByRole('button', { name: 'nav.reorder: Models' })
+    const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
     fireEvent.pointerDown(handle, {
       button: 0, isPrimary: true, pointerId: 11, clientX: 150, clientY: 164,
     })
@@ -414,7 +414,7 @@ describe('SettingsPanel navigation', () => {
     fireEvent.pointerMove(models, { pointerId: 3, clientX: 80, clientY: 220 })
     expect(list.dataset.sorting).toBeUndefined()
 
-    const handle = screen.getByRole('button', { name: 'nav.reorder: Models' })
+    const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
     fireEvent.pointerDown(handle, {
       button: 0, isPrimary: true, pointerId: 4, clientX: 150, clientY: 164,
     })
@@ -432,7 +432,7 @@ describe('SettingsPanel navigation', () => {
       const { setSectionOrder } = mount()
       openPanel()
       const { list, items, flushFrame } = installPointerGeometry()
-      const handle = screen.getByRole('button', { name: 'nav.reorder: Models' })
+      const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
       fireEvent.pointerDown(handle, {
         button: 0, isPrimary: true, pointerId: 8, clientX: 150, clientY: 164,
       })
@@ -461,7 +461,7 @@ describe('SettingsPanel navigation', () => {
     const { setSectionOrder } = mount()
     openPanel()
     const { flushFrame } = installPointerGeometry()
-    const handle = screen.getByRole('button', { name: 'nav.reorder: Models' })
+    const handle = screen.getByRole('button', { name: `${en['nav.reorder']}: Models` })
     fireEvent.pointerDown(handle, {
       button: 0, isPrimary: true, pointerId: 9, clientX: 150, clientY: 164,
     })
@@ -476,7 +476,7 @@ describe('SettingsPanel navigation', () => {
   it('supports keyboard reordering from the same drag handle', () => {
     const { setSectionOrder } = mount()
     openPanel()
-    fireEvent.keyDown(screen.getByRole('button', { name: 'nav.reorder: Models' }), { key: 'ArrowUp' })
+    fireEvent.keyDown(screen.getByRole('button', { name: `${en['nav.reorder']}: Models` }), { key: 'ArrowUp' })
     expect(setSectionOrder).toHaveBeenCalledWith(['models', 'general', 'agent-presets'])
   })
 
@@ -510,8 +510,8 @@ describe('SettingsPanel navigation', () => {
         complete: finishSection,
       })
     })
-    expect(screen.getByRole('dialog', { name: 'onboarding.start' })).toBeTruthy()
-    expect(screen.getByRole('dialog', { name: 'onboarding.start' }).parentElement?.parentElement)
+    expect(screen.getByRole('dialog', { name: en['onboarding.start'] })).toBeTruthy()
+    expect(screen.getByRole('dialog', { name: en['onboarding.start'] }).parentElement?.parentElement)
       .toBe(document.body)
     expect(screen.getByTestId('section-models')).toBeTruthy()
     expect(renderSlot).toHaveBeenCalledWith(
@@ -520,9 +520,9 @@ describe('SettingsPanel navigation', () => {
       { only: 'models' },
     )
     expect(screen.queryByRole('button', { name: 'General' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'onboarding.done' }))
+    fireEvent.click(screen.getByRole('button', { name: en['onboarding.done'] }))
     expect(finishSection).toHaveBeenCalledOnce()
-    expect(screen.queryByRole('dialog', { name: 'onboarding.start' })).toBeNull()
+    expect(screen.queryByRole('dialog', { name: en['onboarding.start'] })).toBeNull()
 
     cleanup()
     const inactive = mount({ onboardingActive: false }).renderSlot.mock.calls
