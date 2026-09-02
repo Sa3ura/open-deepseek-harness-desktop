@@ -1,6 +1,7 @@
 /** Narrow update bridge for the trusted Harness renderer. */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import type { DesktopIconsBridge, DesktopIconStatus, IconSelection } from './icon-protocol.ts'
 import type { OpenLogResult } from './log-reveal.ts'
 import type { DesktopPreferences, DesktopPreferencesPatch } from './preferences.ts'
 import type { DesktopReleaseStatus } from './release-checker.ts'
@@ -278,8 +279,24 @@ const chatBackgroundBridge: DesktopChatBackgroundBridge = {
 }
 
 const sourceMode = process.argv.includes('--dsh-source')
+const iconsBridge: DesktopIconsBridge = {
+  getStatus: () => ipcRenderer.invoke('dsh:desktop:icons:get') as Promise<DesktopIconStatus>,
+  choose: () => ipcRenderer.invoke('dsh:desktop:icons:choose') as Promise<IconSelection | null>,
+  discard: id => ipcRenderer.invoke('dsh:desktop:icons:discard', id) as Promise<void>,
+  apply: (id, target, crop) => ipcRenderer.invoke('dsh:desktop:icons:apply', id, target, crop) as Promise<DesktopIconStatus>,
+  followTray: follow => ipcRenderer.invoke('dsh:desktop:icons:follow', follow) as Promise<DesktopIconStatus>,
+  reset: target => ipcRenderer.invoke('dsh:desktop:icons:reset', target) as Promise<DesktopIconStatus>,
+  repairShortcuts: () => ipcRenderer.invoke('dsh:desktop:icons:repair') as Promise<DesktopIconStatus>,
+  createShortcut: () => ipcRenderer.invoke('dsh:desktop:icons:create-shortcut') as Promise<DesktopIconStatus>,
+  onStatus(callback) {
+    const listener = (_event: Electron.IpcRendererEvent, status: DesktopIconStatus): void => { callback(status) }
+    ipcRenderer.on('dsh:desktop:icons:status', listener)
+    return () => { ipcRenderer.removeListener('dsh:desktop:icons:status', listener) }
+  },
+}
 contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
   shell: Object.freeze(shellBridge),
+  icons: Object.freeze(iconsBridge),
   releases: Object.freeze(releasesBridge),
   bundledPlugins: Object.freeze(bundledPluginsBridge),
   externalTools: Object.freeze(externalToolsBridge),

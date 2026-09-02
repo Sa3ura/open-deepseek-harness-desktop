@@ -32,6 +32,17 @@ Packaged releases carry pinned, integrity-checked archives for five startup pres
 
 Development and package scripts invoke the Desktop and Web apps from their owning directories. Every Unix package command passes an explicit platform and architecture to the runtime and Codex preparation steps, keeping macOS Apple Silicon, macOS Intel, Linux x64, and Windows x64 staging independent.
 
+<a id="custom-application-icons"></a>
+## Custom application icons
+
+Output previews include transparent padding and antialiased rounded corners. macOS application artwork occupies a centered 412 × 412 region of the 512-pixel canvas; Windows application and custom tray artwork use a 480 × 480 region to keep small icons readable. The saved crop remains unstyled, so startup reapplies the geometry without cumulative shrinking. Built-in icons retain their original artwork.
+
+General Settings → Application icons accepts a local PNG or JPEG up to 10 MB and 16 million pixels. Drag or use arrow keys to position a square crop, adjust zoom, inspect the large and 16/32-pixel light/dark previews, and confirm. Cancel and Escape discard the selection. Crops below 512 × 512 show a clarity warning. Tray images follow the application image by default; disabling that option enables a separate image. Restore default removes the selected override. These controls are absent from Linux and ordinary Web clients.
+
+Electron normalizes JPEG orientation and saves only a 512-pixel PNG, derived ICO frames, and an atomic selection record under `userData/icons`; it does not retain the original path or metadata. These files belong to the desktop build, not `DSH_HOME`, so data-directory switches and plugin snapshot recovery do not select different icons. Startup loads saved images before constructing windows and the tray. A missing or damaged asset falls back to a built-in image and exposes a repair warning without preventing startup.
+
+macOS applies the image to the running Dock and menu bar without modifying the application bundle, Finder, signatures, or the icon shown after quitting. Custom menu-bar images retain their colors; the built-in fallback uses the existing template artwork. Windows requests window/taskbar and tray updates while retaining the AppUserModelID. Its shortcut adapter updates only current-user Desktop and Start Menu links that target this installation and still use built-in or managed icons; it preserves launch arguments and externally customized icons. Missing links are not created unless the user chooses Create my desktop shortcut. Each destination reports its own result. A pinned taskbar entry may require unpinning and repinning; the application does not restart Explorer or clear system caches. Windows shell behavior and packaged upgrade behavior require native release qualification; adapter tests are not a substitute for those checks.
+
 ## Optional terminal command
 
 Packaged Windows and macOS builds can register a desktop-owned `dsh` command without exposing the private npm or pnpm runtime. Windows presents an unchecked current-user PATH option in the installer and the same install, repair, and removal controls in General Settings; silent installation enables it only with `/ADDCLI=1`. macOS manages an exact marked block in `.zprofile` or `.bash_profile` from General Settings and keeps a one-time backup before the first edit. Unknown shells receive manual guidance instead of an automatic profile change.

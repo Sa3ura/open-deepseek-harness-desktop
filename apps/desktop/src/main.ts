@@ -41,6 +41,9 @@ import {
 import { DesktopReleaseChecker, isAllowedReleaseUrl, type DesktopReleaseStatus } from './release-checker.ts'
 import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import { SourceUpdater } from './source-updater.ts'
+import { DesktopIconManager, type DesktopIconImages } from './desktop-icons.ts'
+import { updateIconShortcuts } from './icon-shortcuts.ts'
+import type { IconSurfaceResult, IconTarget } from './icon-protocol.ts'
 import { ExternalToolCompatibilityManager } from './external-tool-compatibility.ts'
 import { EXTERNAL_TOOL_IDS, type DesktopExternalToolId } from './external-tool-compatibility-manifest.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
@@ -140,6 +143,7 @@ app.setPath('sessionData', DESKTOP_DATA_HOME.sessionData)
 app.setAppLogsPath(DESKTOP_DATA_HOME.logs)
 
 let mainWindow: BrowserWindow | undefined
+let iconManager: DesktopIconManager | undefined
 let mainSurface: DesktopWindowSurface | undefined
 let supervisor: HarnessSupervisor | undefined
 let harnessOrigin: string | undefined
@@ -329,7 +333,7 @@ async function showDataHomeChooser(
     minWidth: 920,
     minHeight: 620,
     backgroundColor: desktopThemeBackground('system', nativeTheme.shouldUseDarkColors),
-    icon: WINDOW_ICON,
+    icon: iconManager?.images().application ?? WINDOW_ICON,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -640,11 +644,8 @@ function refreshTrayMenu(): void {
 }
 
 function createTray(): void {
-  const image = nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON)
-  if (process.platform === 'darwin') {
-    image.setTemplateImage(true)
-  }
-  tray = new Tray(image)
+  const images = iconManager?.images()
+  tray = new Tray(images === undefined ? nativeImage.createFromPath(WINDOW_ICON) : desktopTrayImage(images))
   tray.setToolTip(APP_NAME)
   refreshTrayMenu()
   // A macOS tray with a context menu opens that menu on a primary click. Do
@@ -657,16 +658,64 @@ function createTray(): void {
   tray.on('right-click', refreshTrayMenu)
 }
 
-/** Replace Electron's generic Dock icon while running the unpackaged macOS host. */
-function applyDevelopmentDockIcon(): void {
-  if (process.platform !== 'darwin' || app.isPackaged) return
-  const image = nativeImage.createFromPath(DEVELOPMENT_DOCK_ICON)
-  if (image.isEmpty()) {
-    throw new Error(`desktop: development Dock icon is unavailable at ${DEVELOPMENT_DOCK_ICON}`)
+/** Apply the saved Dock preference before either setup or the main window appears. */
+function applyStartupDockIcon(): void {
+  if (process.platform !== 'darwin') return
+  try { app.dock?.setIcon(iconManager?.images().application ?? nativeImage.createFromPath(DEVELOPMENT_DOCK_ICON)) }
+  catch { console.warn('desktop: Dock icon could not be applied') }
+}
+
+function desktopTrayImage(images: DesktopIconImages): Electron.NativeImage {
+  if (images.trayTemplate) {
+    images.tray.setTemplateImage(true)
+    return images.tray
   }
-  const dock = app.dock
-  if (dock === undefined) throw new Error('desktop: macOS Dock integration is unavailable')
-  dock.setIcon(image)
+  const image = nativeImage.createEmpty()
+  const size = process.platform === 'darwin' ? 22 : 16
+  for (const scaleFactor of [1, 2]) image.addRepresentation({
+    scaleFactor, buffer: images.tray.resize({ width: size * scaleFactor, height: size * scaleFactor, quality: 'best' }).toPNG(),
+  })
+  image.setTemplateImage(false)
+  return image
+}
+
+function applyDesktopIcons(images: DesktopIconImages, shortcuts: boolean, createShortcut: boolean): IconSurfaceResult[] {
+  const results: IconSurfaceResult[] = []
+  try {
+    if (process.platform === 'darwin') {
+      if (app.dock === undefined) throw new Error('Dock unavailable')
+      app.dock.setIcon(images.application)
+    } else {
+      for (const window of BrowserWindow.getAllWindows()) window.setIcon(images.application)
+      if (app.isPackaged) {
+        for (const window of BrowserWindow.getAllWindows()) window.setAppDetails({
+          appId: 'ai.flaq.deepseek-harness', appIconPath: images.applicationIco ?? process.execPath,
+          appIconIndex: 0, relaunchCommand: `"${process.execPath}"`, relaunchDisplayName: APP_NAME,
+        })
+      }
+    }
+    results.push({ surface: 'application', status: 'applied' })
+  } catch { results.push({ surface: 'application', status: 'unavailable' }) }
+  try {
+    if (tray === undefined) throw new Error('Tray unavailable')
+    tray.setImage(desktopTrayImage(images))
+    results.push({ surface: 'tray', status: 'applied' })
+  } catch { results.push({ surface: 'tray', status: 'unavailable' }) }
+  if (process.platform === 'win32') {
+    results.push({ surface: 'taskbar', status: 'repin' })
+    if (app.isPackaged && shortcuts) {
+      try {
+        results.push(...updateIconShortcuts({
+          desktop: app.getPath('desktop'),
+          startMenu: join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs'),
+          executable: process.execPath, managedDirectory: join(app.getPath('userData'), 'icons'),
+          appId: 'ai.flaq.deepseek-harness', read: path => shell.readShortcutLink(path),
+          write: (path, operation, options) => shell.writeShortcutLink(path, operation, options),
+        }, images.applicationIco ?? process.execPath, createShortcut))
+      } catch { results.push({ surface: 'desktop', status: 'unavailable' }, { surface: 'start-menu', status: 'unavailable' }) }
+    }
+  }
+  return results
 }
 
 async function runHarnessInvocation(
@@ -934,7 +983,7 @@ function createWindow(): BrowserWindow {
       minWidth: 960,
       minHeight: 640,
       backgroundColor: desktopThemeBackground(desktopThemeSource, nativeTheme.shouldUseDarkColors),
-      icon: WINDOW_ICON,
+      icon: iconManager?.images().application ?? WINDOW_ICON,
       show: false,
     },
     rendererPreferences,
@@ -982,6 +1031,12 @@ function createWindow(): BrowserWindow {
   })
   mainWindow = window
   mainSurface = surface
+  const rendererId = surface.renderer.id
+  surface.renderer.on('destroyed', () => { iconManager?.discardOwner(rendererId) })
+  surface.renderer.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame && !isInPlace) iconManager?.discardOwner(rendererId)
+  })
+  if (iconManager !== undefined && tray !== undefined) iconManager.refresh(app.isPackaged)
   if (harnessOrigin === undefined) showLoading('starting')
   else void surface.loadURL(withDesktopWindowMetadata(harnessOrigin, process.platform))
   return window
@@ -990,7 +1045,16 @@ function createWindow(): BrowserWindow {
 async function startApplication(): Promise<void> {
   if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
   await app.whenReady()
-  applyDevelopmentDockIcon()
+  if (process.platform === 'darwin' || process.platform === 'win32') {
+    iconManager = new DesktopIconManager({
+      directory: join(app.getPath('userData'), 'icons'), platform: process.platform, packaged: app.isPackaged,
+      defaultApplication: nativeImage.createFromPath(process.platform === 'darwin' && !app.isPackaged ? DEVELOPMENT_DOCK_ICON : WINDOW_ICON),
+      defaultTray: nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON),
+      apply: applyDesktopIcons,
+      notify: status => mainSurface?.send('dsh:desktop:icons:status', status),
+    })
+  }
+  applyStartupDockIcon()
   const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
   applyDesktopThemeSource(await readDesktopThemeSource(
     dshHome,
@@ -1191,6 +1255,38 @@ async function startApplication(): Promise<void> {
   ipcMain.handle('dsh:desktop:preferences:get', (event) => {
     assertMainRenderer(event.sender)
     return preferences
+  })
+  const requireIcons = (sender: WebContents): DesktopIconManager => {
+    assertMainRenderer(sender)
+    if (iconManager === undefined) throw new Error('icon.unsupported')
+    return iconManager
+  }
+  ipcMain.handle('dsh:desktop:icons:get', event => requireIcons(event.sender).status())
+  ipcMain.handle('dsh:desktop:icons:choose', async (event) => {
+    const manager = requireIcons(event.sender)
+    const owner = event.sender.id
+    const options = { properties: ['openFile'] as const, filters: [{ name: 'PNG / JPEG', extensions: ['png', 'jpg', 'jpeg'] }] }
+    const picked = mainWindow === undefined
+      ? await dialog.showOpenDialog({ ...options, properties: ['openFile'] })
+      : await dialog.showOpenDialog(mainWindow, { ...options, properties: ['openFile'] })
+    if (event.sender.isDestroyed()) return null
+    assertMainRenderer(event.sender)
+    const path = picked.filePaths[0]
+    return picked.canceled || path === undefined ? null : manager.select(owner, path)
+  })
+  ipcMain.handle('dsh:desktop:icons:discard', (event, id: unknown) => {
+    requireIcons(event.sender).discard(event.sender.id, id)
+  })
+  ipcMain.handle('dsh:desktop:icons:apply', (event, id: unknown, target: unknown, crop: unknown) => {
+    return requireIcons(event.sender).apply(event.sender.id, id, target, crop)
+  })
+  ipcMain.handle('dsh:desktop:icons:follow', (event, follow: unknown) => requireIcons(event.sender).followTray(follow))
+  ipcMain.handle('dsh:desktop:icons:reset', (event, target: IconTarget) => requireIcons(event.sender).reset(target))
+  ipcMain.handle('dsh:desktop:icons:repair', event => requireIcons(event.sender).refresh(true))
+  ipcMain.handle('dsh:desktop:icons:create-shortcut', (event) => {
+    const manager = requireIcons(event.sender)
+    if (!app.isPackaged || process.platform !== 'win32') throw new Error('icon.unsupported')
+    return manager.refresh(true, true)
   })
   ipcMain.handle('dsh:desktop:preferences:update', (event, patch: unknown) => {
     assertMainRenderer(event.sender)
