@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-21-external-coding-tool-connection-center.md
-2026-08-21-external-coding-tool-connection-center.md: 8fd22e71904a0bb3b9ceb87d53b24cda6983d8a9
-2026-08-21-external-coding-tool-connection-center.zh.md: bc544b61e0c442d286332c8d074a0e226b3817e0
+2026-08-21-external-coding-tool-connection-center.md: fdda841d72ed927dc59caee00494b96033b689e8
+2026-08-21-external-coding-tool-connection-center.zh.md: 1f60f42e65fc2dbaeb8b15c39a8f781a42f744d9
