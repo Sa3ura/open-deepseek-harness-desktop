@@ -373,7 +373,7 @@ describe('ExternalToolsSection', () => {
     expect(en['external.codex.description']).not.toContain('hecoococ')
   })
 
-  it('installs the current official Codex and Claude Code bundle versions', async () => {
+  it('installs the reviewed published Codex and Claude Code bundle versions', async () => {
     const startInstall = vi.fn(async (request: PluginInstallRequest) => ({
       installId: `install-${String(startInstall.mock.calls.length)}`,
       profile: request.profile,
@@ -397,13 +397,13 @@ describe('ExternalToolsSection', () => {
     fireEvent.click(codexCard.querySelector('button')!)
     await waitFor(() => {
       expect(startInstall).toHaveBeenCalledWith({
-        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.2-alpha.1',
+        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2',
       })
     })
     fireEvent.click(claudeCard.querySelector('button')!)
     await waitFor(() => {
       expect(startInstall).toHaveBeenCalledWith({
-        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.2-alpha.1',
+        profile: 'web', packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2',
       })
     })
   })
