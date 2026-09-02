@@ -114,6 +114,32 @@ export {
   type ProfileDiagnosticSource,
 } from './profile-diagnostics.ts'
 
+export {
+  acquireProfilePluginMutationLock,
+  assertProfilePluginMutationLease,
+  beginProfilePluginMutationLease,
+  createProfilePluginSnapshot,
+  finalizeProfilePluginSnapshot,
+  endProfilePluginMutationLease,
+  listProfilePluginSnapshots,
+  PROFILE_PLUGIN_SNAPSHOT_SCHEMA,
+  removeProfilePluginSnapshot,
+  restoreProfilePluginSnapshotFiles,
+  settleProfilePluginSafetySnapshot,
+  withAutomaticProfilePluginSnapshot,
+  type CreateProfilePluginSnapshotOptions,
+  type ProfilePluginSnapshotDifference,
+  type ProfilePluginSnapshotFile,
+  type ProfilePluginSnapshotKind,
+  type ProfilePluginSnapshotOptions,
+  type ProfilePluginSnapshotPackage,
+  type ProfilePluginSnapshotRecord,
+  type ProfilePluginSnapshotSummary,
+  type ProfilePluginSnapshotTrigger,
+  type ProfilePluginSnapshotVersionChange,
+  type RestoredProfilePluginSnapshot,
+} from './profile-plugin-snapshot.ts'
+
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
  * `cordis.snapshot.yml` in the same directory; every other mode keeps the path.

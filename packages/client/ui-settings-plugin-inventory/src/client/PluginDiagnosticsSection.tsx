@@ -20,12 +20,16 @@ import {
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import { DiagnosticLabPanel, type DiagnosticLabInjected } from './DiagnosticLabPanel.tsx'
+import { PluginSnapshotPanel } from './PluginSnapshotPanel.tsx'
+import type { PluginSnapshotsInjected } from './plugin-snapshot-bridge.ts'
 import css from './PluginDiagnosticsSection.module.css'
 
 /** Remote operations owned by the dedicated Diagnostics settings page. */
 export interface PluginDiagnosticsSectionInjected {
   /** Restricted offline exercise runner; present only in Electron Desktop. */
   readonly diagnosticLab?: DiagnosticLabInjected
+  /** Durable plugin rollback points; present only in Electron Desktop. */
+  readonly pluginSnapshots?: PluginSnapshotsInjected
   /** Read retained repair and quarantine state. */
   list: () => Promise<PluginInventorySnapshot>
   /** Start a current dependency-tree check or repair. */
@@ -171,6 +175,7 @@ function uninstallSucceeded(snapshot: PluginInstallSnapshot | undefined): boolea
 /** Dedicated profile dependency diagnosis and recovery page. */
 export function PluginDiagnosticsSection({
   diagnosticLab,
+  pluginSnapshots,
   list,
   startDependencyDoctor,
   getDependencyDoctor,
@@ -700,6 +705,8 @@ export function PluginDiagnosticsSection({
           })}
         </section>
       ) : null}
+
+      {pluginSnapshots === undefined ? null : <PluginSnapshotPanel {...pluginSnapshots} t={t} />}
 
       {diagnosticLab === undefined ? null : <DiagnosticLabPanel {...diagnosticLab} t={t} />}
 

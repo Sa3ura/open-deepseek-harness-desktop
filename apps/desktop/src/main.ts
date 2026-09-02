@@ -105,6 +105,11 @@ import {
   type StagedImportedPlugin,
 } from './imported-plugin-local-source.ts'
 import { resolveSystemProxyEnvironment } from './system-proxy.ts'
+import {
+  PluginSnapshotManager,
+  type PluginSnapshotRestoreSnapshot,
+  type PluginSnapshotSummary,
+} from './plugin-snapshot-manager.ts'
 
 const APP_NAME = 'DeepSeek Harness'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
@@ -117,6 +122,7 @@ const TITLEBAR_PRELOAD = fileURLToPath(new URL('./titlebar-preload.cjs', import.
 const DATA_HOME_PAGE = fileURLToPath(new URL('./data-home.html', import.meta.url))
 const DATA_HOME_PRELOAD = fileURLToPath(new URL('./data-home-preload.cjs', import.meta.url))
 const DATA_HOME_SELECTION_LIFETIME_MS = 5 * 60_000
+const DESKTOP_PNPM_VERSION = '11.7.0'
 const DEFAULT_SOURCE_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
   app.getPath('appData'),
@@ -148,6 +154,7 @@ let importedPluginRestoreManager: ImportedPluginRestoreManager | undefined
 let desktopCliManager: DesktopCliManager | undefined
 let chatBackgroundStore: DesktopChatBackgroundStore | undefined
 let diagnosticLabManager: DiagnosticLabManager | undefined
+let pluginSnapshotManager: PluginSnapshotManager | undefined
 let startupProgress: DesktopStartupProgress = { stage: 'preparing-desktop', progress: 4 }
 let desktopThemeSource: DesktopThemeSource = 'system'
 const reportedDesktopReadiness = new Set<'client' | 'event-dispatch'>()
@@ -680,6 +687,14 @@ async function runHarnessInvocation(
   })
 }
 
+const PLUGIN_SNAPSHOT_JSON_MARKER = 'dsh:plugin-snapshot-json '
+
+function parsePluginSnapshotJson(output: string): unknown {
+  const line = output.split(/\r?\n/u).find(candidate => candidate.startsWith(PLUGIN_SNAPSHOT_JSON_MARKER))
+  if (line === undefined) throw new Error(`desktop: plugin snapshot command returned no structured result: ${output.slice(-2000)}`)
+  return JSON.parse(line.slice(PLUGIN_SNAPSHOT_JSON_MARKER.length)) as unknown
+}
+
 function parseDiagnosticLabDoctorOutput(output: string): DiagnosticLabDoctorResult {
   const start = output.indexOf('{')
   const end = output.lastIndexOf('}')
@@ -980,6 +995,8 @@ async function startApplication(): Promise<void> {
   let harnessEnvironment: NodeJS.ProcessEnv = {
     ...process.env,
     DSH_HOME: dshHome,
+    DSH_DESKTOP_APPLICATION_VERSION: app.getVersion(),
+    DSH_DESKTOP_PNPM_VERSION: DESKTOP_PNPM_VERSION,
     DSH_PROFILE_SAFE_MODE_ON_FAILURE: '1',
   }
   try {
@@ -1225,6 +1242,12 @@ async function startApplication(): Promise<void> {
     if (rendererOrigin !== harnessOrigin || reportedDesktopReadiness.has(phase)) return
     reportedDesktopReadiness.add(phase)
     void appendDesktopStartupLog(phase === 'client' ? 'client ready' : 'event-dispatch is ready')
+    pluginSnapshotManager?.reportReadiness(phase)
+    if (reportedDesktopReadiness.size === 2) {
+      void pluginSnapshotManager?.markBootable().catch((error: unknown) => {
+        console.warn('desktop: could not retain the latest bootable plugin snapshot', error)
+      })
+    }
   })
   ipcMain.handle('dsh:desktop:releases:get', (event): DesktopReleaseStatus => {
     assertMainRenderer(event.sender)
@@ -1453,6 +1476,41 @@ async function startApplication(): Promise<void> {
     }
     return diagnosticLabManager.exportReport(runId)
   })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:list', (event): Promise<readonly PluginSnapshotSummary[]> => {
+    assertMainRenderer(event.sender)
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.list()
+  })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:create', (event, label: unknown) => {
+    assertMainRenderer(event.sender)
+    if (label !== undefined && typeof label !== 'string') throw new TypeError('desktop: invalid plugin snapshot label')
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.create(label)
+  })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:remove', (event, snapshotId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof snapshotId !== 'string') throw new TypeError('desktop: invalid plugin snapshot id')
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.remove(snapshotId)
+  })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:restore', (
+    event,
+    snapshotId: unknown,
+    networkAllowed: unknown,
+  ): PluginSnapshotRestoreSnapshot => {
+    assertMainRenderer(event.sender)
+    if (typeof snapshotId !== 'string' || typeof networkAllowed !== 'boolean') {
+      throw new TypeError('desktop: invalid plugin snapshot restore request')
+    }
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.startRestore(snapshotId, networkAllowed)
+  })
+  ipcMain.handle('dsh:desktop:plugin-snapshots:restore:get', (event, operationId: unknown) => {
+    assertMainRenderer(event.sender)
+    if (typeof operationId !== 'string') throw new TypeError('desktop: invalid plugin snapshot restore operation')
+    if (pluginSnapshotManager === undefined) throw new Error('desktop: plugin snapshots are unavailable')
+    return pluginSnapshotManager.current(operationId)
+  })
   ipcMain.on('dsh:window:minimize', (event) => {
     const surface = mainSurface
     if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.minimize()
@@ -1557,6 +1615,12 @@ async function startApplication(): Promise<void> {
   } catch (error) {
     console.warn('desktop: could not refresh the registered dsh command', error)
   }
+  const runSnapshotCommand = async <T>(args: readonly string[]): Promise<T> => {
+    const output = await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
+      'plugin', '--profile', 'web', 'snapshot', ...args,
+    ], launchOptions))
+    return parsePluginSnapshotJson(output) as T
+  }
   publishStartupProgress({ stage: 'checking-profile', progress: 28 })
   let initialProfileRepairDiagnostic: string
   try {
@@ -1617,15 +1681,39 @@ async function startApplication(): Promise<void> {
       console.error(error)
     },
   })
-  await bundledPluginInstaller.seedStartup((progress) => {
-    publishStartupProgress(mapBundledPluginProgress(
-      progress.entry.packageName,
-      progress.index,
-      progress.total,
-      progress.stage,
-      progress.progress,
-    ))
-  })
+  let seedSnapshot: { snapshotId: string } | undefined
+  harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = randomUUID()
+  harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID = String(process.pid)
+  try {
+    seedSnapshot = await runSnapshotCommand<{ snapshotId: string }>(['begin-startup-seed'])
+    harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH = '1'
+  } catch (error) {
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
+    console.warn('desktop: could not begin the bundled-plugin snapshot batch; installation will continue', error)
+  }
+  try {
+    await bundledPluginInstaller.seedStartup((progress) => {
+      publishStartupProgress(mapBundledPluginProgress(
+        progress.entry.packageName,
+        progress.index,
+        progress.total,
+        progress.stage,
+        progress.progress,
+      ))
+    })
+  } finally {
+    if (seedSnapshot !== undefined) {
+      try {
+        await runSnapshotCommand(['finalize', seedSnapshot.snapshotId])
+      } catch (error) {
+        console.warn('desktop: could not finalize the bundled-plugin snapshot batch', error)
+      }
+    }
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+    delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
+  }
   await appendDesktopStartupLog('Bundled startup plugin seeding completed.')
   const installedProfileDependencies: Record<string, string> = {}
   try {
@@ -1694,9 +1782,77 @@ async function startApplication(): Promise<void> {
       }
     },
     onFailure: (failure) => {
-      showLoading('failed', { ...failure, logPath: harnessLogPath })
-      showNotification('failed', notificationCopy.failed)
+      if (pluginSnapshotManager === undefined) {
+        showLoading('failed', { ...failure, logPath: harnessLogPath })
+        showNotification('failed', notificationCopy.failed)
+        return
+      }
+      void pluginSnapshotManager.handleHarnessFailure(failure.message).then((handled) => {
+        if (handled) return
+        showLoading('failed', { ...failure, logPath: harnessLogPath })
+        showNotification('failed', notificationCopy.failed)
+      }, (error: unknown) => {
+        console.error('desktop: plugin snapshot rollback after startup failure failed', error)
+        showLoading('failed', { ...failure, logPath: harnessLogPath })
+        showNotification('failed', notificationCopy.failed)
+      })
     },
+  })
+  let restoreLeaseToken: string | undefined
+  pluginSnapshotManager = new PluginSnapshotManager({
+    listSnapshots: () => runSnapshotCommand<readonly PluginSnapshotSummary[]>(['list']),
+    createSnapshot: (kind, label) => runSnapshotCommand<{ snapshotId: string; kind: typeof kind }>(
+      kind === 'manual'
+        ? ['create', ...(label === undefined ? [] : [label])]
+        : [kind === 'bootable' ? 'mark-bootable' : 'create-safety'],
+    ),
+    removeSnapshot: async (snapshotId) => { await runSnapshotCommand(['remove', snapshotId]) },
+    restoreFiles: async (snapshotId) => { await runSnapshotCommand(['restore-files', snapshotId]) },
+    settleSafety: async (snapshotId) => { await runSnapshotCommand(['settle-safety', snapshotId]) },
+    beginMutationLease: async () => {
+      if (restoreLeaseToken !== undefined) throw new Error('desktop: plugin snapshot restore lease is already active')
+      const token = randomUUID()
+      restoreLeaseToken = token
+      harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = token
+      harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID = String(process.pid)
+      try {
+        await runSnapshotCommand(['begin-restore-lease'])
+      } catch (error) {
+        restoreLeaseToken = undefined
+        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
+        throw error
+      }
+    },
+    endMutationLease: async () => {
+      if (restoreLeaseToken === undefined) return
+      try {
+        await runSnapshotCommand(['end-restore-lease'])
+      } finally {
+        restoreLeaseToken = undefined
+        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
+        delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID
+      }
+    },
+    suspendHarness: async () => { await supervisor?.stop() },
+    resumeHarness: () => { supervisor?.resume() },
+    installProfile: async (offline) => {
+      await runPackageManagerInvocation(
+        ['install', ...(offline ? ['--offline'] : []), '--frozen-lockfile'],
+        join(dshHome, 'profiles', 'web'),
+        harnessEnvironment,
+        launchOptions,
+        120_000,
+      )
+    },
+    doctorHealthy: async () => {
+      const output = await runHarnessInvocation(resolveHarnessInvocation(harnessEnvironment, [
+        'plugin', '--profile', 'web', 'doctor',
+      ], launchOptions), [0, 2])
+      return parseDiagnosticLabDoctorOutput(output).status === 'healthy'
+    },
+    onStatus: (snapshot) => { mainSurface?.send('dsh:desktop:plugin-snapshots:status', snapshot) },
+    journalPath: join(dshHome, 'plugin-snapshots', 'v1', 'restore-journal.json'),
   })
   diagnosticLabManager = new DiagnosticLabManager({
     root: join(app.getPath('userData'), 'diagnostic-lab'),
@@ -1742,6 +1898,11 @@ async function startApplication(): Promise<void> {
     await diagnosticLabManager.recoverPending()
   } catch (error) {
     console.error('desktop: diagnostic lab startup recovery failed; continuing with supervised Harness startup', error)
+  }
+  try {
+    await pluginSnapshotManager.recoverPending()
+  } catch (error) {
+    console.error('desktop: plugin snapshot startup recovery failed; retaining the failure for manual recovery', error)
   }
   supervisor.start()
 
