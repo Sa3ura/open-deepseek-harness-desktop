@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-Settings 在现有产品分区旁提供一个根 `external-tools` 分区。它为每个编码产品展示单一连接流程，并并行读取 Host 所有的两份状态：实时插件清单与 Host 连接设置。Codex 与 Claude Code 可操作，因为本版本存在对应的官方 Provider bundle。安装使用与应用基线匹配的精确包版本；安装完成后要求完整重启，因为运行中的 Loader 树不可修改。Hermes 与 Trae 在正式 Provider bundle 和工具行出现前保持为不可操作的占位项。
+Settings 在现有产品分区旁提供一个根 `external-tools` 分区。它为每个编码产品展示单一连接流程，并并行读取 Host 所有的两份状态：实时插件清单与 Host 连接设置。Codex 与 Claude Code 可操作，因为本版本存在对应的官方 Provider bundle。安装使用已经与应用基线验证过的精确 Provider 发布版本；安装完成后要求完整重启，因为运行中的 Loader 树不可修改。Provider 坐标独立于桌面端版本选择，因为上游发布源码版本并不保证 npm 存在同版本软件包。Hermes 与 Trae 在正式 Provider bundle 和工具行出现前保持为不可操作的占位项。
 
 连接受支持的产品会独立于 Session preset 身份保存一项 Host 设置。`AgentPresets` 负责安全边界投影：Host 注册唯一的产品专用 projector，每个启用的 `dsh-tool-subagent` 实例挂载到合格 Agent 自己的 scope。`standard`、`code` 与 `cordis` 参与投影，`minimal` 保持不变。空闲 Agent 立即更新；已经运行的 Agent 保留精确的当前工具 fiber，直到回到 idle。从 idle 同步进入 running 的状态变化会在提示词组装前再次对齐，因此恢复的历史 Session 会从下一轮获得当前连接，而运行中的请求不会被修改。
 
@@ -30,10 +30,12 @@ Settings 在现有产品分区旁提供一个根 `external-tools` 分区。它�
 
 **安装 npm 未带版本的 latest tag。** 否决，因为 dist-tag 可能滞后，也可能独立于桌面基线移动。Provider 协议兼容性属于打包应用的一部分，因此此入口固定匹配的发行版本。
 
+**根据桌面端版本拼接 Provider 版本。** 否决，因为上游可以发布源码标签，却不发布该版本的所有软件包。即使存在经过审核的兼容 Provider 发布版本，拼接出的精确请求也可能永远无法解析。
+
 ## 后果
 
 用户无需预先知道软件包名或 preset 工具行就能发现 Codex 与 Claude Code；连接现在表示已有或新建完整模式 Session 从下一轮开始可用。产品专用提示会把这些工具与同名 shell 可执行文件区分开；缺失的旧 `external-tools` 预设 id 则回退到 `standard`，使旧桌面会话仍可恢复。闭集 Remote 与唯一 projector 防止便利界面退化成任意 preset 编辑器或 shell 启动器。通用 roster 不依赖具体产品工具包；桌面 Host 拥有固定的 Provider/工具绑定。新增另一个可操作产品需要正式 Provider bundle、闭集 Host id、明确的适用模式决策、本地化产品文案，以及覆盖边界投影、持久请求记录、Remote 注册与 Settings 交互的聚焦测试。
 
 ## 验证
 
-preset 测试固定适用模式、独立设置、已有会话投影、旧预设回退、断开移除、minimal 排除、重复 projector 拒绝，以及每个 step 唯一的持久能力记录。真实 Web composition 测试会启动已安装的 Codex bundle，并断言 `standard` 同时得到 `subagent_codex` schema 与模型提示。Host 测试固定有类型的 Remote 清单，客户端测试固定本地化分区注册、受支持操作、诚实占位项与 Codex 连接状态变化。类型检查覆盖 projector 依赖图、生成的 Remote 图与桌面客户端组装。
+preset 测试固定适用模式、独立设置、已有会话投影、旧预设回退、断开移除、minimal 排除、重复 projector 拒绝，以及每个 step 唯一的持久能力记录。真实 Web composition 测试会启动已安装的 Codex bundle，并断言 `standard` 同时得到 `subagent_codex` schema 与模型提示。Host 测试固定有类型的 Remote 清单，客户端测试固定本地化分区注册、经过审核的精确 Provider 坐标、受支持操作、诚实占位项与 Codex 连接状态变化。类型检查覆盖 projector 依赖图、生成的 Remote 图与桌面客户端组装。
