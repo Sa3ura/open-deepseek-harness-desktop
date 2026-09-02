@@ -27,7 +27,7 @@ describe('ui-settings-general host', () => {
     ]))
     await fiber.dispose()
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(
-      settingsNamespace(ONBOARDING_SETTINGS_NAMESPACE),
+      ONBOARDING_SETTINGS_NAMESPACE,
     )
     expect(ctx.settings.describe().map(row => row.ns)).not.toContain(
       settingsNamespace(NAVIGATION_SETTINGS_NAMESPACE),

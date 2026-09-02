@@ -1,5 +1,5 @@
 ---
-description: "Cordis Loader inventory plus guarded Profile diagnostics and recovery Remotes for web GUI host clients."
+description: "Cordis Loader and agent-preset inventory plus guarded Profile diagnostics and recovery Remotes for web GUI host clients."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Clients and settings pages can show what is currently composed in the host: calling `pluginInventory/list` returns the current non-group Loader entries in Loader order — entry id, module specifier, effective enablement, and root Fiber phase (`pending`, `loading`, `active`, `failed`, or `unloading`, or `null` when an entry has no live root Fiber). The Loader roster is point-in-time and uncached; the same restricted Remote service also projects durable Profile diagnostics and exposes fixed doctor, quarantine, recovery, uninstall, and export operations without accepting arbitrary commands or paths. Client packages consume the Remote through the explicit [`api-remotes`](../../api/remotes/README.md) assembly rather than importing the Host implementation.
+Clients and settings pages can show what is currently composed in the host: calling `pluginInventory/list` returns the current non-group Loader entries in Loader order — entry id, module specifier, effective enablement, and root Fiber phase (`pending`, `loading`, `active`, `failed`, or `unloading`, or `null` when an entry has no live root Fiber). When an agent-preset roster is composed, the snapshot also carries one group per preset — id, trust, display name, default marking, health, and flattened composition rows — because model-facing plugins run inside those compositions. The inventory is point-in-time and uncached. The same restricted Remote service separately projects durable Profile diagnostics and exposes fixed doctor, quarantine, recovery, uninstall, and export operations without accepting arbitrary commands or paths. Client packages consume the Remote through the explicit [`api-remotes`](../../api/remotes/README.md) assembly rather than importing the Host implementation.
 
 ## Table of Contents
 
@@ -25,11 +25,15 @@ Clients and settings pages can show what is currently composed in the host: call
 <a id="use-this-package"></a>
 ## Use this package
 
-Call `pluginInventory/list` when a client or settings page needs to show what is currently composed in the host — which plugins are loaded, enabled, and alive. The Remote is the only entry point: the service is Remote-only and deliberately declares no same-process Cordis `Context` merge.
+Call `pluginInventory/list` when a client or settings page needs to show what is currently composed in the host — which plugins are loaded, enabled, and alive, and what each agent preset would give a session. The Remote is the only entry point: the service is Remote-only and deliberately declares no same-process Cordis `Context` merge.
 
 ### What a snapshot contains
 
 Each row is one non-group Loader entry: its entry id, the exact module specifier, the effective enablement (including disabled ancestor groups), and the current root Fiber phase. `pending` means the entry waits to load, `loading` that it is being read, `active` that it is running, `failed` that its fiber rejected, and `unloading` that it is being torn down; `null` means no live root Fiber exists at all. Structural group rows are skipped.
+
+### Per-preset compositions
+
+With a roster composed, `agentPresets` carries one group per preset in roster order: its id, whether the deployment ships it or the user owns it (`trust`, which clients use to localize shipped names), published display name, whether a session naming no preset composes it, and flattened plugin rows — entry id (null when the file row declares none), module specifier, effective enablement, the row's own `!!js` disabled expression when it carries one, and a root-fiber phase when the composition is live. A preset some session already composed answers from its newest standing generation — even when its file has since broken, because the mount is what those sessions run; one never composed since boot answers from its composition file with disabled gates evaluated against the Loader context, and reading never mounts a preset. `conditional` enablement marks a gate the Host could not evaluate, and a broken preset nothing composed stays listed with its reason and no rows. Without a roster the field is absent.
 
 ### What you can and cannot do with it
 
@@ -45,7 +49,7 @@ The Loader inventory is a snapshot for display and diagnostics: a client can ren
 
 ### Design concept
 
-The gateway is a direct projection with no second lifecycle truth: every `list()` call reads `ctx.loader.entries()` and maps each non-group entry to its public row. Cordis's internal plugin/status events already maintain `Entry.fiber` and `Fiber.state`, so a cache would only add another lifecycle truth to keep synchronized.
+The gateway is a direct projection with no second lifecycle truth: every `list()` call reads `ctx.loader.entries()` and maps each non-group entry to its public row. Cordis's internal plugin/status events already maintain `Entry.fiber` and `Fiber.state`, so a cache would only add another lifecycle truth to keep synchronized. The agent-preset roster is an optional peer resolved per call through `ctx.get('agentPresets')`: its `compositionInventory()` owns every preset read, and this package only maps root-fiber states onto the public phase vocabulary.
 
 ### The phase mapping
 
@@ -57,7 +61,7 @@ Fiber states map onto the public phase vocabulary, with `disposed` folding into 
 |---|---|
 | [`src/index.ts`](src/index.ts) | `PluginInventoryGateway`: the `pluginInventory` Remote service and the Loader projection |
 | [`src/types.ts`](src/types.ts) | Public payload types: `PluginInventoryEntry`, `PluginInventorySnapshot`, `PluginFiberPhase` |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; every snapshot projects Loader-owned state) |
+| — | No runtime invariant companion is published; every snapshot is projected directly from Loader-owned state. |
 
 Typert generates the Host and Client Remote artifacts exposed by `./typert` and `./remote`.
 
@@ -93,7 +97,8 @@ None; this package neither assembles nor sends a provider request.
 These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
 
 - **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
-- **No Loader provenance or arbitrary mutation** — the roster does not identify which bundle or override introduced an entry. Guarded Profile operations accept closed request types; they are not general Loader editing or command execution.
+- **No inventory provenance or arbitrary mutation** — the roster does not identify which bundle, profile, or override introduced an entry and cannot edit enablement in either plane. Guarded Profile operations accept closed request types; they are not general Loader editing or command execution.
+- **Presets appear only with a roster** — a deployment without `dsh-agent-presets` serves Loader entries alone; the `agentPresets` field is absent rather than empty.
 
 <a id="dev-note"></a>
 ### Dev Note

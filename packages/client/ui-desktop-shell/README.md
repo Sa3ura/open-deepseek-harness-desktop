@@ -33,6 +33,8 @@ Mount the package in the desktop client bundle. It activates only when the narro
 
 The preload bridge owns every privileged operation. This package receives normalized state and requests allowlisted actions; it cannot read arbitrary files, run arbitrary commands, choose arbitrary external URLs, or replace the application runtime.
 
+No invariant companion is published because lifecycle effects and the preload capability boundary already own this package's runtime checks.
+
 <a id="model-experience"></a>
 ## Model Experience
 

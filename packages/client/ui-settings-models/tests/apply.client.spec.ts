@@ -12,6 +12,7 @@ import {
 } from '../src/onboarding-copy.ts'
 import { ModelsSection } from '../src/client/ModelsSection.tsx'
 import { SetupWizard } from '../src/client/SetupWizard.tsx'
+import { apply as hostApply } from '../src/index.ts'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
@@ -40,7 +41,8 @@ async function bench(isLoopback = true, settings?: object, services: object = {}
     // ui-settings apply also provides the settingsSchema service.
     settings: settings ?? scriptedSettingsRemote().settings,
   })
-  ctx.provide('connection', { api: services, isLoopback } as never)
+  // The fixed Host facts the settings provider reads its persistence from.
+  remote.$host = { home: undefined, isLoopback }
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, locale, remote }
 }
@@ -59,6 +61,10 @@ function declare(slots: SlotRegistry): () => void {
 }
 
 describe('ui-settings-models apply', () => {
+  it('keeps the host Loader entry inert', () => {
+    expect(hostApply).not.toThrow()
+  })
+
   it('declares the services it uses', () => {
     expect(inject).toEqual([
       'slots', 'locale', 'remote', 'remote.credentials', 'remote.llm', 'remote.settings',
@@ -83,7 +89,7 @@ describe('ui-settings-models apply', () => {
     expect(injected.t('deleteTitle')).toBe('删除 {provider}？')
     expect(typeof injected.controller.load).toBe('function')
     expect(injected.hooks.snapshot).toBe(injected.controller.store)
-    expect(injected.api).toBeDefined()
+    expect(typeof injected.operations.writeSettings).toBe('function')
     const onboarding = before.slots.entries('settings.onboarding')
     expect(onboarding).toHaveLength(1)
     const setup = onboarding.find(entry => entry.options.id === 'setup-wizard')!

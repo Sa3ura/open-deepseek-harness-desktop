@@ -2,6 +2,7 @@
 
 import type { PluginInstallRequest } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 
+/** Official external-tool connectors the reviewed Desktop manifest may install. */
 export type InstallableExternalToolId = 'codex' | 'claude-code'
 
 interface DesktopExternalToolsBridge {
@@ -13,8 +14,8 @@ interface DesktopExternalToolsBridge {
 
 /** Exact non-desktop fallback checked against the desktop source manifest by the release gate. */
 export const BROWSER_FALLBACK_EXTERNAL_TOOL_SPECS: Readonly<Record<InstallableExternalToolId, string>> = {
-  codex: '@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2',
-  'claude-code': '@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2',
+  codex: '@deepseek-ai/dsh-subagent-codex@0.1.2-alpha.4',
+  'claude-code': '@deepseek-ai/dsh-subagent-claude-code@0.1.2-alpha.4',
 }
 
 function readDesktopExternalToolsBridge(): DesktopExternalToolsBridge | undefined {
@@ -26,7 +27,11 @@ function readDesktopExternalToolsBridge(): DesktopExternalToolsBridge | undefine
   return typeof candidate.resolve === 'function' ? candidate as DesktopExternalToolsBridge : undefined
 }
 
-/** Resolve a closed tool id; desktop clients never submit package coordinates to main. */
+/**
+ * Resolve a closed tool id; desktop clients never submit package coordinates to main.
+ * @param toolId - Reviewed connector identity selected by the renderer.
+ * @returns Fixed Web Profile install request from Desktop authority or the embedded fallback.
+ */
 export async function resolveExternalToolInstallRequest(
   toolId: InstallableExternalToolId,
 ): Promise<PluginInstallRequest> {

@@ -107,10 +107,10 @@ export type ModuleLoader = ModuleLoaderV1 | ModuleLoaderV2
  * so a version-only guess reverses resolveSync arguments and breaks every
  * Loader-owned package lookup.
  */
-export function moduleLoaderVersion(raw: unknown): ModuleLoader['version'] {
-  return typeof (raw as { getOrCreateModuleJob?: unknown } | undefined)?.getOrCreateModuleJob === 'function'
-    ? 'v2'
-    : 'v1'
+export function moduleLoaderVersion(raw: unknown): ModuleLoader['version'] | undefined {
+  if (typeof (raw as { getOrCreateModuleJob?: unknown } | undefined)?.getOrCreateModuleJob === 'function') return 'v2'
+  if (typeof (raw as { getModuleJobForImport?: unknown } | undefined)?.getModuleJobForImport === 'function') return 'v1'
+  return undefined
 }
 
 /** Helpers for locating the current Node internal module loader. */
@@ -129,16 +129,26 @@ export namespace ModuleLoader {
     } catch {}
   }
 
+  /**
+   * Locate and classify the running Node internal module loader.
+   *
+   * The shape is decided by which module-job API the loader owns, never by the
+   * Node version: v2 landed in 24.12.0, so a major-version test mistags every
+   * 24.0–24.11.1 loader as v2 and makes consumers call `resolveSync` with
+   * reversed parameters. Arity is not usable either — `resolveSync` reports 2
+   * under both shapes. A loader owning neither API is left unclassified rather
+   * than guessed, so consumers take their documented no-internals path.
+   * @returns the classified loader, or `undefined` when none is reachable or its shape is unknown.
+   */
   export function fromInternal(): ModuleLoader | undefined {
     if (_cachedLoader) return _cachedLoader
     const [major] = process.versions.node.split('.').map(Number)
+    if (major < 22) return
 
-    if (major >= 24) {
-      const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-      if (raw) return _cachedLoader = Object.assign(raw, { version: moduleLoaderVersion(raw) })
-    } else if (major >= 22) {
-      const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-      if (raw) return _cachedLoader = Object.assign(raw, { version: 'v1' })
-    }
+    const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
+    if (!raw) return
+    const version = moduleLoaderVersion(raw)
+    if (!version) return
+    return _cachedLoader = Object.assign(raw, { version })
   }
 }

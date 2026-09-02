@@ -27,6 +27,7 @@ import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
 import type {
+  AgentPresetPluginGroup,
   PluginEntryId,
   PluginDoctorId,
   PluginDoctorRequest,
@@ -375,10 +376,16 @@ export class PluginInventoryGateway extends TypertRemoteService {
    * Read the Loader directly on every call. Cordis's internal plugin/status
    * events already maintain Entry.fiber and Fiber.state, so a second cache
    * would only add another lifecycle truth to keep synchronized.
-   * @returns Current non-group Loader entries in Loader order.
+   *
+   * When an agent-preset roster is composed, the snapshot also carries each
+   * preset's composition rows, because those rows — not the Loader's own
+   * entries — are where a deployment that mounts the roster runs its
+   * model-facing plugins.
+   * @returns Current non-group Loader entries in Loader order, with per-preset
+   * compositions when a roster is composed.
    */
   @Remote('list')
-  list(): PluginInventorySnapshot {
+  async list(): Promise<PluginInventorySnapshot> {
     const entries: PluginInventoryEntry[] = []
     const liveIssues: ProfileDiagnostic[] = []
     for (const entry of this.ctx.loader.entries()) {
@@ -400,8 +407,19 @@ export class PluginInventoryGateway extends TypertRemoteService {
         && candidate.attribution?.entryId === issue.attribution?.entryId)) continue
       issues.push(issue)
     }
+    const presets = this.ctx.get('agentPresets')
+    const agentPresets: AgentPresetPluginGroup[] | undefined = presets === undefined
+      ? undefined
+      : (await presets.compositionInventory()).map(composition => ({
+        ...composition,
+        rows: composition.rows.map(({ fiberState, ...row }) => ({
+          ...row,
+          fiberPhase: fiberState === undefined ? null : FIBER_PHASE[fiberState],
+        })),
+      }))
     return {
       entries,
+      ...(agentPresets === undefined ? {} : { agentPresets }),
       dependencyHealth: {
         lastRepair: lastRepair === undefined || lastRepair.status === 'healthy' || lastRepair.status === 'repaired'
           ? null
@@ -629,10 +647,10 @@ export class PluginInventoryGateway extends TypertRemoteService {
   /**
    * Export the current redacted incident, runtime facts, quarantine state, and Loader summary.
    * @returns Portable JSON that intentionally excludes local paths, credentials, and raw configuration bodies.
-   */
+  */
   @Remote('exportDiagnostics')
-  exportDiagnostics(): string {
-    const snapshot = this.list()
+  async exportDiagnostics(): Promise<string> {
+    const snapshot = await this.list()
     const report: PluginDiagnosticExport = {
       schema: 'dsh/profile-diagnostic-export/v1',
       diagnosticSchema: 'dsh/profile-diagnostic/v2',

@@ -141,6 +141,7 @@ const DIAGNOSTIC_ACTION_KEYS = {
 
 function diagnosticIssueCopy(code: DiagnosticIssue['code']): PluginInventoryLocaleKey {
   if (code === 'profile.quarantine-removal-residue') return 'diagnostics.issue.quarantineRemovalResidue'
+  if (code === 'profile.session-persistence-migration') return 'diagnostics.issue.sessionPersistenceMigration'
   if (code === 'pnpm.build-script-blocked') return 'diagnostics.issue.buildScript'
   if (code === 'pnpm.minimum-release-age' || code === 'pnpm.supply-chain' || code === 'pnpm.integrity') {
     return 'diagnostics.issue.supplyChain'

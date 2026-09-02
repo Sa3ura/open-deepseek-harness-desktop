@@ -6,6 +6,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the shipped preset dictionaries used by presetDisplayText.
+import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
+import { presetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
 import { PluginInventorySettingsTab, type PluginInventorySettingsTabInjected } from './PluginInventorySettingsTab.tsx'
 import { PluginDiagnosticsSection, type PluginDiagnosticsSectionInjected } from './PluginDiagnosticsSection.tsx'
 import { PluginDiscovery } from './PluginDiscovery.tsx'
@@ -86,10 +89,14 @@ export function apply(ctx: ClientContext): void {
     if (!result.ok) throw new Error(`pluginInventory.startUninstall failed: ${result.error.code}: ${result.error.message}`)
     return result.value
   }
+  const agentPresetCopy = ctx.locale.bind('settings.agentPreset')
+  const presetName: PluginInventorySettingsTabInjected['presetName'] = preset =>
+    presetDisplayText(preset, agentPresetCopy).name
   const injected = (): PluginInventorySettingsTabInjected => ({
     list,
     getInstall,
     startUninstall,
+    presetName,
   })
   const diagnosticLab = desktopDiagnosticLabAvailable()
     ? {

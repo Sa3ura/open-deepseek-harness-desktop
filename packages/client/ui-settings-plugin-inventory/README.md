@@ -1,5 +1,5 @@
 ---
-description: "Plugin inventory, diagnostics, recovery, external-tool settings, and live Plugin Market discovery surfaces for the dsh web client."
+description: "Scope-grouped plugin inventory plus diagnostics, recovery, external-tool settings, and live Plugin Market discovery surfaces for the dsh web client."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings-plugin-inventory` provides the client surfaces for plugin inventory, diagnostics, imported-plugin recovery, external tools, and Plugin Market discovery. Its new-session **Explore plugins** control composes four recommended or category-specific entries from the installed market, shows market-owned popularity and current Profile state, and offers both guarded direct installation and a deep link into the complete market. It keeps no duplicate full catalog or fallback statistics. The existing **Plugin list** tab lazily reads the Host inventory and renders searchable Loader state and configuration.
+`dsh-client-ui-settings-plugin-inventory` provides the client surfaces for plugin inventory, diagnostics, imported-plugin recovery, external tools, and Plugin Market discovery. The **Plugin list** tab lazily calls `ctx.remote.pluginInventory.list()` and renders two collapsible groups: agent-preset compositions first and the global Loader plane second. It exposes preset provenance, conditional gates, failures-first global rows, preset-provided global entries, and search across both scopes without mutating their enablement. Its new-session **Explore plugins** control composes four recommended or category-specific entries from the installed market, shows market-owned popularity and current Profile state, and offers guarded direct installation plus a deep link into the complete market. The package keeps no duplicate full catalog or fallback statistics. Loading, empty, no-match, and generic failure states stay local to the mounted component; without a roster the tab renders the global plane alone, expanded.
 
 ## Table of Contents
 
@@ -39,7 +39,11 @@ Open **Explore plugins** on the new-session page to browse the recommended ranki
 
 ### Reading a card
 
-Each collapsed card uses the short module name as its title and a small effective-enablement tag; enabled entries also show a colored root-fiber status dot. Expanding one card reveals its Loader-tree entry id, followed by the effective configuration and, for enabled entries, Cordis status; disabled entries omit the redundant unmounted runtime state. Search filters the catalog by name and entry id.
+Each collapsed card uses the short module name as its title and a small enablement tag; enabled entries also show a colored root-fiber status dot. Expanding one card reveals the declared entry id, the full module specifier, and the state facts: a preset row names the preset it comes from, its runtime status when the composition is live, and its disable condition when it carries one; a preset-provided global row explains that agent presets provide it per session, names the presets that enable it, and offers a jump into the preset group. Preset names resolve through the shared `presetDisplayText` fold (`dsh-agent-presets/display`) over [`ui-agent-preset`](../ui-agent-preset/README.md)'s dictionaries: shipped presets follow the active locale while user-authored ones keep their own metadata, so an English surface never echoes the preset files' Chinese names. Search filters both groups by module name and entry id.
+
+### The preset switcher
+
+The switcher is the same selector-pill-plus-menu control the General settings rows use. It lists every roster preset — the default suffixed as such, broken ones marked — and changes only what the list shows: it writes no settings, and selecting a broken preset shows the discovery-reported reason in place of rows. Choosing the default preset or a session's preset stays where it was: the Agent presets section and the new-session screen.
 
 ### Retrying a failed read
 
@@ -61,7 +65,7 @@ The browser plugin registers one localized `settings.plugins.tab` contribution w
 
 ### Rendering
 
-The entry id remains the React key, disclosure identity, detail value, and an additional search target; it is never classified by string shape.
+Row keys are scope-qualified (`global:`, `preset:<id>:<index>`), so one module appearing in both scopes keeps distinct disclosure state; an entry id is shown as detail only when the row declares one and is never classified by string shape. The preset-provided marking is derived client-side: a global entry carries it when it is disabled there while at least one preset row for the same module specifier is actually enabled, so a module every preset gates off (or declares only conditionally) stays plainly disabled rather than over-claiming provision.
 
 </details>
 
@@ -96,7 +100,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define the freshness and reach of the inventory and discovery views; they are current package constraints.
 
 - **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
-- **Read-only Loader view** — local search does not add provenance, current-browser activation diagnosis, grouping by source, or plugin mutation controls.
+- **Read-only inventory state** — the global and preset planes do not edit enablement or custom composition files. The only mutation exposed inside the list is the explicit guarded removal of the plugin-market package itself.
 - **Market data availability** — the preview requires an installed Plugin Market exposing its standard registry and installed-state resources, plus a working catalog connection; failures are shown honestly and can be retried.
 - **Bounded stale fallback** — when a 24-hour cache expires and catalog refresh fails, the old ranking remains visible only with an explicit stale warning; unknown installed state is never presented as uninstalled.
 
@@ -109,3 +113,5 @@ These limits define the freshness and reach of the inventory and discovery views
 None.
 
 </details>
+
+**Runtime invariant:** No companion is published. This package owns a read-only Settings contribution.

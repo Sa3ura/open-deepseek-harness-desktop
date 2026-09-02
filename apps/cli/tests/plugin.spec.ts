@@ -524,7 +524,7 @@ describe('profile plugin package manager', () => {
     writeFileSync(join(profileDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
     writeFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
     vi.stubEnv('DSH_HOME', home)
-    vi.stubEnv('DSH_DESKTOP_APPLICATION_VERSION', '0.1.2-alpha.1.1')
+    vi.stubEnv('DSH_DESKTOP_APPLICATION_VERSION', '0.1.2-alpha.4')
     vi.stubEnv('DSH_DESKTOP_PNPM_VERSION', '11.7.0')
     const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
     try {
@@ -539,11 +539,46 @@ describe('profile plugin package manager', () => {
       )) as unknown
       expect(record).toMatchObject({
         label: 'Known good',
-        applicationVersion: '0.1.2-alpha.1.1',
+        applicationVersion: '0.1.2-alpha.4',
         pnpmVersion: '11.7.0',
         packages: [{ name: 'alpha', source: 'registry', version: '1.0.0' }],
       })
       expect(stdout).toHaveBeenCalledWith(expect.stringContaining('dsh:plugin-snapshot-json'))
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('finalizes a desktop startup snapshot before releasing its mutation lease', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-startup-lease-'))
+    const profileDir = join(home, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { alpha: '1.0.0' },
+      dsh: { profile: { bundles: ['alpha'] } },
+    }))
+    writeFileSync(join(profileDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+    writeFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN', '12345678-1234-4123-8123-123456789abc')
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID', String(process.pid))
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['snapshot', 'begin-startup-seed'])).toBe(0)
+      const snapshotId = readdirSync(join(home, 'plugin-snapshots', 'v1'))
+        .find(entry => /^[0-9a-f-]{36}$/u.test(entry))
+      expect(snapshotId).toBeDefined()
+      if (snapshotId === undefined) throw new Error('startup snapshot directory was not created')
+      expect(runPlugin('web', ['snapshot', 'finalize', snapshotId])).toBe(0)
+      expect(existsSync(join(
+        home,
+        'plugin-snapshots',
+        'v1',
+        '.profile-plugin-mutation.web.lock',
+      ))).toBe(false)
+      expect(stdout).toHaveBeenCalledWith(expect.stringContaining(`\"snapshotId\":\"${snapshotId}\"`))
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

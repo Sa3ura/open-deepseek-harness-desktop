@@ -10,14 +10,16 @@
  * sessions-derived empty-Hero fact is active. Visible dialog chrome belongs
  * to the step, so a mounted-but-deciding step paints nothing here.
  */
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type PointerEvent } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import clsx from 'clsx'
 import {
+  ConnectionIndicator,
   IconAgentPresetOutline16, IconCheckOutline16, IconCloseOutline16, IconDataOutline16,
   IconReorderOutline16,
   IconLinkOutline16, IconPersonalizationOutline16, IconSettingsOutline16, IconWarningOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ConnectionIndicatorState } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SettingsOnboardingSectionRequest } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsRootComponentProps, SettingsSectionRow } from './shell-contract.ts'
 import {
@@ -26,6 +28,8 @@ import {
   type SettingsSectionBox,
 } from './section-order.ts'
 import css from './SettingsRoot.module.css'
+
+const RECOVERY_CONFIRMATION_MS = 2_000
 
 /** Nav glyph by section id; unknown ids fall back to the settings gear. */
 function navIcon(id: string) {
@@ -372,7 +376,7 @@ function SettingsPanel({
     dragState.current = undefined
   }, [clearScheduledDragWork])
 
-  // Baseline focus management: entering the dialog lands on the close button.
+  // Entering the dialog focuses the close button; the root restores its trigger on close.
   const closeButton = useRef<HTMLButtonElement | null>(null)
   useEffect(() => { closeButton.current?.focus() }, [])
 
@@ -505,23 +509,33 @@ function SettingsPanel({
  */
 export function SettingsRoot(props: SettingsRootComponentProps) {
   const {
-    wide, useSections, useOnboardingSteps, useNavigation, useSectionOrder, useSessions,
-    setSectionOrder, renderSlot, t,
+    wide, reconnect, useConnectionState, useSections, useOnboardingSteps, useNavigation,
+    useSectionOrder, useSessions, setSectionOrder, renderSlot, t,
   } = props
   const [open, setOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | undefined>(undefined)
   const [preferredSubsectionId, setPreferredSubsectionId] = useState<string | undefined>()
   const [onboardingSection, setOnboardingSection] = useState<SettingsOnboardingSectionRequest>()
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())
+  const [showRecovery, setShowRecovery] = useState(false)
+  const triggerButton = useRef<HTMLButtonElement | null>(null)
+  const wasOpen = useRef(open)
   const close = useCallback(() => {
     setOpen(false)
     setActiveId(undefined)
     setPreferredSubsectionId(undefined)
   }, [])
+  // Restore after the close commit, when the dialog can no longer own focus.
+  useEffect(() => {
+    if (wasOpen.current && !open) triggerButton.current?.focus()
+    wasOpen.current = open
+  }, [open])
   // The ledger tick keeps the nav rows fresh: registrants re-register with
   // freshly localized text on locale change, and the trigger/header/close
   // seats re-render through their own outlets' subscriptions.
   const rows = useSections(s => s)
+  const connectionState = useConnectionState(state => state)
+  const previousConnectionState = useRef(connectionState)
   const onboardingSteps = useOnboardingSteps(s => s)
   const navigation = useNavigation(s => s)
   const storedSectionOrder = useSectionOrder(s => s)
@@ -559,6 +573,19 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     setOnboardingSection(undefined)
   }, [onboardingActive])
 
+  useLayoutEffect(() => {
+    const previous = previousConnectionState.current
+    previousConnectionState.current = connectionState
+    if (connectionState !== 'connected') {
+      setShowRecovery(false)
+      return
+    }
+    if (previous !== 'disconnected' && previous !== 'connecting') return
+    setShowRecovery(true)
+    const timeout = window.setTimeout(() => { setShowRecovery(false) }, RECOVERY_CONFIRMATION_MS)
+    return () => { window.clearTimeout(timeout) }
+  }, [connectionState])
+
   const completeOnboardingStep = useCallback((id: string) => {
     setCompletedOnboarding((previous) => {
       if (previous.has(id)) return previous
@@ -566,17 +593,39 @@ export function SettingsRoot(props: SettingsRootComponentProps) {
     })
   }, [])
 
+  let connectionIndicator: ConnectionIndicatorState | undefined
+  if (connectionState === 'disconnected') {
+    connectionIndicator = 'disconnected'
+  } else if (connectionState === 'connecting') {
+    connectionIndicator = 'connecting'
+  } else if (showRecovery) {
+    connectionIndicator = 'recovered'
+  }
+
   return (
     <>
-      <button
-        type="button"
-        className={clsx(css.trigger, !wide && css.rail)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => { setOpen(true) }}
-      >
-        {renderSlot('settings.trigger', { wide })}
-      </button>
+      <div className={clsx(css.triggerRow, !wide && css.railRow)}>
+        <button
+          ref={triggerButton}
+          type="button"
+          className={clsx(css.trigger, !wide && css.rail)}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => { setOpen(true) }}
+        >
+          {renderSlot('settings.trigger', { wide })}
+        </button>
+        <ConnectionIndicator
+          state={wide ? connectionIndicator : undefined}
+          disconnectedLabel={t('connection.error')}
+          reconnectLabel={t('connection.retry')}
+          connectingLabel={t('connection.connecting')}
+          recoveredLabel={t('connection.connected')}
+          reconnectActionLabel={t('connection.reconnect')}
+          restartActionLabel={t('connection.restart')}
+          onReconnect={reconnect}
+        />
+      </div>
       {open && (
         <SettingsPanel
           rows={orderedRows}

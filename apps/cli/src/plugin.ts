@@ -321,10 +321,14 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
         const snapshotId = args[2]
         const token = process.env.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
         if (token === undefined) throw new Error('dsh: startup seed snapshot lease token is unavailable')
-        endProfilePluginMutationLease({ profile, token })
-        const record = withSnapshotMutation(profile, () => finalizeProfilePluginSnapshot({
-          profile, snapshotId,
-        }))
+        let record: ReturnType<typeof finalizeProfilePluginSnapshot>
+        try {
+          record = withSnapshotMutation(profile, () => finalizeProfilePluginSnapshot({
+            profile, snapshotId,
+          }))
+        } finally {
+          endProfilePluginMutationLease({ profile, token })
+        }
         writeSnapshotJson({ retained: record !== undefined, snapshotId })
         return 0
       }

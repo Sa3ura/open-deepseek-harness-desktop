@@ -50,7 +50,7 @@ describe('external tool compatibility', () => {
   it('parses exact pins and never creates a floating package spec', () => {
     const manifest = parseExternalToolCompatibilityManifest(manifestJson)
     expect(resolveExternalToolCoordinate(manifest, 'codex', 'embedded')).toMatchObject({
-      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.1-rc.2',
+      packageSpec: '@deepseek-ai/dsh-subagent-codex@0.1.2-alpha.4',
       source: 'embedded',
     })
   })
@@ -65,14 +65,14 @@ describe('external tool compatibility', () => {
       .mockResolvedValueOnce(response(bundle))
     const manager = new ExternalToolCompatibilityManager({
       cacheDirectory,
-      desktopVersion: '0.1.2-alpha.1.1',
+      desktopVersion: '0.1.2-alpha.4',
       now: () => new Date('2026-09-03T00:00:00.000Z'),
       fetch: fetchMock,
       verifyBundle,
     })
 
     await expect(manager.resolve('claude-code')).resolves.toMatchObject({
-      packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.1-rc.2',
+      packageSpec: '@deepseek-ai/dsh-subagent-claude-code@0.1.2-alpha.4',
       source: 'remote',
     })
     expect(verifyBundle).toHaveBeenCalledOnce()
@@ -87,7 +87,7 @@ describe('external tool compatibility', () => {
       .mockResolvedValueOnce(response(bundleBytes(manifest, '0'.repeat(64))))
     const manager = new ExternalToolCompatibilityManager({
       cacheDirectory,
-      desktopVersion: '0.1.2-alpha.1.1',
+      desktopVersion: '0.1.2-alpha.4',
       now: () => new Date('2026-09-03T00:00:00.000Z'),
       fetch: fetchMock,
       verifyBundle: async () => {},
@@ -98,38 +98,39 @@ describe('external tool compatibility', () => {
 
   it('uses a verified cache when refresh is offline and refuses a signed revision rollback', async () => {
     const cacheDirectory = await temporaryDirectory()
-    const revisionTwo = manifestBytes({ ...manifestJson, revision: 2 })
+    const cachedRevision = manifestJson.revision + 1
+    const revisionThree = manifestBytes({ ...manifestJson, revision: cachedRevision })
     const first = new ExternalToolCompatibilityManager({
       cacheDirectory,
-      desktopVersion: '0.1.2-alpha.1.1',
+      desktopVersion: '0.1.2-alpha.4',
+      now: () => new Date('2026-09-03T00:00:00.000Z'),
+      fetch: vi.fn()
+        .mockResolvedValueOnce(response(revisionThree))
+        .mockResolvedValueOnce(response(bundleBytes(revisionThree))),
+      verifyBundle: async () => {},
+    })
+    await expect(first.resolve('codex')).resolves.toMatchObject({ source: 'remote', revision: cachedRevision })
+
+    const revisionTwo = manifestBytes()
+    const second = new ExternalToolCompatibilityManager({
+      cacheDirectory,
+      desktopVersion: '0.1.2-alpha.4',
       now: () => new Date('2026-09-03T00:00:00.000Z'),
       fetch: vi.fn()
         .mockResolvedValueOnce(response(revisionTwo))
         .mockResolvedValueOnce(response(bundleBytes(revisionTwo))),
       verifyBundle: async () => {},
     })
-    await expect(first.resolve('codex')).resolves.toMatchObject({ source: 'remote', revision: 2 })
-
-    const revisionOne = manifestBytes()
-    const second = new ExternalToolCompatibilityManager({
-      cacheDirectory,
-      desktopVersion: '0.1.2-alpha.1.1',
-      now: () => new Date('2026-09-03T00:00:00.000Z'),
-      fetch: vi.fn()
-        .mockResolvedValueOnce(response(revisionOne))
-        .mockResolvedValueOnce(response(bundleBytes(revisionOne))),
-      verifyBundle: async () => {},
-    })
-    await expect(second.resolve('codex')).resolves.toMatchObject({ source: 'cache', revision: 2 })
+    await expect(second.resolve('codex')).resolves.toMatchObject({ source: 'cache', revision: cachedRevision })
 
     const offline = new ExternalToolCompatibilityManager({
       cacheDirectory,
-      desktopVersion: '0.1.2-alpha.1.1',
+      desktopVersion: '0.1.2-alpha.4',
       now: () => new Date('2026-09-03T00:00:00.000Z'),
       fetch: vi.fn(async () => { throw new Error('offline') }),
       verifyBundle: async () => {},
     })
-    await expect(offline.resolve('claude-code')).resolves.toMatchObject({ source: 'cache', revision: 2 })
+    await expect(offline.resolve('claude-code')).resolves.toMatchObject({ source: 'cache', revision: cachedRevision })
   })
 
   it('rejects expired or cross-version-line signed manifests', async () => {

@@ -42,30 +42,30 @@ export interface ExternalToolInstallResolution {
 /** Last-known-good pins shipped in the application and used only after signed lookup fails. */
 export const EMBEDDED_EXTERNAL_TOOL_COMPATIBILITY: ExternalToolCompatibilityManifest = {
   schema: 'dsh/desktop-external-tool-compatibility/v1',
-  revision: 1,
+  revision: 2,
   desktopVersionLine: '0.1.2',
   issuedAt: '2026-09-02T00:00:00.000Z',
   expiresAt: '2027-03-02T00:00:00.000Z',
   tools: {
     codex: {
       packageName: '@deepseek-ai/dsh-subagent-codex',
-      version: '0.1.1-rc.2',
-      integrity: 'sha512-Q9wRMf5Cjkuh3LA35nyCW7zcMm6S/rW7GN2FfKMFOU9tCh59mOYGY3h0v6/fh+uk2/nd9Drb4TXZ/1HkI47svw==',
+      version: '0.1.2-alpha.4',
+      integrity: 'sha512-xdkWFMorGj1gVby50K8V62YJv5JJCyQig0Gy5Ol3ADTyBTY8n8Zytr08JWTlVVUOKGJ0Wm1aZFz7khoV0XjuZw==',
       runtimePackage: {
         packageName: '@openai/codex',
-        version: '0.147.0',
-        integrity: 'sha512-EQLEXecAG2ptxI7UpBMo2TR/ga5596/c/OsYF/0LoUDh5JANZ7IoGqlzBEWbuEVQ76JePIbtTW/ihCkp1a7Z3w==',
+        version: '0.149.1',
+        integrity: 'sha512-6q5pbcpFbJbqOpkubSDBwXmktQ55aD8eUzGzBF1zASob2DjwhBKDSNGtdZKalfrNJUdTDTPDMmzCXEXs5tMBYA==',
         verifyOptionalPlatformPackages: true,
       },
     },
     'claude-code': {
       packageName: '@deepseek-ai/dsh-subagent-claude-code',
-      version: '0.1.1-rc.2',
-      integrity: 'sha512-XC/WnTaLrsIDBw2UOSgwyM/PWRnLZl2cS6b3Dao/bGVhPn4yPOB+qgok5F+R7oNF89X0m9elRPV1/MXZsY/7wA==',
+      version: '0.1.2-alpha.4',
+      integrity: 'sha512-stDXjv3U/uLGQa46AFFysFc5ioht4kvYjoVgMC/AsVeSgdONjceWtA/BkoOAkZ90K3rLaV5tlWqGg5MB8k1PSA==',
       runtimePackage: {
         packageName: '@anthropic-ai/claude-agent-sdk',
-        version: '0.3.220',
-        integrity: 'sha512-glc7SdwPkOkLw8oxwLo9PKTdLJGqW/PIR4urWXFoRtX9YllwozsEVc5Tc1+EvLSkfrsxPJqQWqOgpjUOQXf1oA==',
+        version: '0.3.241',
+        integrity: 'sha512-pIHdCSTywFe30H0oWDCKZzC4ipBLtF5YMDRKjf6PHyARg57O4l/72v3b6QKnnefwtKKMe6uWJ1Y9lUJg/sKWyA==',
         verifyOptionalPlatformPackages: true,
       },
     },

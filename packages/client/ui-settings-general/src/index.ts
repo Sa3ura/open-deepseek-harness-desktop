@@ -27,7 +27,7 @@ const SettingsNavigationSchema: z<SettingsNavigationSettings> = z.object({
 export function apply(ctx: Context): void {
   ctx.inject(['settings'], (settingsCtx) => {
     settingsCtx.settings.register(
-      settingsNamespace(ONBOARDING_SETTINGS_NAMESPACE),
+      ONBOARDING_SETTINGS_NAMESPACE,
       OnboardingSettingsSchema,
     )
     settingsCtx.settings.register(

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context, type Plugin } from '@deepseek-ai/cordis'
+import { Context, FiberState, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
@@ -12,6 +12,7 @@ import type {
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
+import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
 import PluginInventoryGateway from '../src/index.ts'
 import type { PluginDiagnosticExport } from '../src/types.ts'
 
@@ -256,7 +257,9 @@ describe('PluginInventoryGateway', () => {
     })
     await ctx.loader.create({ name: 'cordis:active', group: true })
 
-    const snapshot = inventory.list()
+    const snapshot = await inventory.list()
+    // No agent-preset roster is composed, so the snapshot carries no presets.
+    expect(snapshot.agentPresets).toBeUndefined()
     expect(snapshot.entries).toHaveLength(3)
     expect(snapshot.dependencyHealth.issues).toEqual([
       expect.objectContaining({
@@ -286,7 +289,7 @@ describe('PluginInventoryGateway', () => {
     ]))
 
     await ctx.loader.update(activeId, { disabled: true })
-    expect(inventory.list().entries.find(entry => entry.entryId === activeId)).toEqual({
+    expect((await inventory.list()).entries.find(entry => entry.entryId === activeId)).toEqual({
       entryId: activeId,
       moduleName: 'cordis:active',
       enabled: false,
@@ -294,13 +297,47 @@ describe('PluginInventoryGateway', () => {
     })
 
     await ctx.loader.remove(pendingId)
-    expect(inventory.list().entries.some(entry => entry.entryId === pendingId)).toBe(false)
+    expect((await inventory.list()).entries.some(entry => entry.entryId === pendingId)).toBe(false)
+  })
+
+  it('carries each composed preset with root-fiber states mapped to phases', async () => {
+    const { ctx, inventory } = await harness()
+    ctx.provide('agentPresets', {
+      compositionInventory: async () => [
+        {
+          id: 'standard',
+          trust: 'system',
+          name: '标准模式',
+          isDefault: true,
+          rows: [
+            { entryId: 'alpha', moduleName: 'pkg-alpha', enabled: true, fiberState: FiberState.ACTIVE },
+            { entryId: null, moduleName: 'pkg-file', enabled: 'conditional', condition: 'x' },
+          ],
+        },
+        { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition file is missing', rows: [] },
+      ],
+    } as Partial<AgentPresets> as never)
+
+    const snapshot = await inventory.list()
+    expect(snapshot.agentPresets).toEqual([
+      {
+        id: 'standard',
+        trust: 'system',
+        name: '标准模式',
+        isDefault: true,
+        rows: [
+          { entryId: 'alpha', moduleName: 'pkg-alpha', enabled: true, fiberPhase: 'active' },
+          { entryId: null, moduleName: 'pkg-file', enabled: 'conditional', condition: 'x', fiberPhase: null },
+        ],
+      },
+      { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition file is missing', rows: [] },
+    ])
   })
 
   it('exports a redacted current diagnostic bundle with runtime and Loader facts', async () => {
     const { ctx, inventory } = await harness()
     await ctx.loader.create({ name: 'cordis:pending' })
-    const exported = JSON.parse(inventory.exportDiagnostics()) as PluginDiagnosticExport
+    const exported = JSON.parse(await inventory.exportDiagnostics()) as PluginDiagnosticExport
     expect(exported).toMatchObject({
       schema: 'dsh/profile-diagnostic-export/v1',
       diagnosticSchema: 'dsh/profile-diagnostic/v2',

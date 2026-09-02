@@ -33,6 +33,8 @@ kind: "package-reference"
 
 所有高权限操作都由预加载桥持有。本包只接收规范化状态并请求白名单操作；它不能读取任意文件、运行任意命令、选择任意外部 URL 或替换应用运行时。
 
+本包不发布 invariant companion，因为生命周期 effect 和预加载能力边界已经承担本包的运行时检查。
+
 <a id="model-experience"></a>
 ## 模型体验
 

@@ -19,13 +19,12 @@ import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { agentEvents } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { describe, expect, it } from 'vitest'
 import AgentPresets, { COMPOSITION_FILE, SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-agent-presets'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
 const ROOTS = [{ path: join(FIXTURES, 'system'), trust: 'system' as const }]
-const NS = settingsNamespace(SETTINGS_NAMESPACE)
+const NS = SETTINGS_NAMESPACE
 
 /**
  * A composition with a real file-backed settings provider. `settingsFiber` is
@@ -208,7 +207,7 @@ describe('Host-connected external tools', () => {
         { turn: 1, step: 1, signal: new AbortController().signal },
         request,
       )
-      expect(standard.agent.session.events.filter(event => event.type === 'external-tools/resolved'))
+      expect(standard.agent.session.snapshotEvents().filter(event => event.type === 'external-tools/resolved'))
         .toEqual([expect.objectContaining({ data: { turn: 1, step: 1, tools: ['codex'] } })])
 
       Object.defineProperty(standard.agent, 'status', { configurable: true, value: 'running' })
@@ -226,7 +225,7 @@ describe('Host-connected external tools', () => {
         { turn: 2, step: 1, signal: new AbortController().signal },
         request,
       )
-      expect(standard.agent.session.events.filter(event => event.type === 'external-tools/resolved'))
+      expect(standard.agent.session.snapshotEvents().filter(event => event.type === 'external-tools/resolved'))
         .toEqual([
           expect.objectContaining({ data: { turn: 1, step: 1, tools: ['codex'] } }),
           expect.objectContaining({ data: { turn: 2, step: 1, tools: [] } }),

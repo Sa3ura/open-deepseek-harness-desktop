@@ -57,6 +57,7 @@ export type ProfileDiagnosticCode =
   | 'profile.orphaned-bundle'
   | 'profile.bundle-invalid'
   | 'profile.module-resolution'
+  | 'profile.session-persistence-migration'
   | 'loader.dependency-unavailable'
   | 'profile.patch-invalid'
   | 'profile.quarantine-removal-residue'
@@ -233,6 +234,11 @@ const RULES: readonly DiagnosticRule[] = [
   {
     code: 'profile.bundle-invalid', source: 'profile', severity: 'blocked', actions: ['isolate', 'open-config', 'export'],
     pattern: /profile bundle.*(?:declares no dsh\.bundle|dsh\.bundle.*invalid)|bundle patch/iu,
+  },
+  {
+    code: 'profile.session-persistence-migration', source: 'profile', severity: 'blocked',
+    actions: ['open-config', 'export'],
+    pattern: /@deepseek-ai\/dsh-session-persistence-sqlite/iu,
   },
   {
     code: 'loader.dependency-unavailable', source: 'loader', severity: 'blocked', actions: ['isolate', 'export'],
