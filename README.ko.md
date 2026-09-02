@@ -8,7 +8,7 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1.1이 출시되었습니다. v0.1.2-alpha.1의 수정·강화 버전이니 다운로드해 사용해 보세요](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** 이 릴리스는 DeepSeek Harness 0.1.2-alpha.1을 계속 업스트림 기준으로 사용하면서 데스크톱 환경 관리, 플러그인 복구, 크로스 플랫폼 안정성을 강화합니다.
+> **[v0.1.2-alpha.5가 출시되었습니다. 다운로드해 사용해 보세요](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.5).** 이 릴리스는 DeepSeek Harness 0.1.2-alpha.5를 기반으로 alpha.2~alpha.5의 누적 업데이트를 포함합니다. 플러그인 스냅샷 복원, 앱·트레이 아이콘 사용자 지정과 함께 플러그인 진단 및 복구, 외부 도구의 호환 버전 검증, 크로스 플랫폼 안정성을 강화했습니다.
 >
 > 이 버전은 Alpha 프리릴리스입니다. 업그레이드 전에 중요한 설정을 백업하고, 문제를 보고할 때 관련 로그나 진단 보고서를 첨부해 주세요.
 
@@ -182,7 +182,7 @@ Cordis Context, Service, Symbol은 버전 번호뿐 아니라 물리 모듈의 �
 
 ## 다운로드 및 설치
 
-[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases)에서 운영체제에 맞는 파일을 다운로드하세요.
+[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.5)에서 운영체제에 맞는 파일을 다운로드하세요.
 
 | 운영체제 | 아키텍처 | 패키지 |
 | --- | --- | --- |
