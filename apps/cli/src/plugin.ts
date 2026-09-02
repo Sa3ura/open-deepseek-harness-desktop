@@ -317,14 +317,18 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
         writeSnapshotJson({ leased: false })
         return 0
       }
-      if (command === 'finalize' && args.length === 3 && args[2] !== undefined) {
+      if (command === 'finalize' && (args.length === 3 || args.length === 4) && args[2] !== undefined) {
         const snapshotId = args[2]
+        const preserveIfUnchanged = args[3] === '--preserve-if-unchanged'
+        if (args.length === 4 && !preserveIfUnchanged) {
+          throw new Error(`dsh: unsupported plugin snapshot finalize option ${JSON.stringify(args[3])}`)
+        }
         const token = process.env.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
         if (token === undefined) throw new Error('dsh: startup seed snapshot lease token is unavailable')
         let record: ReturnType<typeof finalizeProfilePluginSnapshot>
         try {
           record = withSnapshotMutation(profile, () => finalizeProfilePluginSnapshot({
-            profile, snapshotId,
+            profile, snapshotId, preserveIfUnchanged,
           }))
         } finally {
           endProfilePluginMutationLease({ profile, token })
@@ -359,7 +363,7 @@ function runPluginWithoutSnapshot(profile: string, args: readonly string[]): num
     process.stderr.write(
       `${NAME}: usage: dsh plugin --profile ${profile} snapshot `
       + '<list | create [label] | mark-bootable | create-safety | begin-startup-seed '
-      + '| begin-restore-lease | end-restore-lease | finalize <id> '
+      + '| begin-restore-lease | end-restore-lease | finalize <id> [--preserve-if-unchanged] '
       + '| restore-files <id> | remove <id> | settle-safety <id>>\n',
     )
     return 1

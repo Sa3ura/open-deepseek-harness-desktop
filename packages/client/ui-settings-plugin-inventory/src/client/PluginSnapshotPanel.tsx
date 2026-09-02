@@ -57,6 +57,9 @@ export function PluginSnapshotPanel({ list, create, remove, startRestore, subscr
   const [acknowledged, setAcknowledged] = useState(false)
   const [networkAllowed, setNetworkAllowed] = useState(false)
   const [operation, setOperation] = useState<PluginSnapshotRestoreSnapshot | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const availableSnapshots = snapshots.filter(snapshot => snapshot.kind !== 'safety')
+  const visibleSnapshots = expanded ? availableSnapshots : availableSnapshots.slice(0, 3)
 
   const reload = (): void => {
     void list().then(setSnapshots, (reason: unknown) => {
@@ -112,9 +115,9 @@ export function PluginSnapshotPanel({ list, create, remove, startRestore, subscr
         />
         <Button variant="outline" disabled={busy} onClick={createManual}>{t('snapshots.create')}</Button>
       </div>
-      {snapshots.length === 0 ? <p className={css.empty}>{t('snapshots.empty')}</p> : (
+      {availableSnapshots.length === 0 ? <p className={css.empty}>{t('snapshots.empty')}</p> : (
         <div className={css.list}>
-          {snapshots.filter(snapshot => snapshot.kind !== 'safety').map(snapshot => (
+          {visibleSnapshots.map(snapshot => (
             <article key={snapshot.snapshotId}>
               <div className={css.copy}>
                 <strong>{snapshot.label ?? t(snapshot.kind === 'bootable' ? 'snapshots.bootable' : 'snapshots.automatic')}</strong>
@@ -136,6 +139,15 @@ export function PluginSnapshotPanel({ list, create, remove, startRestore, subscr
               </div>
             </article>
           ))}
+          {availableSnapshots.length <= 3 ? null : (
+            <div className={css.listToggle}>
+              <Button
+                variant="outline"
+                aria-expanded={expanded}
+                onClick={() => { setExpanded(value => !value) }}
+              >{t(expanded ? 'snapshots.collapse' : 'snapshots.expand')}</Button>
+            </div>
+          )}
         </div>
       )}
       {operation === null ? null : (

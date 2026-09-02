@@ -91,6 +91,59 @@ describe('Profile plugin snapshots', () => {
     }
   })
 
+  it('reuses an identical retained snapshot before writing another automatic payload', () => {
+    const { home } = fixture()
+    try {
+      const retained = createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'automatic', trigger: 'plugin-update',
+      })
+      const duplicate = createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'automatic', trigger: 'diagnostic-repair',
+      })
+
+      expect(duplicate.snapshotId).toBe(retained.snapshotId)
+      expect(duplicate.deduplicated).toBe(true)
+      expect(listProfilePluginSnapshots({ home, profile: 'web' })).toHaveLength(1)
+      expect(finalizeProfilePluginSnapshot({
+        home,
+        profile: 'web',
+        snapshotId: duplicate.snapshotId,
+        preserveIfUnchanged: duplicate.deduplicated === true,
+      })?.snapshotId).toBe(retained.snapshotId)
+      expect(listProfilePluginSnapshots({ home, profile: 'web' })).toHaveLength(1)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('does not deduplicate against an identical snapshot with a damaged payload', () => {
+    const { home } = fixture()
+    try {
+      const damaged = createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'automatic', trigger: 'plugin-update',
+      })
+      writeFileSync(join(
+        home,
+        'plugin-snapshots',
+        'v1',
+        damaged.snapshotId,
+        'files',
+        'profiles',
+        'web',
+        'package.json',
+      ), 'damaged')
+
+      const replacement = createProfilePluginSnapshot({
+        home, profile: 'web', kind: 'automatic', trigger: 'diagnostic-repair',
+      })
+      expect(replacement.snapshotId).not.toBe(damaged.snapshotId)
+      expect(replacement.deduplicated).toBeUndefined()
+      expect(listProfilePluginSnapshots({ home, profile: 'web' })).toHaveLength(2)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('protects restore safety points until the journal settles', () => {
     const { home } = fixture()
     try {

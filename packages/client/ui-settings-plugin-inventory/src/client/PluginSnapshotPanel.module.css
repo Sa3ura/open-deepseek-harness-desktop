@@ -47,6 +47,7 @@
 .difference b { flex: none; font-weight: 500; color: var(--dsw-alias-label-secondary); }
 .difference span { overflow-wrap: anywhere; }
 .actions { display: flex; flex: none; gap: 7px; }
+.listToggle { display: flex; justify-content: center; padding-top: 2px; }
 .status { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--dsw-alias-label-secondary); font-size: 12px; }
 .error { color: var(--dsw-alias-state-error-primary); font-size: 12px; }
 

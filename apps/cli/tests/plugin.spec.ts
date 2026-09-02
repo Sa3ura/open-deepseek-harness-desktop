@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { allowProfilePackageBuild } from '@deepseek-ai/dsh-app-boot'
+import { allowProfilePackageBuild, createProfilePluginSnapshot } from '@deepseek-ai/dsh-app-boot'
 import { resolvePnpmCommand, runPlugin } from '../src/plugin.ts'
 import {
   DESKTOP_BUNDLED_PLUGINS_DIR_ENV,
@@ -579,6 +579,39 @@ describe('profile plugin package manager', () => {
         '.profile-plugin-mutation.web.lock',
       ))).toBe(false)
       expect(stdout).toHaveBeenCalledWith(expect.stringContaining(`\"snapshotId\":\"${snapshotId}\"`))
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('preserves a reused startup snapshot when the seed batch makes no change', () => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-plugin-startup-deduplicated-'))
+    const profileDir = join(home, 'profiles', 'web')
+    mkdirSync(profileDir, { recursive: true })
+    writeFileSync(join(profileDir, 'package.json'), JSON.stringify({
+      name: 'dsh-profile-web',
+      private: true,
+      dependencies: { alpha: '1.0.0' },
+      dsh: { profile: { bundles: ['alpha'] } },
+    }))
+    writeFileSync(join(profileDir, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n')
+    writeFileSync(join(profileDir, 'pnpm-workspace.yaml'), 'packages:\n  - .\n')
+    vi.stubEnv('DSH_HOME', home)
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN', '22345678-1234-4123-8123-123456789abc')
+    vi.stubEnv('DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID', String(process.pid))
+    const retained = createProfilePluginSnapshot({
+      home, profile: 'web', kind: 'automatic', trigger: 'plugin-update',
+    })
+    const stdout = vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    try {
+      expect(runPlugin('web', ['snapshot', 'begin-startup-seed'])).toBe(0)
+      expect(stdout).toHaveBeenCalledWith(expect.stringContaining('"deduplicated":true'))
+      expect(runPlugin('web', [
+        'snapshot', 'finalize', retained.snapshotId, '--preserve-if-unchanged',
+      ])).toBe(0)
+      expect(existsSync(join(
+        home, 'plugin-snapshots', 'v1', retained.snapshotId, 'snapshot.json',
+      ))).toBe(true)
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

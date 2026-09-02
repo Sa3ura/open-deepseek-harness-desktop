@@ -26,6 +26,17 @@ function bootable(): PluginSnapshotSummary {
   }
 }
 
+function automatic(index: number): PluginSnapshotSummary {
+  return {
+    ...bootable(),
+    snapshotId: `0000000${index}-0000-4000-8000-00000000000${index}`,
+    kind: 'automatic',
+    trigger: 'plugin-update',
+    label: `Automatic ${index}`,
+    createdAt: `2026-09-0${index}T00:00:00.000Z`,
+  }
+}
+
 afterEach(cleanup)
 
 describe('PluginSnapshotPanel', () => {
@@ -73,5 +84,34 @@ describe('PluginSnapshotPanel', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: en['snapshots.confirm.acknowledge'] }))
     fireEvent.click(confirm)
     await waitFor(() => { expect(startRestore).toHaveBeenCalledWith(BOOTABLE_ID, false) })
+  })
+
+  it('shows the latest three snapshots by default and expands or collapses the rest', async () => {
+    render(<PluginSnapshotPanel
+      t={t}
+      list={async () => [automatic(5), automatic(4), automatic(3), automatic(2), automatic(1)]}
+      create={vi.fn()}
+      remove={vi.fn(async () => [])}
+      startRestore={vi.fn()}
+      subscribe={() => () => {}}
+    />)
+
+    expect(await screen.findByText('Automatic 5')).toBeTruthy()
+    expect(screen.getByText('Automatic 4')).toBeTruthy()
+    expect(screen.getByText('Automatic 3')).toBeTruthy()
+    expect(screen.queryByText('Automatic 2')).toBeNull()
+    expect(screen.queryByText('Automatic 1')).toBeNull()
+
+    const expand = screen.getByRole('button', { name: en['snapshots.expand'] })
+    expect(expand.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(expand)
+    expect(screen.getByText('Automatic 2')).toBeTruthy()
+    expect(screen.getByText('Automatic 1')).toBeTruthy()
+
+    const collapse = screen.getByRole('button', { name: en['snapshots.collapse'] })
+    expect(collapse.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(collapse)
+    expect(screen.queryByText('Automatic 2')).toBeNull()
+    expect(screen.queryByText('Automatic 1')).toBeNull()
   })
 })

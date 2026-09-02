@@ -1717,11 +1717,11 @@ async function startApplication(): Promise<void> {
       console.error(error)
     },
   })
-  let seedSnapshot: { snapshotId: string } | undefined
+  let seedSnapshot: { snapshotId: string; deduplicated?: true } | undefined
   harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN = randomUUID()
   harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_OWNER_PID = String(process.pid)
   try {
-    seedSnapshot = await runSnapshotCommand<{ snapshotId: string }>(['begin-startup-seed'])
+    seedSnapshot = await runSnapshotCommand<{ snapshotId: string; deduplicated?: true }>(['begin-startup-seed'])
     harnessEnvironment.DSH_PLUGIN_SNAPSHOT_BATCH = '1'
   } catch (error) {
     delete harnessEnvironment.DSH_PLUGIN_SNAPSHOT_LEASE_TOKEN
@@ -1741,7 +1741,11 @@ async function startApplication(): Promise<void> {
   } finally {
     if (seedSnapshot !== undefined) {
       try {
-        await runSnapshotCommand(['finalize', seedSnapshot.snapshotId])
+        await runSnapshotCommand([
+          'finalize',
+          seedSnapshot.snapshotId,
+          ...(seedSnapshot.deduplicated === true ? ['--preserve-if-unchanged'] : []),
+        ])
       } catch (error) {
         console.warn('desktop: could not finalize the bundled-plugin snapshot batch', error)
       }

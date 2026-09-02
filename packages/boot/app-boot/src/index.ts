@@ -136,6 +136,7 @@ export {
   settleProfilePluginSafetySnapshot,
   withAutomaticProfilePluginSnapshot,
   type CreateProfilePluginSnapshotOptions,
+  type CreatedProfilePluginSnapshot,
   type ProfilePluginSnapshotDifference,
   type ProfilePluginSnapshotFile,
   type ProfilePluginSnapshotKind,

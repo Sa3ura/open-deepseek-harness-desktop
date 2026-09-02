@@ -74,6 +74,12 @@ export interface ProfilePluginSnapshotRecord {
   readonly pnpmVersion?: string
 }
 
+/** Snapshot returned by creation, including an in-memory automatic deduplication hint. */
+export interface CreatedProfilePluginSnapshot extends ProfilePluginSnapshotRecord {
+  /** True when an identical retained snapshot was reused and no new payload was written. */
+  readonly deduplicated?: true
+}
+
 /** Renderer-safe difference between a snapshot and the active Profile. */
 export interface ProfilePluginSnapshotDifference {
   readonly added: readonly string[]
@@ -322,6 +328,23 @@ function readRecord(home: string, snapshotId: string): ProfilePluginSnapshotReco
   return value as ProfilePluginSnapshotRecord
 }
 
+function snapshotPayloadIsValid(home: string, record: ProfilePluginSnapshotRecord): boolean {
+  try {
+    const payloadRoot = join(snapshotDirectory(home, record.snapshotId), SNAPSHOT_FILES)
+    for (const file of record.files) {
+      if (!allowedSnapshotFile(record.profile, file.relativePath)) return false
+      if (!file.existed) continue
+      const payload = join(payloadRoot, file.relativePath)
+      assertInside(payloadRoot, payload)
+      const bytes = regularFileBytes(payload)
+      if (bytes === undefined || bytes.length !== file.bytes || sha256(bytes) !== file.sha256) return false
+    }
+    return true
+  } catch {
+    return false
+  }
+}
+
 function currentFingerprint(
   home: string,
   profile: string,
@@ -364,7 +387,7 @@ function pruneAutomaticSnapshots(home: string, profile: string): void {
  */
 export function createProfilePluginSnapshot(
   options: CreateProfilePluginSnapshotOptions,
-): ProfilePluginSnapshotRecord {
+): CreatedProfilePluginSnapshot {
   assertProfile(options.profile)
   const home = options.home ?? resolveDshHome()
   const profileDir = resolveProfileDir(options.profile, home)
@@ -377,20 +400,31 @@ export function createProfilePluginSnapshot(
   mkdirSync(root, { recursive: true, mode: 0o700 })
   const destination = snapshotDirectory(home, snapshotId)
   if (existsSync(destination)) throw new Error(`dsh: plugin snapshot already exists: ${snapshotId}`)
+  const captured = managedFiles(home, options.profile).map((file) => {
+    const bytes = regularFileBytes(file.source)
+    const metadata: ProfilePluginSnapshotFile = bytes === undefined
+      ? { relativePath: file.relativePath, existed: false }
+      : { relativePath: file.relativePath, existed: true, sha256: sha256(bytes), bytes: bytes.length }
+    return { ...file, bytes, metadata }
+  })
+  const capturedFingerprint = fingerprint(captured.map(file => file.metadata))
+  if (options.kind === 'automatic') {
+    const duplicate = listProfilePluginSnapshots({ home, profile: options.profile })
+      .find(snapshot => snapshot.kind !== 'safety'
+        && snapshot.fingerprint === capturedFingerprint
+        && snapshotPayloadIsValid(home, snapshot))
+    if (duplicate !== undefined) return { ...duplicate, deduplicated: true }
+  }
   const temporary = join(root, `.${snapshotId}.${process.pid}.tmp`)
   mkdirSync(temporary, { mode: 0o700 })
   try {
     const files: ProfilePluginSnapshotFile[] = []
-    for (const file of managedFiles(home, options.profile)) {
-      const bytes = regularFileBytes(file.source)
-      if (bytes === undefined) {
-        files.push({ relativePath: file.relativePath, existed: false })
-        continue
-      }
+    for (const file of captured) {
+      files.push(file.metadata)
+      if (file.bytes === undefined) continue
       const payload = join(temporary, SNAPSHOT_FILES, file.relativePath)
       assertInside(join(temporary, SNAPSHOT_FILES), payload)
-      writePrivateFile(payload, bytes)
-      files.push({ relativePath: file.relativePath, existed: true, sha256: sha256(bytes), bytes: bytes.length })
+      writePrivateFile(payload, file.bytes)
     }
     const manifest = readManifest(manifestPath)
     const record: ProfilePluginSnapshotRecord = {
@@ -401,7 +435,7 @@ export function createProfilePluginSnapshot(
       trigger: options.trigger,
       ...(label === undefined ? {} : { label }),
       createdAt: (options.now ?? (() => new Date()))().toISOString(),
-      fingerprint: fingerprint(files),
+      fingerprint: capturedFingerprint,
       packages: packageProjection(manifest),
       bundles: [...manifest.dsh?.profile?.bundles ?? []],
       files,
@@ -519,13 +553,17 @@ export function removeProfilePluginSnapshot(
  * @returns The retained record, or undefined when the unchanged point was removed.
  */
 export function finalizeProfilePluginSnapshot(
-  options: ProfilePluginSnapshotOptions & { readonly snapshotId: string },
+  options: ProfilePluginSnapshotOptions & {
+    readonly snapshotId: string
+    readonly preserveIfUnchanged?: boolean
+  },
 ): ProfilePluginSnapshotRecord | undefined {
   const home = options.home ?? resolveDshHome()
   const record = readRecord(home, options.snapshotId)
   if (record.profile !== options.profile) throw new Error('dsh: plugin snapshot belongs to another Profile')
   if (record.kind === 'automatic'
     && currentFingerprint(home, options.profile, record.files.map(file => file.relativePath)) === record.fingerprint) {
+    if (options.preserveIfUnchanged === true) return record
     rmSync(snapshotDirectory(home, options.snapshotId), { recursive: true, force: true })
     return undefined
   }
@@ -773,7 +811,7 @@ export function withAutomaticProfilePluginSnapshot<T>(
 ): T {
   const home = options.home ?? resolveDshHome()
   const release = acquireProfilePluginMutationLock({ home, profile: options.profile, waitMs: 30_000 })
-  let snapshot: ProfilePluginSnapshotRecord | undefined
+  let snapshot: CreatedProfilePluginSnapshot | undefined
   try {
     if (existsSync(join(resolveProfileDir(options.profile, home), 'package.json'))) {
       snapshot = createProfilePluginSnapshot({ ...options, home, kind: 'automatic' })
@@ -785,6 +823,7 @@ export function withAutomaticProfilePluginSnapshot<T>(
         home,
         profile: options.profile,
         snapshotId: snapshot.snapshotId,
+        preserveIfUnchanged: snapshot.deduplicated === true,
       })
     } finally {
       release()
