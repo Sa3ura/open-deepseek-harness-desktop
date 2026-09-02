@@ -38,7 +38,8 @@ switch (invocation.mode) {
   }
   case 'plugin': {
     const { runPlugin } = await import('./plugin.ts')
-    process.exit(runPlugin(invocation.profile, invocation.args))
+    // Let native handles and output drain before Node tears down the process.
+    process.exitCode = runPlugin(invocation.profile, invocation.args)
     break
   }
   case 'dump-config': {

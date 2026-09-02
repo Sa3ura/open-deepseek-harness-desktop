@@ -1,4 +1,6 @@
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
@@ -17,6 +19,35 @@ const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
 const dshSourceBin = 'apps/cli/src/bin.ts'
 
 describe('dsh SOURCE launcher (node --import tsx/esm)', () => {
+  it.each([
+    ['node-pty', 0],
+    ['node-pty@1.1.0', 1],
+  ] as const)('drains plugin command completion for %s with status %i', async (packageName, exitCode) => {
+    const home = await mkdtemp(join(tmpdir(), 'dsh-plugin-exit-'))
+    try {
+      const observer = 'data:text/javascript,' + encodeURIComponent(
+        'process.once("beforeExit", code => process.stdout.write(`plugin-drained:${code}\\n`))',
+      )
+      const result = await execa(process.execPath, [
+        '--import', 'tsx/esm', '--import', observer, dshSourceBin,
+        'plugin', '--profile', 'web', 'approve-build', packageName,
+      ], {
+        cwd: repoRoot,
+        env: { DSH_HOME: home },
+        input: '',
+        timeout: 25_000,
+        killSignal: 'SIGKILL',
+        reject: false,
+      })
+      expect(result.timedOut).toBe(false)
+      expect(result.signal).toBeUndefined()
+      expect(result.exitCode).toBe(exitCode)
+      expect(result.stdout).toContain(`plugin-drained:${exitCode}`)
+    } finally {
+      await rm(home, { recursive: true, force: true })
+    }
+  }, 30_000)
+
   it('launches the source CLI without building', async () => {
     const rootPackage = JSON.parse(await readFile(new URL('../../../package.json', import.meta.url), 'utf8')) as {
       readonly scripts?: Record<string, string>
