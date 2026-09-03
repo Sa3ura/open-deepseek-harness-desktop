@@ -18,6 +18,8 @@ Windows retains the AppUserModelID and updates only verified current-user links 
 
 General Settings owns the crop editor and reports results per OS destination. Crop motion uses pointer capture and animation-frame throttling, with arrow-key positioning and a local dialog focus loop. Confirm sends only the selection ID, fixed target, and crop rectangle to Electron. The operation does not restart Harness. Linux and Web do not present the editor.
 
+The default macOS application image is the finished padded `dev-dock-icon.png` asset in both development and installed builds, despite its legacy filename. Startup and the icon manager share the same loader; previews, reset, and restart retain that artwork without applying the custom-crop mask again. The native smoke checks the built asset's alpha padding and rounded corners, and both manager installation modes across first launch, reset, and restart. Windows default artwork and the macOS tray template are unchanged.
+
 ## Alternatives considered
 
 **Rewrite application resources.** Modifying the macOS bundle or Windows executable affects signing and upgrades. Runtime APIs and owned shortcuts provide the requested personalization without changing those artifacts.

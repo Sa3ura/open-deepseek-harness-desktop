@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { app, BrowserWindow, nativeImage, Tray } from 'electron'
 import { DesktopIconManager } from '../lib/desktop-icons.js'
-import { decodeIconImage, encodeIconIco, renderIconPresentation } from '../lib/icon-image.js'
+import { decodeIconImage, encodeIconIco, loadDefaultApplicationIcon, renderIconPresentation } from '../lib/icon-image.js'
 
 const directory = mkdtempSync(join(tmpdir(), 'dsh-native-icons-'))
 app.setPath('userData', directory)
@@ -14,6 +14,35 @@ async function run() {
   let tray
   try {
     await app.whenReady()
+    const defaultApplication = loadDefaultApplicationIcon('darwin')
+    assert.equal(defaultApplication.isEmpty(), false)
+    const defaultSize = defaultApplication.getSize()
+    const defaultBitmap = defaultApplication.toBitmap()
+    const alphaAt = (x, y) => defaultBitmap[(y * defaultSize.width + x) * 4 + 3]
+    const center = Math.floor(defaultSize.width / 2)
+    assert.equal(alphaAt(center, 0), 0)
+    assert.equal(alphaAt(center, Math.floor(defaultSize.height * 0.05)), 0)
+    // The shipped artwork includes slightly translucent pixels inside its background.
+    assert.ok(alphaAt(center, Math.floor(defaultSize.height * 0.15)) >= 250)
+    assert.equal(alphaAt(Math.floor(defaultSize.width * 0.1), Math.floor(defaultSize.height * 0.1)), 0)
+    const windowArtwork = nativeImage.createFromPath(new URL('../lib/icon.png', import.meta.url).pathname)
+    assert.deepEqual(loadDefaultApplicationIcon('win32').toBitmap(), windowArtwork.toBitmap())
+    for (const packaged of [false, true]) {
+      const defaults = {
+        directory: join(directory, `defaults-${packaged}`), platform: 'darwin', packaged,
+        defaultApplication: loadDefaultApplicationIcon('darwin'), defaultTray: windowArtwork,
+        apply() { return [] }, notify() {},
+      }
+      const manager = new DesktopIconManager(defaults)
+      assert.deepEqual(manager.images().application.toBitmap(), defaultBitmap)
+      assert.equal(manager.status().application, defaultApplication.resize({ width: 64, height: 64 }).toDataURL())
+      const selection = manager.selectBytes(1, windowArtwork.toPNG())
+      manager.apply(1, selection.id, 'application', { x: 0, y: 0, size: 512 })
+      manager.reset('application')
+      assert.deepEqual(manager.images().application.toBitmap(), defaultBitmap)
+      assert.equal(manager.images().trayTemplate, true)
+      assert.deepEqual(new DesktopIconManager(defaults).images().application.toBitmap(), defaultBitmap)
+    }
     // Native codec receives a real transparent PNG and a real JPEG, not header doubles.
     const rgba = Buffer.alloc(80 * 60 * 4)
     for (let i = 0; i < rgba.length; i += 4) { rgba[i + 2] = 255; rgba[i + 3] = i < 80 * 4 ? 0 : 255 }
@@ -59,7 +88,7 @@ async function run() {
     }
     const options = {
       directory: join(directory, 'icons'), platform: process.platform, packaged: false,
-      defaultApplication: image, defaultTray: image,
+      defaultApplication: loadDefaultApplicationIcon(process.platform), defaultTray: image,
       notify() {},
       apply(images) {
         window.setIcon(images.application)
@@ -82,6 +111,8 @@ async function run() {
     assert.deepEqual(new DesktopIconManager(options).images().application.toBitmap(), manager.images().application.toBitmap())
     manager.reset('application')
     assert.equal(new DesktopIconManager(options).status().applicationCustom, false)
+    assert.deepEqual(manager.images().application.toBitmap(), options.defaultApplication.toBitmap())
+    console.log('PASS: real default macOS artwork has padding/corners; packaged and development startup, preview, reset and restart preserve it without repeated insetting')
     console.log('PASS: native padding, rounded corners in seven ICO sizes, preserved alpha, JPEG EXIF orientation, Dock/window + tray apply/reset, persistence without repeated insetting')
   } catch (error) {
     console.error(error)

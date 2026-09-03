@@ -1,5 +1,17 @@
 import { nativeImage, type NativeImage } from 'electron'
+import { fileURLToPath } from 'node:url'
 import { iconPresentation, type IconCrop, type IconTarget } from './icon-protocol.js'
+
+/**
+ * Load the finished default artwork without adding a second inset or corner mask.
+ * @param platform - Desktop operating system; installation mode does not change the image.
+ * @returns The padded macOS Dock artwork or the existing Windows/Linux window artwork.
+ */
+export function loadDefaultApplicationIcon(platform: string): NativeImage {
+  // The legacy filename is retained in packaged assets; this is also the installed Dock default.
+  const asset = platform === 'darwin' ? './dev-dock-icon.png' : './icon.png'
+  return nativeImage.createFromPath(fileURLToPath(new URL(asset, import.meta.url)))
+}
 
 /** Maximum encoded PNG/JPEG input size, checked before native decoding. */
 export const ICON_MAX_BYTES = 10 * 1024 * 1024

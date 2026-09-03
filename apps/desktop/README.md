@@ -37,7 +37,7 @@ Development and package scripts invoke the Desktop and Web apps from their ownin
 <a id="custom-application-icons"></a>
 ## Custom application icons
 
-Output previews include transparent padding and antialiased rounded corners. macOS application artwork occupies a centered 412 × 412 region of the 512-pixel canvas; Windows application and custom tray artwork use a 480 × 480 region to keep small icons readable. The saved crop remains unstyled, so startup reapplies the geometry without cumulative shrinking. Built-in icons retain their original artwork.
+Output previews include transparent padding and antialiased rounded corners. macOS application artwork occupies a centered 412 × 412 region of the 512-pixel canvas; Windows application and custom tray artwork use a 480 × 480 region to keep small icons readable. The saved crop remains unstyled, so startup reapplies the geometry without cumulative shrinking. Built-in icons retain their original artwork. Development and installed macOS builds use the same padded default Dock image for startup, settings previews, and Restore default; that finished image is not inset again.
 
 General Settings → Application icons accepts a local PNG or JPEG up to 10 MB and 16 million pixels. Drag or use arrow keys to position a square crop, adjust zoom, inspect the large and 16/32-pixel light/dark previews, and confirm. Cancel and Escape discard the selection. Crops below 512 × 512 show a clarity warning. Tray images follow the application image by default; disabling that option enables a separate image. Restore default removes the selected override. These controls are absent from Linux and ordinary Web clients.
 

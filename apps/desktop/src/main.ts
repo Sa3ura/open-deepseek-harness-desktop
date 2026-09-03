@@ -42,6 +42,7 @@ import { DesktopReleaseChecker, isAllowedReleaseUrl, type DesktopReleaseStatus }
 import { DesktopReleaseDownloader, type DesktopReleaseDownloadStatus } from './release-downloader.ts'
 import { SourceUpdater } from './source-updater.ts'
 import { DesktopIconManager, type DesktopIconImages } from './desktop-icons.ts'
+import { loadDefaultApplicationIcon } from './icon-image.ts'
 import { updateIconShortcuts } from './icon-shortcuts.ts'
 import type { IconSurfaceResult, IconTarget } from './icon-protocol.ts'
 import { ExternalToolCompatibilityManager } from './external-tool-compatibility.ts'
@@ -120,7 +121,6 @@ import { backupAndResetDesktopSettings } from './settings-recovery.ts'
 const APP_NAME = 'DeepSeek Harness'
 const LOADING_PAGE = fileURLToPath(new URL('./loading.html', import.meta.url))
 const WINDOW_ICON = fileURLToPath(new URL('./icon.png', import.meta.url))
-const DEVELOPMENT_DOCK_ICON = fileURLToPath(new URL('./dev-dock-icon.png', import.meta.url))
 const MACOS_TRAY_ICON = fileURLToPath(new URL('./tray-iconTemplate.png', import.meta.url))
 const PRELOAD = fileURLToPath(new URL('./preload.cjs', import.meta.url))
 const TITLEBAR_PAGE = fileURLToPath(new URL('./titlebar.html', import.meta.url))
@@ -661,7 +661,7 @@ function createTray(): void {
 /** Apply the saved Dock preference before either setup or the main window appears. */
 function applyStartupDockIcon(): void {
   if (process.platform !== 'darwin') return
-  try { app.dock?.setIcon(iconManager?.images().application ?? nativeImage.createFromPath(DEVELOPMENT_DOCK_ICON)) }
+  try { app.dock?.setIcon(iconManager?.images().application ?? loadDefaultApplicationIcon(process.platform)) }
   catch { console.warn('desktop: Dock icon could not be applied') }
 }
 
@@ -1048,7 +1048,7 @@ async function startApplication(): Promise<void> {
   if (process.platform === 'darwin' || process.platform === 'win32') {
     iconManager = new DesktopIconManager({
       directory: join(app.getPath('userData'), 'icons'), platform: process.platform, packaged: app.isPackaged,
-      defaultApplication: nativeImage.createFromPath(process.platform === 'darwin' && !app.isPackaged ? DEVELOPMENT_DOCK_ICON : WINDOW_ICON),
+      defaultApplication: loadDefaultApplicationIcon(process.platform),
       defaultTray: nativeImage.createFromPath(process.platform === 'darwin' ? MACOS_TRAY_ICON : WINDOW_ICON),
       apply: applyDesktopIcons,
       notify: status => mainSurface?.send('dsh:desktop:icons:status', status),
