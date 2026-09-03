@@ -99,3 +99,13 @@ jobs:
         env:
           DSH_SNAPSHOT: replay
         run: pnpm run test:web:built
+
+      # saveFailureShot writes full-page screenshots to the gitignored
+      # .artifacts/ on failure; upload them before the runner disappears.
+      - name: Upload failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-failure-evidence-${{ github.run_attempt }}
+          path: .artifacts
+          if-no-files-found: ignore
