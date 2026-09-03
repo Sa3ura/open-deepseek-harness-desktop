@@ -319,7 +319,22 @@ export function ChatView({
     return local === null ? null : scrollerOf(local) as HTMLDivElement
   }, [])
   const flowHead = useFlowHeadHeight()
-  const virtual = useChatVirtualizer(order, getScrollElement, flowHead.height)
+  // Content offset of the flow column's top edge inside the scroll content
+  // (shell padding and everything above the column). Scroll-invariant, so a
+  // ref read during render is enough — no state, no render feedback. Layout
+  // effects keep it fresh; a change lands on the next render, which is always
+  // triggered by the same snapshot change that moved the origin.
+  const flowOriginRef = useRef(0)
+  useLayoutEffect(() => {
+    const column = columnRef.current
+    const el = getScrollElement()
+    if (column === null || el === null) return
+    flowOriginRef.current = column.getBoundingClientRect().top
+      - el.getBoundingClientRect().top
+      + el.scrollTop
+  })
+  const scrollMargin = flowOriginRef.current + flowHead.height
+  const virtual = useChatVirtualizer(order, getScrollElement, scrollMargin)
   // Whether a leading block (hint / error / load-older) renders above row 0;
   // row 0 owns no leading gap only when this is false.
   const hasFlowHead = openState === 'loading'
@@ -851,16 +866,17 @@ export function ChatView({
     renderSlot,
     t,
   }
-  // Spacer heights mirror the trajectory ledger's proven formula: item starts
-  // already carry the scroll margin, so the top spacer is the range's distance
-  // past the flow head and the bottom spacer the remainder of the flow.
+  // Spacer heights keep the natural flow layout identical to the virtualizer's
+  // coordinate system: `scrollMargin` is row 0's content offset, so the top
+  // spacer covers the mounted range's distance past the leading blocks, and
+  // the bottom spacer is the remainder of the estimated flow.
   const firstItem = virtual.items[0]
   const topSpacer = virtual.enabled && firstItem !== undefined
-    ? Math.max(0, firstItem.start - flowHead.height)
+    ? Math.max(0, firstItem.start - scrollMargin)
     : 0
   const lastItem = virtual.items.at(-1)
   const bottomSpacer = virtual.enabled && lastItem !== undefined
-    ? Math.max(0, virtual.totalSize + flowHead.height - lastItem.end)
+    ? Math.max(0, virtual.totalSize - lastItem.end)
     : 0
 
   return (

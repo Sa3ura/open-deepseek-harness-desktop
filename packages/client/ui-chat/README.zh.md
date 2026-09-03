@@ -48,7 +48,7 @@ Chat 会为每个非空的初始或恢复请求、显式消息序列起点或真
 
 Chat 会在历史前插与 renderer 重新挂载时恢复语义锚点。读者跟随底部时，`ResizeObserver` 追随新的底部，并且无需读取行几何就选中最后一个已加载 Turn；读者离开底部后，高度变化会保持顶部位置，再由阅读线几何选择活跃 Turn。轮次导航预览位于 Markdown 代码块粘性头栏上方，而导航外框始终处于 composer 上方的 transcript 区域内（[已加载 Turn 导航](../../../.agents/notes/implemented/feature/2026-08-25-loaded-turn-chat-navigation.zh.md)）。
 
-已加载消息流超过虚拟化阈值（`use-chat-virtualizer.ts` 中的 `CHAT_VIRTUALIZATION_THRESHOLD`）后，Chat seat 列表改经 `@tanstack/react-virtual` 渲染：只有视口加上 overscan 环保持挂载，每个 seat 的边框盒（含其行首间距）即被测量的行。虚拟izer 只负责窗口化、测量与偏移计算——它从不写滚动位置。ChatView 仍是贴底跟随、读者滚动归属、前插锚点与会话恢复的唯一滚动权威；跳转目标在其行未挂载时从稳定节点 key 解析到虚拟偏移（[Chat 虚拟化](../../../.agents/notes/implemented/feature/2026-09-03-web-chat-virtualization.zh.md)）。
+已加载消息流超过虚拟化阈值（`use-chat-virtualizer.ts` 中的 `CHAT_VIRTUALIZATION_THRESHOLD`）后，Chat seat 列表改经 `@tanstack/react-virtual` 渲染：只有视口加上 overscan 环保持挂载，每个 seat 的边框盒（含其行首间距）即被测量的行。虚拟izer 负责窗口化、测量与偏移计算；其默认的折叠线上方测量补偿（一次 `scrollTop` 写入）被显式禁用，ChatView 因此仍是贴底跟随、读者滚动归属、前插锚点与会话恢复的唯一滚动权威。`scrollMargin` 携带 row 0 的真实内容偏移，虚拟izer 偏移与 `scrollTop` 共用同一坐标系；跳转目标在其行未挂载时从稳定节点 key 解析到虚拟偏移（[Chat 虚拟化](../../../.agents/notes/implemented/feature/2026-09-03-web-chat-virtualization.zh.md)）。
 
 -----
 

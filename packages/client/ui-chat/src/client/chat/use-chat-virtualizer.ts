@@ -24,6 +24,11 @@ export const VIRTUAL_ROW_ESTIMATE_PX = 72
 /** Fallback scrollport height before the scroll element reports its rect. */
 export const CHAT_VIRTUAL_INITIAL_VIEWPORT_PX = 600
 
+/** Disabled measurement compensation: the virtualizer never writes scrollTop. */
+function noScrollAdjustment(): boolean {
+  return false
+}
+
 /** The virtualized Chat flow window plus key/offset resolution for ChatView. */
 export interface ChatVirtualFlow {
   /** Whether the virtualized window currently renders the flow rows. */
@@ -54,7 +59,9 @@ export interface ChatVirtualFlow {
  * Window the loaded Chat flow through TanStack Virtual.
  * @param order - current visible Chat node keys, in flow order.
  * @param getScrollElement - resolves the owning scrollport (`scrollerOf`).
- * @param scrollMargin - height of the flow head (leading blocks) above row 0.
+ * @param scrollMargin - content offset of row 0 inside the scroll content:
+ *   everything above the first row (column origin plus leading blocks), so
+ *   virtualizer offsets and `scrollTop` share one coordinate system.
  * @returns the mounted window plus key/offset resolution for ChatView's
  *   scroll, prepend, and jump logic.
  */
@@ -78,6 +85,15 @@ export function useChatVirtualizer(
     initialRect: { width: 0, height: CHAT_VIRTUAL_INITIAL_VIEWPORT_PX },
     scrollMargin,
   })
+  // TanStack compensates above-the-fold size changes by writing scrollTop
+  // through scrollToFn (first-measure and fully-above-fold re-measure). Chat
+  // never had measurement compensation on the plain path, and a second scroll
+  // writer would race ChatView's bottom-follow ledger and stack with its
+  // prepend correction, so the compensation predicate is disabled on the
+  // instance: ChatView remains the only writer of the scrollport's scrollTop.
+  // virtual-core reads this as a class property (not an options key), so the
+  // assignment must happen after the hook returns the stable instance.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = noScrollAdjustment
 
   const indexByKey = useMemo(() => {
     const map = new Map<string, number>()
@@ -114,10 +130,11 @@ export function useChatVirtualizer(
 
 /**
  * Measure the flow head — the leading hint/error/load-older block that only
- * exists on the virtualized path — and publish its height as the virtualizer's
- * `scrollMargin`. The height is semantic state (leading blocks appear, settle,
- * or reflow), not scroll feedback, so publishing it through React state keeps
- * the virtualizer's offsets aligned with the real layout.
+ * exists on the virtualized path — and publish its height. ChatView adds the
+ * column's content origin to form the virtualizer's `scrollMargin`, so the
+ * height is semantic state (leading blocks appear, settle, or reflow), not
+ * scroll feedback; publishing it through React state keeps the virtualizer's
+ * offsets aligned with the real layout.
  * @returns a callback ref for the flow-head element and its current height.
  */
 export function useFlowHeadHeight(): {
