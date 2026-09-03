@@ -72,6 +72,23 @@ function flowTop(row: HTMLElement, scrollport: HTMLElement): number {
   return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top
 }
 
+/**
+ * Settle target holding one row at a scrollport-relative top. Undefined while
+ * the row has not mounted yet — the chase keeps its frame budget and retries —
+ * so an estimate-based landing that mounted the window beside the target still
+ * converges once the target row commits.
+ */
+function seatRowTarget(
+  local: HTMLElement,
+  el: HTMLElement,
+  key: string,
+  top: number,
+): number | undefined {
+  const row = anchorElement(local, key)
+  if (row === null) return undefined
+  return flowTop(row, el) - top
+}
+
 /** Turn owning one Chat node, resolved off its engine-owned Location. */
 function turnOfNode(node: ChatNode | undefined): number | undefined {
   const location = node?.location
@@ -351,6 +368,12 @@ export function ChatView({
   )
   /** Last position delivered or written on the main thread. */
   const observedTopRef = useRef(0)
+  /** Scroll geometry at the latest raw delivery. Ownership is classified from
+   *  delivery truth, not from the delayed sample: on the virtualized path,
+   *  measurement of newly mounted rows moves the floor between the delivery
+   *  and the sample, which would otherwise reclassify a floor landing
+   *  (native End, back-to-bottom) as reader movement. */
+  const lastDeliveryRef = useRef<{ scrollTop: number; floor: number; observed: number } | null>(null)
   /** Paging anchor: semantic row/position at click, updated by reader scrolls
    * while the request is pending and restored after the prepend lands. */
   const anchorRef = useRef<PagingAnchor | null>(null)
@@ -372,6 +395,69 @@ export function ChatView({
    *  scroll-driven at-bottom chrome re-render (which would snap inertial
    *  scrolls the rest of the way to the floor). */
   const followSigRef = useRef<string | null>(null)
+  /** Programmatic-landing convergence: rows never mounted carry estimate
+   *  sizes, so one semantic write (prepend re-seat, session restore, row
+   *  landing) moves as the mounted window measures. The frame loop re-reads
+   *  the target's live rectangle and rewrites the offset until it holds.
+   *  target returns the scroll correction to apply, undefined while the
+   *  target row has not mounted yet, and null to abort. */
+  const settleRef = useRef<{
+    frames: number
+    stable: number
+    target: (local: HTMLElement, el: HTMLElement) => number | undefined | null
+  } | null>(null)
+  const settleFrameRef = useRef<number | null>(null)
+  /** How long the convergence loop may chase before giving up (frames at
+   *  display cadence — wide remeasure cascades must be covered). */
+  const SETTLE_MAX_FRAMES = 60
+
+  const runSettleFrame = (): void => {
+    settleFrameRef.current = null
+    const settle = settleRef.current
+    const local = listRef.current
+    if (settle === null || local === null) {
+      settleRef.current = null
+      return
+    }
+    const el = scrollerOf(local)
+    // A delivery off the programmatic ledger is reader movement: the chase
+    // must never fight the reader for the scrollport.
+    if (Math.abs(el.scrollTop - observedTopRef.current) > 0.5) {
+      settleRef.current = null
+      return
+    }
+    const error = settle.target(local, el)
+    if (error === null) {
+      settleRef.current = null
+      return
+    }
+    if (error !== undefined && Math.abs(error) <= 0.5) {
+      settle.stable += 1
+      if (settle.stable >= 2) {
+        settleRef.current = null
+        return
+      }
+    } else if (error !== undefined) {
+      settle.stable = 0
+      el.scrollTop += error
+      observedTopRef.current = el.scrollTop
+    }
+    settle.frames += 1
+    if (settle.frames > SETTLE_MAX_FRAMES) {
+      settleRef.current = null
+      return
+    }
+    settleFrameRef.current = requestAnimationFrame(runSettleFrame)
+  }
+  /** Arm convergence for the write that follows; the plain path mounts every
+   *  row, so its single write is already exact and never chases. */
+  const armSettle = (target: (local: HTMLElement, el: HTMLElement) => number | undefined | null): void => {
+    if (!virtual.enabled) return
+    settleRef.current = { frames: 0, stable: 0, target }
+    if (settleFrameRef.current === null && typeof requestAnimationFrame === 'function') {
+      settleFrameRef.current = requestAnimationFrame(runSettleFrame)
+    }
+  }
 
   const firstKey = order[0]
   const firstSeq = firstKey === undefined ? null : nodeStore.get(firstKey)?.anchorSeq ?? null
@@ -439,6 +525,10 @@ export function ChatView({
     if (activeFrameRef.current !== null && typeof cancelAnimationFrame !== 'undefined') {
       cancelAnimationFrame(activeFrameRef.current)
     }
+    if (settleFrameRef.current !== null && typeof cancelAnimationFrame !== 'undefined') {
+      cancelAnimationFrame(settleFrameRef.current)
+    }
+    settleRef.current = null
   }, [])
 
   activeTurnRef.current = scheduleActiveTurn
@@ -480,6 +570,7 @@ export function ChatView({
       el.scrollTop = Math.max(0, offset - 24)
     }
     observedTopRef.current = el.scrollTop
+    armSettle((settleLocal, settleEl) => seatRowTarget(settleLocal, settleEl, key, 24))
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
     atBottomRef.current = isAtBottom
     setAtBottom(isAtBottom)
@@ -547,6 +638,7 @@ export function ChatView({
         const row = anchorElement(local, saved.anchorKey)
         if (row !== null) el.scrollTop += flowTop(row, el) - saved.anchorTop
         observedTopRef.current = el.scrollTop
+        armSettle((settleLocal, settleEl) => seatRowTarget(settleLocal, settleEl, saved.anchorKey, saved.anchorTop))
         const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
         atBottomRef.current = isAtBottom
         setAtBottom(isAtBottom)
@@ -570,8 +662,10 @@ export function ChatView({
       // Virtual path: row offsets are self-consistent across the prepend
       // (TanStack keys measured sizes by node key and does not compensate
       // count growth), so scrolling straight to the anchor's new offset minus
-      // its pre-prepend viewport top re-seats the same row. This write is the
-      // sole prepend correction; no virtualizer adjustment runs beside it.
+      // its pre-prepend viewport top re-seats the same row. That first write
+      // rides estimate sizes for the never-mounted rows above the anchor; the
+      // settle loop re-seats from live rectangles as they measure. No
+      // virtualizer adjustment runs beside either write.
       const virtualOffset = virtual.offsetOfKey(anchor.key)
       const row = virtualOffset === null ? anchorElement(local, anchor.key) : null
       if (virtualOffset !== null) {
@@ -586,6 +680,7 @@ export function ChatView({
       const held = virtualOffset !== null || row !== null
       if (!realizePendingJump(local, el, false) && held) {
         anchorRef.current = { key: anchor.key, top: anchor.top }
+        armSettle((settleLocal, settleEl) => seatRowTarget(settleLocal, settleEl, anchor.key, anchor.top))
       }
       firstSeqRef.current = firstSeq
       /* v8 ignore next -- ?? arm: a prepend adds nodes, so the flow list here is never empty. */
@@ -631,9 +726,17 @@ export function ChatView({
     // programmatic deliveries land on the ledger itself, so both preserve
     // the current ownership state.
     const floor = Math.max(0, el.scrollHeight - el.clientHeight)
-    const movedByReader = Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > 0.5
+    // Ownership classifies from the delivery that triggered this sample, not
+    // from live geometry: on the virtualized path, measurement of newly
+    // mounted rows moves the floor between the two, and live sampling would
+    // reclassify a floor landing (native End, back-to-bottom) as reader
+    // movement and disengage follow while the floor recedes.
+    const delivery = lastDeliveryRef.current
+    const movedByReader = delivery === null
+      ? Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > 0.5
+      : Math.abs(delivery.scrollTop - Math.min(delivery.observed, delivery.floor)) > 0.5
     const isAtBottom = movedByReader
-      ? floor - el.scrollTop <= FOLLOW_THRESHOLD + 1
+      ? ((delivery?.floor ?? floor) - (delivery?.scrollTop ?? el.scrollTop)) <= FOLLOW_THRESHOLD + 1
       : atBottomRef.current
     if (!movedByReader && isAtBottom) {
       toBottom(el)
@@ -672,6 +775,11 @@ export function ChatView({
       setScrollSampleTick(tick => tick + 1)
     }
     const onScroll = (): void => {
+      lastDeliveryRef.current = {
+        scrollTop: el.scrollTop,
+        floor: Math.max(0, el.scrollHeight - el.clientHeight),
+        observed: observedTopRef.current,
+      }
       scrollSamplePendingRef.current = true
       sampleTimer ??= window.setTimeout(sample, SCROLL_SAMPLE_INTERVAL_MS)
     }

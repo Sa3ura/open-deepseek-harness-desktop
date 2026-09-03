@@ -15,9 +15,9 @@ Chat transcript 为每个已加载的 Conversation node 挂载一行 React 组�
 所有权分离是设计的核心：
 
 - **TanStack Virtual 负责**可见范围、逐行测量、条目偏移与按偏移定位的计算。`getItemKey` 返回稳定的 Conversation Context key（`conversationContextKey(kind, id)`），因此 TanStack 的尺寸缓存以逻辑身份为键，可在前插后存活；`measureElement` 读取每个 seat 的边框盒，虚拟化路径把兄弟行间距移入行内作为顶部内边距（`ChatView.module.css` 以 `data-chat-flow-virtual` 区分两种间距模型），使测量尺寸自带间距、偏移不会按 rowCount × gap 漂移。TanStack 自身的滚动写入——默认会经 `scrollToFn` 执行的折叠线上方测量补偿（首次测量与完全位于视口上方的重测）——被 `shouldAdjustScrollPositionOnItemSizeChange: () => false` 显式关闭：普通 Chat 路径从不做尺寸变化补偿，关闭它既保留虚拟化前的读者语义，又保持 ChatView 是唯一的 `scrollTop` 写入方，并防止该补偿与前插校正叠加。`scrollMargin` 发布为 row 0 的真实内容偏移（flow 列在滚动内容中的原点加上前导块高度），使虚拟izer 偏移与 `scrollTop` 共用同一坐标系。
-- **`ChatView` 仍是唯一滚动权威。**贴底跟随（`atBottomRef` + column `ResizeObserver` + flow-tip 签名）、读者/程序化滚动判别（`observedTopRef`）、前插锚点（`PagingAnchor`）、load-through 跳转状态机、会话滚动恢复（`chatScroll`）与回到底部全部未动。流式行的增长以普通行尺寸变化的形式到达虚拟izer，其重测只调整偏移；视口是否移动仍由 ChatView 决定，与普通路径完全一致。
+- **`ChatView` 仍是唯一滚动权威。**贴底跟随（`atBottomRef` + column `ResizeObserver` + flow-tip 签名）、读者/程序化滚动判别（`observedTopRef` 旁的投递时刻账本）、前插锚点（`PagingAnchor`）、load-through 跳转状态机、会话滚动恢复（`chatScroll`）与回到底部全部未动。流式行的增长以普通行尺寸变化的形式到达虚拟izer，其重测只调整偏移；视口是否移动仍由 ChatView 决定，与普通路径完全一致。
 
-前插校正仍留在 `ChatView`，虚拟izer 只提供偏移数值。TanStack 的自动前插补偿绑定在 `anchorTo: 'end'` 上，默认 start 锚定下不生效；测量补偿又被显式禁用，因此除 ChatView 外没有任何 `scrollTop` 写入方。锚定前插分支写入锚点的*绝对*新偏移（`offsetOfKey(anchorKey) − anchorTop`）——由于 `scrollMargin` 携带列原点，该写法坐标精确；挂载行矩形路径仍是首选校正（load-earlier 流程中锚点行必然处于挂载状态）。跳转导航在目标行未挂载时按 `order.indexOf → offsetOfKey` 解析；未加载 Turn 仍走既有 `loadThrough()` 状态机分页。
+语义滚动校正仍留在 `ChatView`，虚拟izer 只提供偏移数值。TanStack 的自动前插补偿绑定在 `anchorTo: 'end'` 上，默认 start 锚定下不生效；测量补偿又被显式禁用，因此除 ChatView 外没有任何 `scrollTop` 写入方。锚定前插分支先写入锚点的*绝对*新偏移（`offsetOfKey(anchorKey) − anchorTop`）；锚点上方从未挂载的行携带估算尺寸，因此随后由一个有界的 settle 循环按锚点行的实时矩形逐帧重写，直至收敛——会话恢复与 rail/跳转落点因同样原因共用这一收敛。`±2px` 契约测试观察到的正是虚拟化路径收敛后的几何。读者移动会中止追赶；归属判别读取滚动*投递*而非延迟采样，使贴底落点（原生 End、回到底部）下方的测量增长不再被误判为读者移动。跳转导航在目标行未挂载时按 `order.indexOf → offsetOfKey` 解析；未加载 Turn 仍走既有 `loadThrough()` 状态机分页。
 
 虚拟化会卸载视口外的 seat，必须跨卸载存活的 renderer 本地展开状态因此迁入会话作用域 store——`ui-chat` 一个 `createChatNodeStore()`（以节点限定 key 覆盖系统提示词、上下文注入、命令卡与逐块推理行），`ui-tool` 一个 `createToolDisclosureStore()`（按 call id），两者沿用既有的 store-at-register 模式（`createChatStore`、turn-process 条目）；条目持布尔值，仅 `true` 表示展开。`ModelRetryItem` 的原生 `<details>` 与文本选区作为已记录的损失写入包 README。
 

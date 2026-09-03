@@ -63,7 +63,7 @@ interface ScrollGeometry {
   readonly scrollTop: number
 }
 
-async function openSession(page: Page, marker: string, title: string): Promise<void> {
+async function openSession(page: Page, marker: string, tailMarker: string): Promise<void> {
   const searchButton = page.getByRole('button', { name: 'Search sessions' })
   if (await searchButton.getAttribute('aria-expanded') !== 'true') await searchButton.click()
   const search = page.getByRole('textbox', { name: 'Search sessions...', exact: true })
@@ -72,7 +72,10 @@ async function openSession(page: Page, marker: string, title: string): Promise<v
   await expect.poll(() => result.count(), { timeout: 60_000 }).toBe(1)
   await result.click()
   await page.locator('[data-chat-flow]').waitFor({ timeout: 30_000 })
-  await page.getByText(title, { exact: true }).waitFor({ timeout: 30_000 })
+  // The session title also matches the sidebar search row; the seeded tail
+  // marker is the transcript-side render barrier, and the tail is what the
+  // initial page mounts.
+  await page.getByText(tailMarker, { exact: false }).last().waitFor({ timeout: 30_000 })
 }
 
 async function logicalRows(page: Page): Promise<number> {
@@ -175,7 +178,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
 
   it.skipIf(MODE === 'record')('keeps mounted Chat seats bounded across scroll, prepend, streaming, disclosures, and session switches', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-chat-virtualization'))
-    await openSession(page, LONG_FIXTURE.markers.user(1), LONG_FIXTURE.title)
+    await openSession(page, LONG_FIXTURE.markers.user(1), LONG_FIXTURE.markers.assistant(LONG_FIXTURE.turns))
 
     // Case 1 — bounded mounted rows against the loaded logical window.
     const logical = await logicalRows(page)
@@ -263,11 +266,11 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     }
 
     // Case 7 — session A → B → A keeps rows, virtual state, and follow intact.
-    await openSession(page, SHORT_FIXTURE.markers.user(1), SHORT_FIXTURE.title)
+    await openSession(page, SHORT_FIXTURE.markers.user(1), SHORT_FIXTURE.markers.assistant(SHORT_FIXTURE.turns))
     const shortLogical = await logicalRows(page)
     expect(shortLogical).toBeLessThan(100)
     expect(await page.getByText(LONG_FIXTURE.markers.user(1), { exact: false }).count()).toBe(0)
-    await openSession(page, LONG_FIXTURE.markers.user(1), LONG_FIXTURE.title)
+    await openSession(page, LONG_FIXTURE.markers.user(1), LONG_FIXTURE.markers.assistant(LONG_FIXTURE.turns))
     expect(await logicalRows(page)).toBeGreaterThan(1_000)
     expect(await mountedSeats(page)).toBeLessThanOrEqual(MAX_MOUNTED_SEATS)
     expect(await page.getByText(SHORT_FIXTURE.markers.user(1), { exact: false }).count()).toBe(0)
