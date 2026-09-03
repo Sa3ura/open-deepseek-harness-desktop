@@ -22,6 +22,7 @@ import { StatsLine } from '../src/client/chat/StatsLine.tsx'
 import { DetailsPanel } from '../src/client/details/DetailsPanel.tsx'
 import { zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
+import { disclosureShare } from './disclosure-store-fixture.client.ts'
 
 const t: AssistantMarkdownProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
@@ -83,6 +84,8 @@ describe('render branch tails', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
+        {...disclosureShare()}
+        disclosureKey="fixture:t0:s0"
         blocks={[{ kind: 'reasoning', text: 'done thinking' }, { kind: 'text', text: 'answer' }]}
         streaming
         renderMessageImages={renderMessageImages}
@@ -118,6 +121,8 @@ describe('render branch tails', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
+        {...disclosureShare()}
+        disclosureKey="fixture:t0:s0"
         blocks={[{ kind: 'reasoning', text: 'still thinking' }]}
         streaming
         renderMessageImages={renderMessageImages}

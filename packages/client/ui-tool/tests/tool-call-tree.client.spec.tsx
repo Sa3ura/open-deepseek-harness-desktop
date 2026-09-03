@@ -8,6 +8,8 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { ToolCallOwnerProps, ToolTreeProps } from '../src/client/contract/slots.ts'
 import { ToolCallTree } from '../src/client/tool/ToolCallTree.tsx'
+import { createToolDisclosureStore } from '../src/client/stores.ts'
+import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh } from '@deepseek-ai/dsh-client-ui-conversation/src/client/locales.ts'
 
 afterEach(cleanup)
@@ -26,6 +28,7 @@ function props(
   owners?: ToolCallOwnerProps[],
 ): ToolTreeProps {
   const snapshot = {} as SessionSnapshot
+  const disclosures = createToolDisclosureStore().create()
   const useSession = ((selector: (value: SessionSnapshot) => unknown) => selector(snapshot)) as ToolTreeProps['useSession']
   const renderSlot = ((_key: string, owner: ToolCallOwnerProps, options?: { fallback?: React.ReactNode }) => {
     owners?.push(owner)
@@ -50,6 +53,8 @@ function props(
     forkAt: vi.fn(),
     fileMentions: vi.fn(),
     useHostInfo: ((selector: (info: { home: string | undefined }) => unknown) => selector({ home })) as ToolTreeProps['useHostInfo'],
+    useStore: bindSnapshotSelector(disclosures),
+    actions: disclosures.actions,
     t,
   } as unknown as ToolTreeProps
 }

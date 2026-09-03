@@ -1,11 +1,12 @@
 /** Tool UI slot declarations and their composed component props. */
 import type {
-  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
+  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type { createToolDisclosureStore } from '../stores.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
@@ -43,7 +44,19 @@ export interface ToolCallOwnerProps {
   openFile: (path: string) => void
   /** Inspect this call in the trajectory view when available. */
   inspect?: (() => void) | undefined
+  /**
+   * Controlled detail-body expansion, persisted in the Tool disclosure store.
+   * Chat virtualization unmounts offscreen rows, so views keep the reader's
+   * choice here instead of component-local state; absent keeps the view's own
+   * uncontrolled state.
+   */
+  expanded?: boolean | undefined
+  /** Publishes the next controlled expansion state. */
+  onToggleExpanded?: ((expanded: boolean) => void) | undefined
 }
+
+/** Store handle behind the call tree's persisted expansion state. */
+export type ToolDisclosureStore = ReturnType<typeof createToolDisclosureStore>
 
 /** Full props of a registered atomic Tool view. */
 export type ToolCallViewProps = PropsRuntime<'tool.call.toolview'>
@@ -64,6 +77,7 @@ export type ToolHostInfoInjected = {
 /** Full props of the Tool call-tree renderer registered as a `tool-call` Chat Node. */
 export type ToolTreeProps = PropsRuntime<'conversation.chat.node', 'tool-call'>
   & PropsRenderSlots<'tool.call.toolview'>
+  & PropsStore<ToolDisclosureStore>
   & PropsLocale<'conversation'>
   & InjectFace<ToolHostInfoInjected>
 

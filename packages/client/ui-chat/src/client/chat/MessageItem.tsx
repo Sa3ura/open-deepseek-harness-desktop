@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { JsonBlock, projectUserText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
+import type {
+  ChatNodeDisclosureViewProps, ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps,
+} from '../contract/slots.ts'
 import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '../contract/snapshot.ts'
 import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
@@ -294,14 +296,20 @@ export const UserMessageNodeView = memo(function UserMessageNodeView({
 })
 
 /** Injected-context keyed Chat renderer. */
-export const ContextMessageNodeView = memo(function ContextMessageNodeView({ node, t }: ChatNodeViewProps<'context'>) {
+export const ContextMessageNodeView = memo(function ContextMessageNodeView({
+  node, useStore, actions, t,
+}: ChatNodeDisclosureViewProps<'context'>) {
   const data = node.data
+  const key = `context:${node.key}`
+  const expanded = useStore(state => state.disclosures[key] === true)
   return (
     <ContextInjectionRow
       content={data.content}
       source={data.source}
       provenance={data.provenance}
       form={data.form}
+      expanded={expanded}
+      onToggle={(next) => { actions.setDisclosure(key, next) }}
       t={t}
     />
   )

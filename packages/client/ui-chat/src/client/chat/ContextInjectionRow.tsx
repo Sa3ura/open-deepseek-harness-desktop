@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { DisclosureRow, IconContextInjectionOutline16, ReferenceIcon } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ContextMessageNode } from '../contract/snapshot.ts'
@@ -13,6 +12,10 @@ export interface ContextInjectionRowProps {
   provenance: ContextMessageNode['provenance']
   /** Producer-declared information form; null renders the opaque body. */
   form: ContextMessageNode['form']
+  /** Controlled expansion state persisted in the node disclosure store. */
+  expanded: boolean
+  /** Publishes the next controlled expansion state. */
+  onToggle: (expanded: boolean) => void
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
@@ -25,11 +28,10 @@ export interface ContextInjectionRowProps {
  * from a workspace instruction file or a recalled session without expanding.
  * The expanded body follows the producer-declared form; an absent or unknown
  * form renders the opaque body.
- * @param props - Durable content, its projected producer role/name and form, and the locale seat.
+ * @param props - Durable content, its projected producer role/name and form, controlled expansion, and the locale seat.
  * @returns A collapsed context row with a bounded, form-specific body.
  */
-export function ContextInjectionRow({ content, source, provenance, form, t }: ContextInjectionRowProps) {
-  const [open, setOpen] = useState(false)
+export function ContextInjectionRow({ content, source, provenance, form, expanded, onToggle, t }: ContextInjectionRowProps) {
   // Resolved rather than declared: a form whose fields are unreadable renders
   // the opaque body, and the marker must say what the row actually shows.
   const { rendered, summary, body } = contextBody(form, { content, source, t })
@@ -58,10 +60,10 @@ export function ContextInjectionRow({ content, source, provenance, form, t }: Co
         </>
       )}
       keepContentWhenOpen
-      open={open}
+      open={expanded}
       expandable
       expandOnRowClick
-      onToggle={() => { setOpen(value => !value) }}
+      onToggle={() => { onToggle(!expanded) }}
     >
       <div className={css.body} data-context-injection-body data-context-form={rendered ?? undefined}>
         {body}

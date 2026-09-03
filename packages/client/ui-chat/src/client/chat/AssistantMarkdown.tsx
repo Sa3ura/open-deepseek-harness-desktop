@@ -2,7 +2,10 @@ import { Fragment, memo, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { JsonBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
+import type { PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  ChatNodeDisclosureStore, ChatNodeOwnerProps, ChatViewSlotProps,
+} from '../contract/slots.ts'
 import type { AssistantBlock } from '../contract/snapshot.ts'
 import { markdownLabels } from '../markdown-labels.ts'
 import { ReasoningRow } from './ReasoningRow.tsx'
@@ -22,6 +25,11 @@ export interface AssistantMarkdownProps {
   revealProcess?: (() => void) | undefined
   /** Resolved prose file mentions for this Assistant's closing turn. */
   mentions?: MarkdownFileMentions | undefined
+  /** Store share persisting per-block reasoning expansion across unmounts. */
+  useStore: PropsStore<ChatNodeDisclosureStore>['useStore']
+  actions: PropsStore<ChatNodeDisclosureStore>['actions']
+  /** Stable node key qualifying the per-block disclosure keys. */
+  disclosureKey: string
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
@@ -29,11 +37,14 @@ export interface AssistantMarkdownProps {
 /** Reasoning block as the Think variant summary row (figma 39:28304). */
 export const AssistantMarkdown = memo(function AssistantMarkdown({
   blocks, streaming, interrupted, renderMessageImages,
-  reasoningHidden = false, revealProcess, mentions, t,
+  reasoningHidden = false, revealProcess, mentions, useStore, actions, disclosureKey, t,
 }: AssistantMarkdownProps) {
   // Stable per locale revision (t identity changes on switch): a fresh object
   // per render would rebuild MarkdownText's component table every chunk.
   const labels = useMemo(() => markdownLabels(t), [t])
+  // One subscription for every reasoning block; expanding one block republishes
+  // the map and only re-renders this row's markdown body.
+  const disclosures = useStore(state => state.disclosures)
   const last = blocks.length - 1
   // Tool-call heads render as tool rows in the chat view's grouping pass, so
   // a node that is only those heads (or empty) would paint an empty root
@@ -58,17 +69,28 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
           />,
         )
         break
-      case 'reasoning':
+      case 'reasoning': {
+        // The disclosure state lives in the node disclosure store keyed by the
+        // owning node and this block's index, so an unmounted row (virtualized
+        // offscreen, view-tab switch) restores the reader's choice on remount.
+        const disclosureKeyOfBlock = `reasoning:${disclosureKey}:${String(i)}`
         rendered.push(
           <ProcessReasoning
             key={i}
             hidden={reasoningHidden}
             reveal={revealProcess}
           >
-            <ReasoningRow text={block.text} running={streaming && i === last} t={t} />
+            <ReasoningRow
+              text={block.text}
+              running={streaming && i === last}
+              expanded={disclosures[disclosureKeyOfBlock] === true}
+              onToggle={(expanded) => { actions.setDisclosure(disclosureKeyOfBlock, expanded) }}
+              t={t}
+            />
           </ProcessReasoning>,
         )
         break
+      }
       case 'image': {
         // Consecutive image blocks share one gallery so several images tile
         // into rows instead of each opening a one-image group of its own.

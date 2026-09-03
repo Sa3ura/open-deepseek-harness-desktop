@@ -48,6 +48,8 @@ Settings → General exposes a persisted `Normal` / `Compact` conversation-displ
 
 Chat restores semantic anchors across history prepend and renderer remounts. While the reader is pinned to the floor, `ResizeObserver` follows the new floor and selects the latest loaded Turn without reading row geometry. Once the reader moves away, flow-height changes preserve the top position and the reading-line geometry selects the active Turn. Turn-rail previews paint above sticky Markdown code-block banners, while the rail frame remains inside the transcript band above the composer ([loaded-Turn navigation](../../../.agents/notes/implemented/feature/2026-08-25-loaded-turn-chat-navigation.md)).
 
+Once the loaded flow passes the virtualization threshold (`CHAT_VIRTUALIZATION_THRESHOLD` in `use-chat-virtualizer.ts`), the Chat seat list renders through `@tanstack/react-virtual`: only the viewport plus an overscan ring stays mounted, and each seat's border box (its leading flow gap included) is the measured row. The virtualizer owns windowing, measurement, and offset math; its default above-the-fold measurement compensation (a `scrollTop` write) is explicitly disabled, so ChatView remains the single scroll authority for bottom follow, reader-scroll ownership, prepend anchors, and session restore. `scrollMargin` carries row 0's true content offset, so virtualizer offsets and `scrollTop` share one coordinate system; jump targets resolve from stable node keys to virtual offsets when their row is unmounted ([Chat virtualization](../../../.agents/notes/implemented/feature/2026-09-03-web-chat-virtualization.md)).
+
 -----
 
 <a id="model-experience"></a>
@@ -65,6 +67,7 @@ None; Chat presentation does not assemble or mutate provider requests.
 
 - **The transcript reflects the loaded Session window** — older transcript nodes become available only after Session Controller loads the preceding event page. Turn navigation is wider than the window: the rail merges the loaded Turns with the host `turnOutline` projection, so every started Turn gets a fixed-pitch mark (10px apart; a ladder taller than the frame scrolls inside it with gradient fades), and activating an unloaded mark pages history through the Turn's `turn/start` seq before landing on its row. Without the projection (assemblies not mounting `dsh-session-turn-outline`) the rail falls back to loaded Turns only.
 - **Rail previews are card-sized** — one prompt line (50 characters) and up to three response lines (120), on loaded and unloaded Turns alike; an unloaded Turn's response arrives from the outline only once the Turn settled, so an open Turn previews its prompt (or just the Turn number) until then.
+- **Virtualized rows leave the DOM offscreen** — once the loaded flow exceeds the virtualization threshold, seats outside the viewport-plus-overscan window unmount. Native browser find (Ctrl+F) and text selection cover only the mounted window, not the full loaded transcript. Renderer-local `<details>` state (retry rows) resets when its row unmounts; disclosure choices (system prompt, context injection, command cards, reasoning blocks, tool detail bodies) persist in session-scoped stores and survive the unmount.
 
 
 <a id="dev-note"></a>

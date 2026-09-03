@@ -22,3 +22,14 @@ export interface ChatStoreState {
   selection: SelectionTarget | null
   turnProcesses: TurnProcessViewEntry[]
 }
+
+/** Keyed expansion facts for disclosure rows rendered inside one Chat node. */
+export interface ChatNodeDisclosureState {
+  /**
+   * Stable disclosure keys — the owning node's key plus a row-qualified
+   * suffix (reasoning blocks append their block index) — mapped to their
+   * expanded state; only `true` means expanded. Entries die with the Session
+   * scope that instantiated the store.
+   */
+  disclosures: Record<string, boolean>
+}
