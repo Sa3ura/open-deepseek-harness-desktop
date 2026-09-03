@@ -21,10 +21,19 @@ export interface GenericCommandCardProps extends CommandRowOwnerProps {
   t: ChatViewSlotProps['t']
   /** Command-specific running copy; absent uses the generic command label. */
   runningSummary?: string | undefined
+  /**
+   * Controlled expansion state persisted by the render site (the node
+   * disclosure store); absent keeps renderer-local state.
+   */
+  expanded?: boolean | undefined
+  /** Publishes the next controlled expansion state. */
+  onExpandedChange?: ((expanded: boolean) => void) | undefined
 }
 
-export function GenericCommandCard({ node, t, runningSummary }: GenericCommandCardProps) {
-  const [expanded, setExpanded] = useState(false)
+export function GenericCommandCard({ node, t, runningSummary, expanded, onExpandedChange }: GenericCommandCardProps) {
+  const [localExpanded, setLocalExpanded] = useState(false)
+  const isExpanded = expanded ?? localExpanded
+  const toggle = onExpandedChange ?? setLocalExpanded
   const text = node.outcome?.text
   const summary = node.outcome === null
     ? runningSummary ?? t('command.running')
@@ -34,7 +43,7 @@ export function GenericCommandCard({ node, t, runningSummary }: GenericCommandCa
   const title = node.name ?? t('command.title')
   const state = stateOf(node.outcome)
   const body = text !== undefined && text.includes('\n') ? text : null
-  const open = expanded && body !== null
+  const open = isExpanded && body !== null
   return (
     <div className={css.root} data-variant="others" data-state={state}>
       {state === 'running' && <span className={a11yCss.visuallyHidden}>{t('row.running')}</span>}
@@ -50,7 +59,7 @@ export function GenericCommandCard({ node, t, runningSummary }: GenericCommandCa
         expandable={body !== null}
         expandOnRowClick
         keepContentWhenOpen
-        onToggle={() => { setExpanded(value => !value) }}
+        onToggle={() => { toggle(!isExpanded) }}
         collapsedContent={(
           <>
             <span className={css.separator} aria-hidden />

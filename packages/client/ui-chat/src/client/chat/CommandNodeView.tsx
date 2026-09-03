@@ -1,23 +1,35 @@
 import { memo, useMemo } from 'react'
 import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
-  ChatNodeViewProps, CommandRowOwnerProps,
+  ChatNodeDisclosureViewProps, ChatNodeViewProps, CommandRowOwnerProps,
 } from '../contract/slots.ts'
 import { CompactionCommandCard } from './CompactionCommandCard.tsx'
 import { GenericCommandCard } from './GenericCommandCard.tsx'
 import css from './ChatView.module.css'
 
-type CommandNodeViewProps = ChatNodeViewProps<'command'> & PropsRenderSlots<'conversation.chat.commandview'>
+type CommandNodeViewProps = ChatNodeDisclosureViewProps<'command'>
+  & PropsRenderSlots<'conversation.chat.commandview'>
 
 /** Ordinary command lifecycle renderer with command-name keyed specialization. */
-export const CommandNodeView = memo(function CommandNodeView({ node, renderSlot, t }: CommandNodeViewProps) {
+export const CommandNodeView = memo(function CommandNodeView({
+  node, useStore, actions, renderSlot, t,
+}: CommandNodeViewProps) {
   const command = node.data
   const owner = useMemo<CommandRowOwnerProps>(() => ({ node: command }), [command])
+  const key = `command:${node.key}`
+  const expanded = useStore(state => state.disclosures[key] === true)
   return (
     <div className={css.callRow}>
       {renderSlot('conversation.chat.commandview', owner, {
         entryKey: command.name ?? '',
-        fallback: <GenericCommandCard {...owner} t={t} />,
+        fallback: (
+          <GenericCommandCard
+            {...owner}
+            t={t}
+            expanded={expanded}
+            onExpandedChange={(next) => { actions.setDisclosure(key, next) }}
+          />
+        ),
       })}
     </div>
   )

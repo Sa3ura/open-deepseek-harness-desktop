@@ -1270,6 +1270,20 @@ describe('manual web performance: complex workspace and history', () => {
       })
       expect(warmConversation.value).toBe(LONG_HISTORY_TURNS)
 
+      // Chat virtualization probe: loaded logical rows versus mounted seats,
+      // with the retained DOM/heap state of the fully paged transcript.
+      const chatVirtualState = await retainedBrowserState(cdp, page)
+      const chatRows = await page.evaluate(() => ({
+        logical: Number(
+          document.querySelector<HTMLElement>('[data-chat-flow]')
+            ?.getAttribute('data-chat-logical-count') ?? '0',
+        ),
+        mounted: document.querySelectorAll('[data-chat-flow] > [data-chat-flow-key]').length,
+      }))
+      expect(chatRows.logical).toBeGreaterThan(0)
+      expect(chatRows.mounted).toBeGreaterThan(0)
+      expect(chatRows.mounted).toBeLessThan(chatRows.logical)
+
       console.info(`WEB_PERF_RESULT ${JSON.stringify({
         scenario: 'workspace-history-trajectory',
         fixture: {
@@ -1295,6 +1309,12 @@ describe('manual web performance: complex workspace and history', () => {
         historyPages,
         warmTrajectory: { rows: warmTrajectory.value, ...warmTrajectory.measurement },
         warmConversation: { turns: warmConversation.value, ...warmConversation.measurement },
+        chatVirtualization: {
+          logicalRows: chatRows.logical,
+          mountedSeats: chatRows.mounted,
+          domElements: chatVirtualState.domElements,
+          heapMb: chatVirtualState.heapMb,
+        },
       }, null, 2)}`)
       expect(world.tripwire.warnings).toEqual([])
       expect(world.tripwire.pageErrors).toEqual([])

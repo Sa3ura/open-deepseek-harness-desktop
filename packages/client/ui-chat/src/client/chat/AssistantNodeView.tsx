@@ -1,11 +1,11 @@
 import { memo, useCallback, useMemo } from 'react'
-import type { ChatNodeViewProps, TurnTailOwnerProps } from '../contract/slots.ts'
+import type { ChatNodeDisclosureViewProps, TurnTailOwnerProps } from '../contract/slots.ts'
 import { AssistantMarkdown } from './AssistantMarkdown.tsx'
 
 /** Streaming, settled, and interrupted Assistant states share one keyed renderer instance. */
 export const AssistantNodeView = memo(function AssistantNodeView({
-  node, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, t,
-}: ChatNodeViewProps<'assistant-step'>) {
+  node, useStore, actions, useTurnData, turnProcess, openFile, renderMessageImages, fileMentions, t,
+}: ChatNodeDisclosureViewProps<'assistant-step'>) {
   const data = node.data
   const turn = node.location.kind === 'turn' || node.location.kind === 'step'
     ? node.location.turn
@@ -35,6 +35,9 @@ export const AssistantNodeView = memo(function AssistantNodeView({
       reasoningHidden={reasoningHidden}
       revealProcess={revealProcess}
       mentions={mentions}
+      useStore={useStore}
+      actions={actions}
+      disclosureKey={node.key}
       t={t}
     />
   )

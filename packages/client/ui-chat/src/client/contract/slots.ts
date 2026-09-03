@@ -12,7 +12,7 @@ import type {
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { MarkdownFileMentions } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type { createChatStore } from '../stores.ts'
+import type { createChatStore, createChatNodeStore } from '../stores.ts'
 import type { ToolCallId, SelectionTarget } from './store.ts'
 import type { ChatConversationViewNode, ChatNode, ChatNodeKind } from './chat-nodes.ts'
 import type {
@@ -94,6 +94,18 @@ export interface TurnProcessOwnerProps {
 /** Full props of one keyed Chat renderer. */
 export type ChatNodeViewProps<Kind extends ChatNodeKind = ChatNodeKind> =
   PropsRuntime<'conversation.chat.node', Kind> & PropsLocale<'chat'>
+
+/** Store handle behind renderer-owned disclosure rows. */
+export type ChatNodeDisclosureStore = ReturnType<typeof createChatNodeStore>
+
+/**
+ * Full props of a keyed Chat renderer whose row owns disclosure state (system
+ * prompt, context injection, command cards, reasoning blocks). Virtualization
+ * unmounts offscreen rows, so those renderers keep their expansion state in
+ * the declared store instead of component-local useState.
+ */
+export type ChatNodeDisclosureViewProps<Kind extends ChatNodeKind = ChatNodeKind> =
+  ChatNodeViewProps<Kind> & PropsStore<ChatNodeDisclosureStore>
 
 /** Tool block rendered in the details panel. */
 export interface DetailsToolOwnerProps {

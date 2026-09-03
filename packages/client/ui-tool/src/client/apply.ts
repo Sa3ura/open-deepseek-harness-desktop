@@ -9,6 +9,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { ToolCallTree } from './tool/ToolCallTree.tsx'
 import { ToolDetails } from './tool/ToolDetails.tsx'
 import { CONVERSATION_NS as NS } from './locale.ts'
+import { createToolDisclosureStore } from './stores.ts'
 import { askQuestionToolview } from './tool/toolviews/ask-question-row.tsx'
 import { bashToolviewSample } from './tool/toolviews/bash-sample.tsx'
 import { fileMutationToolview } from './tool/toolviews/file-mutation-row.tsx'
@@ -30,10 +31,15 @@ export function apply(ctx: ClientContext): void {
     subscribe: listener => ctx.on('connection/reset', listener),
   }
   const toolInject = () => ({ hooks: { hostInfo } })
+  // Detail-body expansion persists per call id in a per-scope store: Chat
+  // virtualization unmounts offscreen rows and the expanded choice must
+  // survive the remount.
+  const disclosures = createToolDisclosureStore()
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'tool-call',
     locale: NS,
+    store: disclosures,
     children: {
       'tool.call.toolview': { kind: 'keyed', scope: 'session' },
     },

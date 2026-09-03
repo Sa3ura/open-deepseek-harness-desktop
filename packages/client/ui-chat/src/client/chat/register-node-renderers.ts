@@ -1,5 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { NS } from '../locale.ts'
+import { createChatNodeStore } from '../stores.ts'
 import { AssistantNodeView } from './AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from './CommandNodeView.tsx'
 import {
@@ -15,20 +16,26 @@ import { TurnTailNodeView } from './TurnTailNodeView.tsx'
  * @param ctx - owning UI Conversation context.
  */
 export function registerChatNodeRenderers(ctx: Context): void {
+  // Renderer-owned disclosure rows persist their expansion in one shared
+  // per-scope store instead of component-local state: virtualization unmounts
+  // rows outside the window, and the keys are node-qualified, so the shared
+  // handle never collides and dies with the Session scope.
+  const disclosures = createChatNodeStore()
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'user', locale: NS }, UserMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'steering', locale: NS }, UserMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'context', locale: NS }, ContextMessageNodeView))
+    { name: 'conversation.chat.node', key: 'context', locale: NS, store: disclosures }, ContextMessageNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'system-prompt', locale: NS }, SystemPromptNodeView))
+    { name: 'conversation.chat.node', key: 'system-prompt', locale: NS, store: disclosures }, SystemPromptNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
-    { name: 'conversation.chat.node', key: 'assistant-step', locale: NS }, AssistantNodeView))
+    { name: 'conversation.chat.node', key: 'assistant-step', locale: NS, store: disclosures }, AssistantNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'command',
     locale: NS,
+    store: disclosures,
     children: { 'conversation.chat.commandview': { kind: 'keyed', scope: 'session' } },
   }, CommandNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(

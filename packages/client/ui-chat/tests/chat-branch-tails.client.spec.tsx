@@ -7,7 +7,8 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import type {
   ChatConversationViewNode, ConversationNode,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
-import type { ChatNodeViewProps } from '../src/client/contract/slots.ts'
+import type { PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ChatNodeDisclosureStore, ChatNodeDisclosureViewProps, ChatNodeViewProps } from '../src/client/contract/slots.ts'
 import {
   formatMessageClock, msUntilNextLocalMidnight, startOfLocalDay,
 } from '../src/client/chat/message-chrome.ts'
@@ -19,6 +20,7 @@ import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/ch
 import { StatsLine } from '../src/client/chat/StatsLine.tsx'
 import { zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
+import { disclosureShare } from './disclosure-store-fixture.client.ts'
 
 /** jsdom has no ResizeObserver; StatsLine watches its row for ellipsis truncation through one. */
 class ResizeObserverStub {
@@ -67,13 +69,19 @@ function MessageItem({ node, t: translate, referenceLabels }: MessageItemProps) 
         ? { ...node, referenceLabels }
         : node,
   }
-  const props = { node: viewNode, t: translate, renderMessageImages, useChat: useDetachedChat } as ChatNodeViewProps
+  const props = {
+    node: viewNode,
+    t: translate,
+    renderMessageImages,
+    useChat: useDetachedChat,
+    ...disclosureShare(),
+  } as unknown as ChatNodeViewProps & PropsStore<ChatNodeDisclosureStore>
   switch (node.kind) {
     case 'user':
     case 'steering':
       return <UserMessageNodeView {...props as ChatNodeViewProps<'user' | 'steering'>} />
     case 'context':
-      return <ContextMessageNodeView {...props as ChatNodeViewProps<'context'>} />
+      return <ContextMessageNodeView {...props as unknown as ChatNodeDisclosureViewProps<'context'>} />
     case 'compaction':
       return <CompactionNodeView {...props as ChatNodeViewProps<'compaction'>} />
     case 'model-retry':
@@ -1013,6 +1021,8 @@ describe('small branch tails', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
+        {...disclosureShare()}
+        disclosureKey="fixture:t0:s0"
         blocks={[{ kind: 'reasoning', text: 'one-liner' }]}
         streaming={false}
         renderMessageImages={renderMessageImages}

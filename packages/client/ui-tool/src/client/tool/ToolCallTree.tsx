@@ -10,17 +10,27 @@ function callName(node: ToolCallBlock): string {
   return 'kind' in node ? node.call?.name ?? '' : node.name
 }
 
+interface ToolCallShare {
+  useStore: ToolTreeProps['useStore']
+  actions: ToolTreeProps['actions']
+}
+
 /** One atomic call dispatched through the Tool-owned keyed slot. */
 const ToolCall = memo(function ToolCall({
-  renderSlot, callId, toolName, block, openFile, selected, cwd, home, inspectCall, t, children,
-}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 't'> & {
-  callId: string
-  toolName: string
-  block: ToolCallBlock
-  selected: boolean
-  home?: string | undefined
-  children?: ReactNode
-}) {
+  renderSlot, callId, toolName, block, openFile, selected, cwd, home, inspectCall, t, useStore, actions, children,
+}: Pick<ToolTreeProps, 'renderSlot' | 'openFile' | 'cwd' | 'inspectCall' | 't'>
+  & ToolCallShare
+  & {
+    callId: string
+    toolName: string
+    block: ToolCallBlock
+    selected: boolean
+    home?: string | undefined
+    children?: ReactNode
+  }) {
+  // Detail-body expansion persists in the per-scope disclosure store, so a
+  // row the Chat virtualizer unmounted restores its state on remount.
+  const expanded = useStore(state => state.expandedCalls[callId] === true)
   const owner: ToolCallOwnerProps = useMemo(() => ({
     callId,
     toolName,
@@ -29,7 +39,9 @@ const ToolCall = memo(function ToolCall({
     cwd,
     home,
     inspect: () => { inspectCall(callId) },
-  }), [callId, toolName, block, openFile, cwd, home, inspectCall])
+    expanded,
+    onToggleExpanded: (next: boolean) => { actions.setCallExpanded(callId, next) },
+  }), [actions, block, callId, cwd, expanded, home, inspectCall, openFile, toolName])
   return (
     <div
       className={css.callRow}
@@ -47,11 +59,13 @@ const ToolCall = memo(function ToolCall({
 })
 
 const ToolCallBranch = memo(function ToolCallBranch({
-  renderSlot, block, selectedCallId, cwd, home, openFile, inspectCall, t,
-}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 't'> & {
-  block: ToolCallBlock
-  home?: string | undefined
-}) {
+  renderSlot, block, selectedCallId, cwd, home, openFile, inspectCall, t, useStore, actions,
+}: Pick<ToolTreeProps, 'renderSlot' | 'selectedCallId' | 'cwd' | 'openFile' | 'inspectCall' | 't'>
+  & ToolCallShare
+  & {
+    block: ToolCallBlock
+    home?: string | undefined
+  }) {
   return (
     <ToolCall
       renderSlot={renderSlot}
@@ -63,6 +77,8 @@ const ToolCallBranch = memo(function ToolCallBranch({
       cwd={cwd}
       home={home}
       inspectCall={inspectCall}
+      useStore={useStore}
+      actions={actions}
       t={t}
     >
       {block.subCalls.length > 0 ? (
@@ -77,6 +93,8 @@ const ToolCallBranch = memo(function ToolCallBranch({
               home={home}
               openFile={openFile}
               inspectCall={inspectCall}
+              useStore={useStore}
+              actions={actions}
               t={t}
             />
           ))}
@@ -89,11 +107,11 @@ const ToolCallBranch = memo(function ToolCallBranch({
 /**
  * Render one root Tool call and its recursive children through the same
  * atomic keyed dispatch.
- * @param props - whole-Tool owner data and the Tool-owned child-slot share.
+ * @param props - whole-Tool owner data, the Tool-owned child-slot share, and the disclosure store share.
  * @returns the Tool call tree.
  */
 export function ToolCallTree({
-  renderSlot, node, selectedCallId, cwd, openFile, inspectCall, useHostInfo, t,
+  renderSlot, node, selectedCallId, cwd, openFile, inspectCall, useHostInfo, useStore, actions, t,
 }: ToolTreeProps) {
   const home = useHostInfo(info => info.home)
   const block = node.data.root
@@ -106,6 +124,8 @@ export function ToolCallTree({
       home={home}
       openFile={openFile}
       inspectCall={inspectCall}
+      useStore={useStore}
+      actions={actions}
       t={t}
     />
   )

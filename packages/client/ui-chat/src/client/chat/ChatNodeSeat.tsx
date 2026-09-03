@@ -18,6 +18,12 @@ interface ChatNodeSeatProps extends ChatNodeOwnerProps {
   readonly actions: ChatViewSlotProps['actions']
   readonly renderSlot: ChatViewSlotProps['renderSlot']
   readonly t: ChatViewSlotProps['t']
+  /** TanStack measurement ref; present only on the virtualized render path. */
+  readonly measureRef?: ((node: HTMLDivElement | null) => void) | undefined
+  /** Virtual item index; TanStack's measureElement resolves rows by `data-index`. */
+  readonly dataIndex?: number | undefined
+  /** First flow row with no leading block above it: owns no leading gap. */
+  readonly firstRow?: boolean | undefined
 }
 
 type RoutedChatNodeOwner = {
@@ -39,6 +45,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
   selectedCallId, cwd, openFile, inspectCall, forkAt,
   renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
+  measureRef, dataIndex, firstRow,
 }: ChatNodeSeatProps) {
   const node = useChatNode(nodeKey)
   const routedNode = node as ChatNode | undefined
@@ -100,6 +107,12 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     if (processMember) setOpen(true)
   }, [processMember, setOpen])
   const wrapperRef = useSearchableHidden(processHidden, revealProcess)
+  // One callback ref feeds both the searchable-hidden subtree and the
+  // virtualizer's row measurement; the seat wrapper is the measured unit.
+  const setWrapperRef = useCallback((element: HTMLDivElement | null) => {
+    wrapperRef.current = element
+    measureRef?.(element)
+  }, [measureRef, wrapperRef])
   const owner = useMemo<ChatNodeOwnerProps | null>(() => node === undefined
     ? null
     : {
@@ -123,8 +136,10 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   const routedOwner = { ...owner, node: routedNode } as RoutedChatNodeOwner
   return (
     <div
-      ref={wrapperRef}
+      ref={setWrapperRef}
       className={css.flowItem}
+      data-index={dataIndex}
+      data-chat-flow-head={firstRow || undefined}
       data-chat-anchor-key={routedNode.key}
       data-chat-flow-key={routedNode.key}
       data-chat-flow-kind={routedNode.kind}

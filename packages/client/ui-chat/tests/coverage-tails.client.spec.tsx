@@ -6,6 +6,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
 import { zh } from '../src/client/locale.ts'
+import { disclosureShare } from './disclosure-store-fixture.client.ts'
 
 const t: AssistantMarkdownProps['t'] = makeTranslate(zh, commonZh)
 const renderMessageImages: AssistantMarkdownProps['renderMessageImages'] = () => null
@@ -17,6 +18,8 @@ describe('tails', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
+        {...disclosureShare()}
+        disclosureKey="fixture:t0:s0"
         blocks={[
           { kind: 'reasoning', text: 'thinking hard\nsecond line' },
           { kind: 'tool-call', callId: 'c', name: 'bash', argsRaw: '{}' },
@@ -32,6 +35,8 @@ describe('tails', () => {
     const stopped = render(
       <AssistantMarkdown
         t={t}
+        {...disclosureShare()}
+        disclosureKey="fixture:t0:s0"
         blocks={[{ kind: 'text', text: 'partial words' }]}
         streaming={false}
         interrupted
@@ -47,6 +52,8 @@ describe('tails', () => {
     const empty = render(
       <AssistantMarkdown
         t={t}
+        {...disclosureShare()}
+        disclosureKey="fixture:t0:s0"
         blocks={[{ kind: 'tool-call', callId: 'c', name: 'todo_write', argsRaw: '{}' }]}
         streaming={false}
         renderMessageImages={renderMessageImages}
@@ -54,7 +61,7 @@ describe('tails', () => {
     )
     expect(empty.container.firstChild).toBeNull()
     const blank = render(
-      <AssistantMarkdown t={t} blocks={[]} streaming={false} renderMessageImages={renderMessageImages} />,
+      <AssistantMarkdown t={t} blocks={[]} streaming={false} renderMessageImages={renderMessageImages} {...disclosureShare()} disclosureKey="fixture:t0:s0" />,
     )
     expect(blank.container.firstChild).toBeNull()
   })

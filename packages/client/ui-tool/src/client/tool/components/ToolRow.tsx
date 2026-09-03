@@ -65,6 +65,15 @@ export interface ToolRowProps {
    * over the expanded body. Absent = no affordance.
    */
   inspect?: (() => void) | undefined
+  /**
+   * Controlled expansion state persisted by the render site (the Tool
+   * disclosure store); absent keeps renderer-local state. Chat virtualization
+   * unmounts offscreen rows, so a controlled row restores the reader's
+   * expanded choice on remount.
+   */
+  expanded?: boolean | undefined
+  /** Publishes the next controlled expansion state. */
+  onExpandedChange?: ((expanded: boolean) => void) | undefined
 }
 
 function leadingFor(state: ToolRowState, icon: ReactNode): ReactNode {
@@ -109,8 +118,15 @@ export function ToolRow({
   filePath,
   onOpenFile,
   inspect,
+  expanded: controlledExpanded,
+  onExpandedChange,
 }: ToolRowProps) {
-  const [expanded, setExpanded] = useState(false)
+  const [localExpanded, setLocalExpanded] = useState(false)
+  const expanded = controlledExpanded ?? localExpanded
+  const toggleExpand = () => {
+    if (onExpandedChange !== undefined) onExpandedChange(!expanded)
+    else setLocalExpanded(value => !value)
+  }
   const terminalLabels = useMemo(() => terminalBlockLabels(t), [t])
   const diffLabels = useMemo(() => diffBlockLabels(t), [t])
   const readLabels = useMemo(() => readBlockLabels(t), [t])
@@ -146,9 +162,6 @@ export function ToolRow({
   }, [diffBody])
   const suffix = failureLine === null ? summarySuffix ?? diffStat : null
   const fileLink = filePath !== undefined && onOpenFile !== undefined && failureLine === null
-  const toggleExpand = () => {
-    setExpanded(v => !v)
-  }
   const openFile = (event: MouseEvent<HTMLButtonElement>) => {
     event.stopPropagation()
     if (filePath !== undefined) onOpenFile?.(filePath)

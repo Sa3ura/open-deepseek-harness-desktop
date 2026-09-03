@@ -19,12 +19,13 @@ import type {
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
-import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
+import type { KeyedSnapshotSelectorHook, PropsStore, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import { createChatStore } from '../src/client/stores.ts'
+import { createChatStore, createChatNodeStore } from '../src/client/stores.ts'
+import type { ChatNodeDisclosureStore } from '../src/client/contract/slots.ts'
 import { ChatView } from '../src/client/chat/ChatView.tsx'
 import { ChatNodeSeat } from '../src/client/chat/ChatNodeSeat.tsx'
 import { useTurnDataValue } from '../src/client/chat/use-turn-data.ts'
@@ -261,6 +262,8 @@ function makeHarness(
   const forkAt = vi.fn()
   // Rows and the harness must observe the same chat-store instance.
   const chat = createChatStore().create()
+  // Renderer-owned disclosure rows persist expansion outside the components.
+  const nodeDisclosures = createChatNodeStore().create()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
   const t = makeTranslate(zh, commonZh)
   const toolOwners: Array<{
@@ -288,8 +291,14 @@ function makeHarness(
     const turnData = opts?.hookContext as
       ConversationLocationDataStore<ConversationTurnDataMap> | undefined
     const useTurnData: UseChatNodeTurnData = dataKey => useTurnDataValue(turnData, dataKey)
-    const nodeProps = <Kind extends ChatNode['kind']>(): ChatNodeViewProps<Kind> => (
-      { ...props, ...nodeOwner, useTurnData } as unknown as ChatNodeViewProps<Kind>
+    const nodeProps = <Kind extends ChatNode['kind']>() => (
+      {
+        ...props,
+        ...nodeOwner,
+        useTurnData,
+        useStore: bindSnapshotSelector(nodeDisclosures),
+        actions: nodeDisclosures.actions,
+      } as unknown as ChatNodeViewProps<Kind> & PropsStore<ChatNodeDisclosureStore>
     )
     switch (nodeOwner.node.kind) {
       case 'user':

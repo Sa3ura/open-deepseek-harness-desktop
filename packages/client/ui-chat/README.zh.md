@@ -48,6 +48,8 @@ Chat 会为每个非空的初始或恢复请求、显式消息序列起点或真
 
 Chat 会在历史前插与 renderer 重新挂载时恢复语义锚点。读者跟随底部时，`ResizeObserver` 追随新的底部，并且无需读取行几何就选中最后一个已加载 Turn；读者离开底部后，高度变化会保持顶部位置，再由阅读线几何选择活跃 Turn。轮次导航预览位于 Markdown 代码块粘性头栏上方，而导航外框始终处于 composer 上方的 transcript 区域内（[已加载 Turn 导航](../../../.agents/notes/implemented/feature/2026-08-25-loaded-turn-chat-navigation.zh.md)）。
 
+已加载消息流超过虚拟化阈值（`use-chat-virtualizer.ts` 中的 `CHAT_VIRTUALIZATION_THRESHOLD`）后，Chat seat 列表改经 `@tanstack/react-virtual` 渲染：只有视口加上 overscan 环保持挂载，每个 seat 的边框盒（含其行首间距）即被测量的行。虚拟izer 只负责窗口化、测量与偏移计算——它从不写滚动位置。ChatView 仍是贴底跟随、读者滚动归属、前插锚点与会话恢复的唯一滚动权威；跳转目标在其行未挂载时从稳定节点 key 解析到虚拟偏移（[Chat 虚拟化](../../../.agents/notes/implemented/feature/2026-09-03-web-chat-virtualization.zh.md)）。
+
 -----
 
 <a id="model-experience"></a>
@@ -65,6 +67,7 @@ Chat 会在历史前插与 renderer 重新挂载时恢复语义锚点。读者�
 
 - **transcript 只反映已加载的 Session 窗口**——只有 Session Controller 加载前一页 event 后，更早的 transcript node 才会出现。轮次导航比窗口更宽：轨道把已加载的 Turn 与宿主 `turnOutline` 投影合并，每个已开始的 Turn 都有固定间距刻度（相隔 10px；阶梯高于外框时在框内滚动并以渐变淡出标示可滚方向），激活未加载刻度会先把历史分页拉到该 Turn 的 `turn/start` seq 再落到它的行上。没有该投影时（未挂载 `dsh-session-turn-outline` 的装配），轨道回退到仅显示已加载 Turn。
 - **导航预览按卡片尺寸截断**——提示词一行（50 字符）、回复至多三行（120 字符），已加载与未加载 Turn 一致；未加载 Turn 的回复要等该轮落定后才随大纲到达，进行中的轮次在此之前只预览提示词（或仅轮次号）。
+- **虚拟化行在视口外会离开 DOM**——已加载消息流超过虚拟化阈值后，视口加 overscan 窗口之外的 seat 会卸载。浏览器原生查找（Ctrl+F）与文本选区只覆盖已挂载窗口，不覆盖完整已加载 transcript。renderer 本地的 `<details>` 状态（重试行）随行卸载重置；展开类选择（系统提示词、上下文注入、命令卡、推理块、工具详情体）保存在会话作用域 store 中，卸载后恢复。
 
 
 <a id="dev-note"></a>

@@ -45,10 +45,42 @@
 
 /* `hidden="until-found"` retains a zero-height box so browser find can reveal
    its subtree. Direct Chat Node Seats and auxiliary rows share one flow;
-   hidden and empty Seats do not contribute spacing. */
-.column > :not([hidden]):not(.flowItem:empty)
+   hidden and empty Seats do not contribute spacing. The sibling gap applies
+   only on the plain (non-virtualized) path — the virtualized path moves the
+   gap inside each row so measured row sizes carry the spacing (see below). */
+.column:not([data-chat-flow-virtual]) > :not([hidden]):not(.flowItem:empty)
   ~ :not([hidden]):not(.flowItem:empty) {
   margin-top: var(--dsh-chat-flow-gap, 16px);
+}
+
+/* Virtualized flow: each row owns its leading gap as top padding, so the
+   measured border box (TanStack measureElement reads borderBoxSize) carries
+   exactly the spacing the sibling margin renders on the plain path. Rows'
+   and spacers' margins are suppressed — a margin here would double a gap the
+   measurement already counts. */
+.column[data-chat-flow-virtual] > .flowItem {
+  padding-top: var(--dsh-chat-flow-gap, 16px);
+}
+/* Row 0 with no leading block owns no leading gap: the plain path never
+   grants a margin to the first visible child. */
+.column[data-chat-flow-virtual] > .flowItem[data-chat-flow-head] {
+  padding-top: 0;
+}
+.column[data-chat-flow-virtual] > :not(.flowSpacer) ~ .flowItem {
+  margin-top: 0;
+}
+.column[data-chat-flow-virtual] > .flowSpacer {
+  margin-top: 0;
+}
+
+/* Leading hint/error/load-older block on the virtual path: measured as one
+   head and published as the virtualizer's scrollMargin. */
+.flowHead:empty {
+  display: none;
+}
+
+.flowSpacer {
+  flex: none;
 }
 
 /* Settled-flow identity boundary. It is neutral until it becomes the natural

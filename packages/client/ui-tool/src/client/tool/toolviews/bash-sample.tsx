@@ -39,7 +39,9 @@ function stateStatus(state: ToolRowState, t: BashRowProps['t']): string | null {
 }
 
 /** Renders expandable Bash output with an accessible lifecycle label. */
-export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }: BashRowProps) {
+export function BashRow({
+  toolName, block, sessionId, useSessions, inspect, expanded: controlledExpanded, onToggleExpanded, t,
+}: BashRowProps) {
   const model = toolRowModel(toolName, block)
   // An omitted shell workdir is the session workspace; relative values resolve
   // against it before reaching the terminal primitive.
@@ -52,7 +54,12 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
     ? 'error'
     : model.state
   const status = stateStatus(state, t)
-  const [expanded, setExpanded] = useState(false)
+  const [localExpanded, setLocalExpanded] = useState(false)
+  const expanded = controlledExpanded ?? localExpanded
+  const toggleExpand = () => {
+    if (onToggleExpanded !== undefined) onToggleExpanded(!expanded)
+    else setLocalExpanded(value => !value)
+  }
   // Execution failures and persistent-shell results have no terminal card.
   // Keep their recorded args and complete output reachable through the generic
   // body; background acknowledgements and malformed calls remain collapsed.
@@ -68,9 +75,6 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
     [genericBody, model.bodyRaw, model.variant, open],
   )
   const failureLine = model.state === 'error' ? model.errorSummary : null
-  const toggleExpand = () => {
-    setExpanded(v => !v)
-  }
   const toggleFromKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!expandable || (event.key !== 'Enter' && event.key !== ' ')) return
     event.preventDefault()

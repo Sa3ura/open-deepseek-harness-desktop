@@ -8,10 +8,12 @@ import type {
 import type { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
+import type { ChatNode } from '../contract/chat-nodes.ts'
 import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
+import { useChatVirtualizer, useFlowHeadHeight } from './use-chat-virtualizer.ts'
 import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
@@ -68,6 +70,12 @@ function turnAtLine(list: HTMLElement, line: number): number | null {
 /** Row position in scrollport coordinates (viewport-independent). */
 function flowTop(row: HTMLElement, scrollport: HTMLElement): number {
   return row.getBoundingClientRect().top - scrollport.getBoundingClientRect().top
+}
+
+/** Turn owning one Chat node, resolved off its engine-owned Location. */
+function turnOfNode(node: ChatNode | undefined): number | undefined {
+  const location = node?.location
+  return location?.kind === 'turn' || location?.kind === 'step' ? location.turn.turn : undefined
 }
 
 /** Select a visible stable node/call identity, falling back only when layout
@@ -304,6 +312,19 @@ export function ChatView({
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
+  const getScrollElement = useCallback((): HTMLDivElement | null => {
+    const local = listRef.current
+    // Both scroll owners — the shell's `[data-conversation-scroll]` body and
+    // this view's local `.scroll` fallback — are divs.
+    return local === null ? null : scrollerOf(local) as HTMLDivElement
+  }, [])
+  const flowHead = useFlowHeadHeight()
+  const virtual = useChatVirtualizer(order, getScrollElement, flowHead.height)
+  // Whether a leading block (hint / error / load-older) renders above row 0;
+  // row 0 owns no leading gap only when this is false.
+  const hasFlowHead = openState === 'loading'
+    || (openState === 'error' && openError !== null)
+    || hasMore
   // A saved position starts disarmed; the first layout effect synchronously
   // restores it and normalizes a floor-clamped position back to following.
   const [atBottom, setAtBottom] = useState(() => chatScroll.read() === null)
@@ -363,16 +384,27 @@ export function ChatView({
     const reading = turnAtLine(local, readingLine)
     // No row reaches the line yet: the flow head still owns the mark. Otherwise
     // the row's Turn may be one the rail does not offer (all its nodes hidden),
-    // so the newest offered Turn at or above it owns the mark.
+    // so the newest offered Turn at or above it owns the mark. Virtualized
+    // windows resolve a line that only spacer or gap boxes cover through the
+    // row offsets instead of the mounted-row scan.
     let next = first.turn
-    if (reading !== null) {
+    let readingTurn: number | null = reading
+    if (readingTurn === null && virtual.enabled) {
+      const lineOffset = readingLine - el.getBoundingClientRect().top + el.scrollTop
+      const index = virtual.indexAtOffset(lineOffset)
+      const key = index === null ? undefined : order[index]
+      readingTurn = key === undefined
+        ? null
+        : turnOfNode(nodeStore.get(key) as ChatNode | undefined) ?? null
+    }
+    if (readingTurn !== null) {
       for (const item of turnNavigationItems) {
-        if (item.turn > reading) break
+        if (item.turn > readingTurn) break
         next = item.turn
       }
     }
     setActiveTurn(current => current === next ? current : next)
-  }, [turnNavigationItems])
+  }, [turnNavigationItems, virtual.enabled, virtual.indexAtOffset, order, nodeStore])
 
   const activeTurnRef = useRef<(() => void) | null>(null)
   const activeFrameRef = useRef<number | null>(null)
@@ -413,13 +445,25 @@ export function ChatView({
     setActiveTurn(turnNavigationItems.at(-1)?.turn ?? null)
   }
 
-  // Land a row at the reading line and republish scroll-derived state. A
-  // latest-ref, so navigateToTurn's identity stays stable for the memoized rail.
-  const landOnRowRef = useRef<(local: HTMLElement, el: HTMLElement, row: HTMLElement, turn: number) => void>(
+  /**
+   * Land one row — addressed by its stable node key — at the reading line and
+   * republish scroll-derived state. A mounted row corrects from its real
+   * rectangle; a virtualized offscreen row lands on its virtual offset and is
+   * geometry-corrected once it measures. A latest-ref, so navigateToTurn's
+   * identity stays stable for the memoized rail.
+   */
+  const landOnRowRef = useRef<(local: HTMLElement, el: HTMLElement, key: string, turn: number) => void>(
     () => {},
   )
-  landOnRowRef.current = (local, el, row, turn) => {
-    el.scrollTop += flowTop(row, el) - 24
+  landOnRowRef.current = (local, el, key, turn) => {
+    const row = anchorElement(local, key)
+    if (row !== null) {
+      el.scrollTop += flowTop(row, el) - 24
+    } else {
+      const offset = virtual.offsetOfKey(key)
+      if (offset === null) return
+      el.scrollTop = Math.max(0, offset - 24)
+    }
     observedTopRef.current = el.scrollTop
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
     atBottomRef.current = isAtBottom
@@ -442,8 +486,11 @@ export function ChatView({
     if (pending === null) return true
     const item = railItems.find(candidate => candidate.turn === pending.turn)
     if (item === undefined || item.anchor.kind !== 'loaded') return false
-    const row = anchorElement(local, item.anchor.key)
-    if (row === null) return false
+    // A loaded anchor is landable through its virtual offset even while its
+    // row is unmounted; keep waiting only when the key resolves to neither.
+    if (virtual.offsetOfKey(item.anchor.key) === null && anchorElement(local, item.anchor.key) === null) {
+      return false
+    }
     if (settle) {
       pendingJumpRef.current = null
       setBusyJumpTurn(null)
@@ -454,13 +501,15 @@ export function ChatView({
       // A reader who moved off an already-landed target mid-jump keeps their
       // place; a first landing, or an untouched one, takes the correction.
       if (!landedEarlier || held?.key === item.anchor.key) {
-        landOnRowRef.current(local, el, row, pending.turn)
+        landOnRowRef.current(local, el, item.anchor.key, pending.turn)
       }
       return true
     }
-    landOnRowRef.current(local, el, row, pending.turn)
+    landOnRowRef.current(local, el, item.anchor.key, pending.turn)
     jumpLandedRef.current = true
-    anchorRef.current = { key: item.anchor.key, top: flowTop(row, el) }
+    // landOnRow seats the row 24px below the scrollport top; the held anchor
+    // records that constructed position until the reader scrolls.
+    anchorRef.current = { key: item.anchor.key, top: 24 }
     return true
   }
 
@@ -503,13 +552,25 @@ export function ChatView({
     if (anchorRef.current !== null && firstSeq !== null && firstSeqRef.current !== null && firstSeq < firstSeqRef.current) {
       const anchor = anchorRef.current
       anchorRef.current = null
-      const row = anchorElement(local, anchor.key)
-      if (row !== null) el.scrollTop += flowTop(row, el) - anchor.top
+      // Virtual path: row offsets are self-consistent across the prepend
+      // (TanStack keys measured sizes by node key and does not compensate
+      // count growth), so scrolling straight to the anchor's new offset minus
+      // its pre-prepend viewport top re-seats the same row. This write is the
+      // sole prepend correction; no virtualizer adjustment runs beside it.
+      const virtualOffset = virtual.offsetOfKey(anchor.key)
+      const row = virtualOffset === null ? anchorElement(local, anchor.key) : null
+      if (virtualOffset !== null) {
+        el.scrollTop = Math.max(0, virtualOffset - anchor.top)
+      } else if (row !== null) {
+        el.scrollTop += flowTop(row, el) - anchor.top
+      }
       observedTopRef.current = el.scrollTop
       // A jump chunk lands here: scroll to the target once its rows exist;
-      // until then keep holding the reader's row for the next chunk.
-      if (!realizePendingJump(local, el, false) && row !== null) {
-        anchorRef.current = { key: anchor.key, top: flowTop(row, el) }
+      // until then keep holding the reader's row for the next chunk. The
+      // re-armed top is the anchor's post-correction viewport position.
+      const held = virtualOffset !== null || row !== null
+      if (!realizePendingJump(local, el, false) && held) {
+        anchorRef.current = { key: anchor.key, top: anchor.top }
       }
       firstSeqRef.current = firstSeq
       /* v8 ignore next -- ?? arm: a prepend adds nodes, so the flow list here is never empty. */
@@ -681,7 +742,10 @@ export function ChatView({
     for (const row of local.querySelectorAll<HTMLElement>('[data-chat-turn]:not([hidden])')) {
       const turn = Number(row.dataset.chatTurn)
       if (!Number.isSafeInteger(turn) || turn < pending.turn) continue
-      landOnRowRef.current(local, el, row, turn)
+      // The queried row carries its stable anchor key; landOnRow corrects from
+      // its real rectangle (or its virtual offset when the key resolves only
+      // there).
+      landOnRowRef.current(local, el, row.dataset.chatAnchorKey ?? '', turn)
       break
     }
     pendingJumpRef.current = null
@@ -736,12 +800,12 @@ export function ChatView({
       void loadThrough(item.anchor.seq).finally(() => { setJumpSettleTick(tick => tick + 1) })
       return
     }
-    const row = anchorElement(local, item.anchor.key)
-    if (row === null) return
     // A loaded-mark click supersedes any jump still landing.
     pendingJumpRef.current = null
     setBusyJumpTurn(current => current === null ? current : null)
-    landOnRowRef.current(local, el, row, item.turn)
+    // landOnRow resolves the key through its mounted row, falling back to the
+    // row's virtual offset while that row sits outside the virtual window.
+    landOnRowRef.current(local, el, item.anchor.key, item.turn)
     // A pending older page still has to compensate the prepended height, so
     // navigation moves that anchor to the new position instead of dropping it.
     const landed = loadingOlder ? pagingAnchor(local, el) : null
@@ -749,6 +813,55 @@ export function ChatView({
       ? null
       : { key: landed.dataset.chatAnchorKey, top: flowTop(landed, el) }
   }, [loadingOlder, loadThrough])
+
+  // Leading blocks (hint / error / load-older) share the rows' spacing model:
+  // on the virtual path they sit inside one measured flow head so the
+  // virtualizer's scrollMargin matches the real space above row 0.
+  const leading = (
+    <>
+      {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
+      {openState === 'error' && openError !== null && (
+        <div className={css.openError}>
+          {t('chat.loadError', { message: openError.message, code: openError.code })}
+        </div>
+      )}
+      {hasMore && (
+        <div className={css.older}>
+          <button type="button" disabled={loadingOlder} onClick={loadOlderAnchored}>
+            {loadingOlder ? t('loading') : t('chat.loadOlder')}
+          </button>
+        </div>
+      )}
+    </>
+  )
+  const seatProps = {
+    useChatNode,
+    useChatNodeProcess,
+    historyIncomplete: hasMore,
+    compactTranscript,
+    useStore,
+    actions,
+    selectedCallId,
+    cwd,
+    openFile: requestOpenFile,
+    inspectCall,
+    forkAt,
+    renderMessageImages,
+    fileMentions,
+    renderSlot,
+    t,
+  }
+  // Spacer heights mirror the trajectory ledger's proven formula: item starts
+  // already carry the scroll margin, so the top spacer is the range's distance
+  // past the flow head and the bottom spacer the remainder of the flow.
+  const firstItem = virtual.items[0]
+  const topSpacer = virtual.enabled && firstItem !== undefined
+    ? Math.max(0, firstItem.start - flowHead.height)
+    : 0
+  const lastItem = virtual.items.at(-1)
+  const bottomSpacer = virtual.enabled && lastItem !== undefined
+    ? Math.max(0, virtual.totalSize + flowHead.height - lastItem.end)
+    : 0
 
   return (
     <div className={css.root}>
@@ -760,38 +873,43 @@ export function ChatView({
           onNavigate={navigateToTurn}
           t={t}
         />
-        <div ref={columnRef} className={css.column} data-chat-flow="">
-          {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
-          {openState === 'error' && openError !== null && (
-            <div className={css.openError}>
-              {t('chat.loadError', { message: openError.message, code: openError.code })}
-            </div>
+        <div
+          ref={columnRef}
+          className={css.column}
+          data-chat-flow=""
+          // Browser-contract probe (mirrors the trajectory ledger's
+          // aria-rowcount): mounted `[data-chat-flow-key]` rows must stay
+          // bounded against this logical count.
+          data-chat-logical-count={order.length}
+          data-chat-flow-virtual={virtual.enabled || undefined}
+        >
+          {virtual.enabled ? <div className={css.flowHead} ref={flowHead.ref}>{leading}</div> : leading}
+          {topSpacer > 0 && (
+            <div
+              className={css.flowSpacer}
+              data-chat-flow-spacer="top"
+              style={{ height: topSpacer }}
+              aria-hidden="true"
+            />
           )}
-          {hasMore && (
-            <div className={css.older}>
-              <button type="button" disabled={loadingOlder} onClick={loadOlderAnchored}>
-                {loadingOlder ? t('loading') : t('chat.loadOlder')}
-              </button>
-            </div>
+          {virtual.enabled ? virtual.items.map(item => (
+            <ChatNodeSeat
+              key={item.key}
+              nodeKey={String(item.key)}
+              dataIndex={item.index}
+              firstRow={item.index === 0 && !hasFlowHead}
+              measureRef={virtual.measureElement}
+              {...seatProps}
+            />
+          )) : <ChatNodeList order={order} {...seatProps} />}
+          {bottomSpacer > 0 && (
+            <div
+              className={css.flowSpacer}
+              data-chat-flow-spacer="bottom"
+              style={{ height: bottomSpacer }}
+              aria-hidden="true"
+            />
           )}
-          <ChatNodeList
-            order={order}
-            useChatNode={useChatNode}
-            useChatNodeProcess={useChatNodeProcess}
-            historyIncomplete={hasMore}
-            compactTranscript={compactTranscript}
-            useStore={useStore}
-            actions={actions}
-            selectedCallId={selectedCallId}
-            cwd={cwd}
-            openFile={requestOpenFile}
-            inspectCall={inspectCall}
-            forkAt={forkAt}
-            renderMessageImages={renderMessageImages}
-            fileMentions={fileMentions}
-            renderSlot={renderSlot}
-            t={t}
-          />
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}

@@ -12,7 +12,7 @@ type ReadRowProps = ToolCallViewProps & PropsLocale<'conversation'>
 /**
  * Lets users expand a completed read result and open its reported path.
  */
-export function ReadRow({ toolName, block, cwd, home, openFile, inspect, t }: ReadRowProps) {
+export function ReadRow({ toolName, block, cwd, home, openFile, inspect, expanded, onToggleExpanded, t }: ReadRowProps) {
   const model = toolRowModel(toolName, block, cwd, home)
   const read = readCardModel(block, cwd, home)
   return (
@@ -30,6 +30,8 @@ export function ReadRow({ toolName, block, cwd, home, openFile, inspect, t }: Re
       filePath={model.filePath}
       onOpenFile={openFile}
       inspect={inspect}
+      expanded={expanded}
+      onExpandedChange={onToggleExpanded}
     />
   )
 }

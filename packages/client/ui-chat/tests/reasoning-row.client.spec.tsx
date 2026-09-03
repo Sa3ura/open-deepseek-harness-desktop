@@ -5,6 +5,7 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { zh } from '../src/client/locale.ts'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
+import { disclosureShare } from './disclosure-store-fixture.client.ts'
 
 afterEach(() => {
   cleanup()
@@ -21,6 +22,8 @@ describe('ReasoningRow', () => {
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens' }]}
         streaming
         renderMessageImages={renderMessageImages}
+        {...disclosureShare()}
+        disclosureKey="assistant-step:t1:s0"
       />,
     )
     expect(view.getByText('运行中')).toBeTruthy()
@@ -33,6 +36,8 @@ describe('ReasoningRow', () => {
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving' }]}
         streaming
         renderMessageImages={renderMessageImages}
+        {...disclosureShare()}
+        disclosureKey="assistant-step:t1:s0"
       />,
     )
     expect(view.getByText('Newest reasoning tokens keep arriving').parentElement
@@ -44,6 +49,8 @@ describe('ReasoningRow', () => {
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nNewest reasoning tokens keep arriving\n' }]}
         streaming={false}
         renderMessageImages={renderMessageImages}
+        {...disclosureShare()}
+        disclosureKey="assistant-step:t1:s0"
       />,
     )
     const settledSummary = view.getByText('Inspect the session')
@@ -58,6 +65,8 @@ describe('ReasoningRow', () => {
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nCheck persistence' }]}
         streaming={false}
         renderMessageImages={renderMessageImages}
+        {...disclosureShare()}
+        disclosureKey="assistant-step:t1:s0"
       />,
     )
     const row = view.getByRole('button')
@@ -77,6 +86,8 @@ describe('ReasoningRow', () => {
         blocks={[{ kind: 'reasoning', text: 'Inspect the session\nCheck persistence' }]}
         streaming={false}
         renderMessageImages={renderMessageImages}
+        {...disclosureShare()}
+        disclosureKey="assistant-step:t1:s0"
       />,
     )
     fireEvent.click(view.getByText('思考'))
@@ -84,5 +95,26 @@ describe('ReasoningRow', () => {
     expect(view.queryByText('IN')).toBeNull()
     expect(view.container.querySelector('[class*="ioCard"]')).toBeNull()
     expect(view.container.querySelector('[class*="thinkBody"]')).not.toBeNull()
+  })
+
+  it('keeps the expanded choice across an unmount and remount of the row', () => {
+    const share = disclosureShare()
+    const props = {
+      t,
+      blocks: [{ kind: 'reasoning', text: 'Inspect the session\nCheck persistence' }] as const,
+      streaming: false,
+      renderMessageImages,
+      ...share,
+      disclosureKey: 'assistant-step:t1:s0',
+    }
+    const first = render(<AssistantMarkdown {...props} />)
+    fireEvent.click(first.getByText('思考'))
+    expect(first.getByRole('button').getAttribute('aria-expanded')).toBe('true')
+    first.unmount()
+
+    // The virtualized row remounts with the same node key and store scope.
+    const second = render(<AssistantMarkdown {...props} />)
+    expect(second.getByRole('button').getAttribute('aria-expanded')).toBe('true')
+    expect(second.getByText(/Check persistence/)).toBeTruthy()
   })
 })

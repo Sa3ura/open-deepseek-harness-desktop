@@ -1,16 +1,18 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type MutableRefObject } from 'react'
 
 /**
  * Apply searchable hidden state without unmounting a stable subtree.
  * @param hidden - whether the subtree is currently hidden.
  * @param reveal - callback for browser find's `beforematch` reveal.
- * @returns ref for the stable subtree root.
+ * @returns ref for the stable subtree root; callers may share it with a
+ *   combined callback ref (the Chat Node Seat also feeds the element to the
+ *   virtualizer's measurement).
  */
 export function useSearchableHidden(
   hidden: boolean,
   reveal: () => void,
-): RefObject<HTMLDivElement> {
-  const ref = useRef<HTMLDivElement>(null)
+): MutableRefObject<HTMLDivElement | null> {
+  const ref = useRef<HTMLDivElement | null>(null)
   useLayoutEffect(() => {
     const element = ref.current
     if (element === null) return

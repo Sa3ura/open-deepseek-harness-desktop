@@ -8,6 +8,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import type { RenderMessageImages } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { AssistantMarkdown } from '../src/client/chat/AssistantMarkdown.tsx'
 import { zh } from '../src/client/locale.ts'
+import { disclosureShare } from './disclosure-store-fixture.client.ts'
 
 afterEach(cleanup)
 
@@ -45,6 +46,8 @@ describe('assistant image slot handoff', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
+        {...disclosureShare()}
+        disclosureKey="fixture:t0:s0"
         blocks={[{ kind: 'image', attachment }]}
         streaming={false}
         renderMessageImages={imageRenderer(calls)}
@@ -60,6 +63,8 @@ describe('assistant image slot handoff', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
+        {...disclosureShare()}
+        disclosureKey="fixture:t0:s0"
         blocks={[
           { kind: 'image', attachment },
           { kind: 'image', attachment },
@@ -81,6 +86,8 @@ describe('assistant image slot handoff', () => {
     const view = render(
       <AssistantMarkdown
         t={t}
+        {...disclosureShare()}
+        disclosureKey="fixture:t0:s0"
         blocks={[
           { kind: 'text', text: 'before' },
           { kind: 'image', attachment },
