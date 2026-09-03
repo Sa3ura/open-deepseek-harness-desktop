@@ -1,0 +1,101 @@
+# Temporary Phase 1 acceptance lane: the `perf/chat-virtualization` branch's
+# Linux browser behavior runs on a standard hosted runner because the required
+# `node-24-consumers` pool (`dsh-ubuntu-24-04-16core`) is unavailable on this
+# fork. It reproduces the web browser segment of that job — same Node, pnpm,
+# bubblewrap, and Playwright setup, `DSH_SNAPSHOT=replay`, no API key — and
+# stays dispatch-only so it never gates anything. Remove after acceptance.
+name: Web E2E validation (temporary)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PRIMARY_NODE_VERSION: '24'
+  # CI runs must never report to the production telemetry endpoint baked
+  # into apps/cli/cordis.yml (AppCLIEntry disables the row when set).
+  DSH_TELEMETRY_DISABLED: '1'
+
+concurrency:
+  group: web-e2e-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web-e2e-validation:
+    name: Phase 1 Linux web e2e acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          dest: ${{ runner.temp }}/setup-pnpm-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.PRIMARY_NODE_VERSION }}
+
+      - name: Configure pnpm store path
+        id: pnpm-store
+        run: |
+          store_root="$HOME/.local/share/pnpm/store"
+          echo "PNPM_CONFIG_STORE_DIR=$store_root" >> "$GITHUB_ENV"
+          store_path=$(PNPM_CONFIG_STORE_DIR="$store_root" pnpm store path --silent)
+          echo "path=$store_path" >> "$GITHUB_OUTPUT"
+
+      # Fork-local cache namespace: the archived keys the consumers job
+      # restores are managed by upstream, so this lane saves under its own
+      # prefix instead of joining that namespace.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: web-e2e-validation-${{ runner.os }}-node-24-pnpm-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            web-e2e-validation-${{ runner.os }}-node-24-pnpm-
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: web-e2e-validation-${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            web-e2e-validation-${{ runner.os }}-playwright-
+
+      - name: Install dependencies and prepare bubblewrap
+        run: |
+          pnpm install --frozen-lockfile &
+          install_pid=$!
+          bash scripts/prepare-ci-bubblewrap.sh &
+          sandbox_pid=$!
+          install_status=0
+          wait "$install_pid" || install_status=$?
+          sandbox_status=0
+          wait "$sandbox_pid" || sandbox_status=$?
+          if (( install_status != 0 )); then exit "$install_status"; fi
+          exit "$sandbox_status"
+
+      - name: Install Playwright Chromium and hosted dependencies
+        run: pnpm --filter @deepseek-ai/dsh-web-frontend exec playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Focused Phase 1 browser tests
+        env:
+          DSH_SNAPSHOT: replay
+        run: >-
+          pnpm exec vitest run --config vitest.web.config.ts
+          apps/web/tests/chat-virtualization.e2e.ts
+          apps/web/tests/chat-scroll-contract.e2e.ts
+          apps/web/tests/trajectory-virtualization.e2e.ts
+
+      # Repo default mode: the config's fileParallelism: false keeps every
+      # browser file serial, which suits the hosted runner's 4 vCPUs.
+      - name: Full web e2e suite
+        env:
+          DSH_SNAPSHOT: replay
+        run: pnpm run test:web:built
