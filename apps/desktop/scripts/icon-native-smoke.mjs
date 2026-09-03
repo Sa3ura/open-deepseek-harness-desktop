@@ -20,6 +20,13 @@ async function run() {
     const defaultBitmap = defaultApplication.toBitmap()
     const alphaAt = (x, y) => defaultBitmap[(y * defaultSize.width + x) * 4 + 3]
     const center = Math.floor(defaultSize.width / 2)
+    const opaqueXs = []
+    for (let x = 0; x < defaultSize.width; x++) {
+      if (alphaAt(x, center) >= 128) opaqueXs.push(x)
+    }
+    // A 984px optical viewport expands the supplied 851px body to about 886px.
+    const bodyWidth = opaqueXs.at(-1) - opaqueXs[0] + 1
+    assert.ok(bodyWidth >= 884 && bodyWidth <= 888, `default Dock body width: ${bodyWidth}`)
     assert.equal(alphaAt(center, 0), 0)
     assert.equal(alphaAt(center, Math.floor(defaultSize.height * 0.05)), 0)
     // The shipped artwork includes slightly translucent pixels inside its background.
