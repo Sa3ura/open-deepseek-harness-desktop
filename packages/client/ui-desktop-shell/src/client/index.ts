@@ -8,6 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { DesktopPreferencesRow } from './DesktopPreferencesRow.tsx'
 import { readDesktopBridge } from './bridge.ts'
 import { DesktopShellController } from './controller.ts'
+import { navigateDesktopMenu } from './menu-navigation.ts'
 import { en, zh, type DesktopShellKey } from './locales.ts'
 
 export type { DesktopShellKey } from './locales.ts'
@@ -38,6 +39,30 @@ export function apply(ctx: Context): void {
   }, 'ui-desktop-shell: readiness reporting')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-desktop-shell: dictionaries')
   const controller = new DesktopShellController(bridge)
+  const menu = bridge.menu
+  if (menu !== undefined) ctx.inject(['settingsNavigation', 'uiWorkspace'], (inner) => {
+    inner.effect(() => {
+      const report = (): void => { menu.reportState({
+        ready: connection.state.getSnapshot() === 'connected', locale: inner.locale.getSnapshot().active,
+      }) }
+      const removeCommand = menu.onCommand((command) => {
+        navigateDesktopMenu(command, {
+          startSession: () => { (inner.get('uiWorkspace') as unknown as { startSession(): void }).startSession() },
+          open: (request) => { inner.settingsNavigation.open(request) },
+          hasSection: id => inner.slots.entries('settings.section').some(entry => entry.options.id === id),
+          general: (destination) => { controller.navigate(destination) },
+          unavailable: () => inner.locale.bind(NS)('menu.unavailable'),
+        })
+      })
+      const removeState = connection.state.subscribe(report)
+      const removeLocale = inner.locale.subscribe(report)
+      report()
+      return () => {
+        removeCommand(); removeState(); removeLocale()
+        menu.reportState({ ready: false, locale: inner.locale.getSnapshot().active })
+      }
+    }, 'ui-desktop-shell: native menu navigation')
+  })
   ctx.effect(() => {
     controller.start()
     return () => { controller.dispose() }

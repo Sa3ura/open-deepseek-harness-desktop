@@ -18,6 +18,17 @@ pnpm run dev:desktop
 
 应用提供与 `dsh web` 相同的引导和设置界面。用户无需维护第二份配置，即可配置 DeepSeek 或其他兼容 API Provider、选择模型、查看已安装插件、编辑受支持的插件设置、调用 Skill、选择工作区并管理会话。
 
+<a id="application-menus"></a>
+## 应用菜单
+
+应用菜单提供新对话、设置、插件管理与恢复、诊断、快照、外部工具、手机访问、IM 机器人、数据目录切换、更新、日志和项目帮助。“新对话”复用现有工作区流程，不发送消息。插件页面缺失时给出说明，不会自动安装插件。“检查更新”打开通用设置，不退出应用或安装更新。
+
+macOS 使用名为 Open DSH Desktop 的系统原生菜单。Windows 与 Linux 在独立的 36 px 标题栏中显示横向菜单、应用图标、可拖动标题和窗口按钮。窄窗口会把菜单收进“更多”。原生弹出菜单可以超出顶栏高度，但不在 Harness 内部覆盖插件。编辑操作保留原始文本目标；缩放只影响 Harness。菜单文案跟随客户端语言，缺失语言回退为英文。开发者工具只在源码运行时提供。
+
+“快速重启”和“完整退出”需要等待进行中的插件修改及恢复完成。普通关闭保留用户的隐藏或退出偏好。托盘创建失败时，后台启动会显示窗口，“隐藏到托盘”会提供取消或完整退出，避免窗口无法访问。Linux 不会从托盘对象创建成功推断图标实际可见，设置中会说明其对桌面环境的依赖。Linux 更新操作保留现有 Release 页面回退，不宣称支持安装 DEB/RPM。
+
+macOS 开发启动器会在 `.artifacts/desktop-dev/` 中按版本创建 ad-hoc 签名的 Open DSH Desktop.app，不修改共享 Electron 安装、Bundle 标识、数据位置或已保存的自定义图标。macOS 安装版通过 Bundle 元数据使用相同菜单显示名。实现与平台验证限制记录在[应用菜单决策](../../.agents/notes/implemented/feature/2026-09-03-desktop-application-menus.zh.md)中。
+
 ## 独立数据目录与导入
 
 安装版使用平台应用数据根下的 `open-deepseek-harness-desktop/dsh-home`，源码开发版使用其中的 `development/dsh-home`。两者的 Electron 偏好、浏览器会话数据、日志、解压运行时和 Harness 状态彼此独立，也不再与官方 CLI 共用。自动化和高级启动显式设置的 `DSH_HOME` 仍具有最高优先级。

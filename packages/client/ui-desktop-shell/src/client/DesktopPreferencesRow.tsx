@@ -1,6 +1,6 @@
 /** General Settings rows owned by the Electron desktop shell feature. */
 
-import { useCallback, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { Button, IconChevronDownOutline14, Menu, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
@@ -51,6 +51,15 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
   const [dataHomeOpen, setDataHomeOpen] = useState(false)
   const [dataHomeTarget, setDataHomeTarget] = useState<'desktop' | 'official' | 'custom' | 'create'>('desktop')
   const preferences = state.preferences
+  const updateRow = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (state.preferences === null || state.capabilities === null || state.menuDestination === undefined) return
+    if (state.menuDestination === 'data-home') {
+      setDataHomeTarget(state.dataHome?.activeKind === 'official' ? 'official' : 'desktop')
+      setDataHomeOpen(true)
+    } else updateRow.current?.scrollIntoView({ block: 'center' })
+    controller.navigate()
+  }, [controller, state.preferences, state.capabilities, state.menuDestination, state.dataHome])
   if (preferences === null || state.capabilities === null) return null
   const release = state.release
   const releaseDownload = state.releaseDownload
@@ -116,6 +125,7 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
         <div className={css.text}>
           <div className={css.title}>{t('close.title')}</div>
           <div className={css.description}>{t('close.description')}</div>
+          {state.capabilities.platform === 'linux' && <div className={css.description}>{t('close.linux')}</div>}
         </div>
         <Menu
           open={menuOpen}
@@ -233,7 +243,7 @@ export function DesktopPreferencesRow({ controller, icons, t }: DesktopPreferenc
       </div>
       <div className={css.row}>
         <div className={css.text}>
-          <div className={css.title}>{t('release.title')}</div>
+          <div ref={updateRow} className={css.title}>{t('release.title')}</div>
           <div className={release.phase === 'error' ? css.error : css.description}>{releaseText}</div>
           {release.phase === 'available'
             && state.capabilities.platform === 'darwin'

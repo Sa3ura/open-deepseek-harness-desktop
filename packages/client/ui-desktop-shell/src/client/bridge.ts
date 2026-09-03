@@ -124,6 +124,10 @@ export interface DesktopReleasesBridge {
 
 /** Complete Electron-only browser bridge consumed by this plugin. */
 export interface DesktopBridge {
+  menu?: {
+    reportState(state: { ready: boolean; locale: string }): void
+    onCommand(callback: (command: string) => void | Promise<void>): () => void
+  }
   shell: DesktopShellBridge
   releases: DesktopReleasesBridge
   icons?: DesktopIconsBridge
@@ -139,8 +143,11 @@ export function readDesktopBridge(): DesktopBridge | null {
     shell?: DesktopShellBridge
     releases?: DesktopReleasesBridge
     icons?: DesktopIconsBridge
+    menu?: DesktopBridge['menu']
   } | undefined
   return candidate?.shell === undefined || candidate.releases === undefined
     ? null
-    : { shell: candidate.shell, releases: candidate.releases, ...(candidate.icons === undefined ? {} : { icons: candidate.icons }) }
+    : { shell: candidate.shell, releases: candidate.releases,
+      ...(candidate.menu === undefined ? {} : { menu: candidate.menu }),
+      ...(candidate.icons === undefined ? {} : { icons: candidate.icons }) }
 }

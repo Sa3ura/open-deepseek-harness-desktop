@@ -8,6 +8,7 @@ import type {
 
 /** Immutable renderer state shared by the desktop settings and footer action. */
 export interface DesktopShellSnapshot {
+  menuDestination?: 'data-home' | 'updates' | undefined
   capabilities: DesktopCapabilities | null
   preferences: DesktopPreferences | null
   release: DesktopReleaseStatus
@@ -38,6 +39,11 @@ export class DesktopShellController {
   #disposers: (() => void)[] = []
 
   constructor(readonly bridge: DesktopBridge) {}
+
+  /** Queue or consume a native-menu destination after General Settings mounts.
+   * @param destination - Existing panel to reveal, or undefined to consume the request.
+   */
+  navigate(destination?: 'data-home' | 'updates'): void { this.#publish({ menuDestination: destination }) }
 
   /** Read the current immutable desktop state.
    * @returns the current snapshot.

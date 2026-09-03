@@ -18,6 +18,17 @@ The desktop `dev` command watches the shell sources, rebuilds after a short debo
 
 The app opens the same onboarding and settings surfaces as `dsh web`. Users can configure DeepSeek or another compatible API provider, choose models, inspect installed plugins, edit supported plugin settings, invoke Skills, select workspaces, and manage sessions without a second configuration store.
 
+<a id="application-menus"></a>
+## Application menus
+
+The application menu provides New Conversation, Settings, plugin management and recovery, diagnostics, snapshots, external tools, phone access, IM bots, data-directory switching, updates, logs, and project help. New Conversation delegates to the existing workspace flow without sending a message. A missing plugin page produces an explanation and never installs the plugin automatically. Updates opens General Settings; it does not quit or install an update.
+
+macOS uses the native system menu named Open DSH Desktop. Windows and Linux place horizontal menus, the application icon, a draggable title, and window controls in the isolated 36 px title bar. Narrow windows collect menus under More. Native popup menus extend beyond that strip without rendering over plugins inside Harness. Editing preserves the original text target; zoom affects only Harness. Menu labels follow the client language, with English fallback. Developer Tools is available only in source runs.
+
+Quick Restart and Quit Completely wait until active plugin mutations and recovery finish. Ordinary close retains the user's hide-or-quit preference. When tray creation fails, a background launch shows its window and Hide to tray offers Cancel or Quit Completely instead of making the window inaccessible. Linux cannot infer actual tray visibility from object creation; its settings explain the desktop-environment dependency. Linux update actions retain the existing Release-page fallback rather than claiming DEB/RPM installation support.
+
+The macOS development launcher creates an ad-hoc-signed, version-keyed Open DSH Desktop.app under `.artifacts/desktop-dev/`. It leaves the shared Electron installation, bundle identifier, data locations, and saved custom icons unchanged. Installed macOS builds carry the same menu display name through bundle metadata. Implementation and platform verification limits are recorded in the [application-menu decision](../../.agents/notes/implemented/feature/2026-09-03-desktop-application-menus.md).
+
 ## Independent data home and import
 
 Installed builds use the platform application-data root `open-deepseek-harness-desktop/dsh-home`; source runs use its `development/dsh-home` child. Their Electron preferences, browser session data, logs, extracted runtime, and Harness state are therefore separate from each other and from the official CLI. An explicit `DSH_HOME` remains authoritative for automation and advanced launches.

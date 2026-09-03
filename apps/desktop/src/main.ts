@@ -48,6 +48,9 @@ import type { IconSurfaceResult, IconTarget } from './icon-protocol.ts'
 import { ExternalToolCompatibilityManager } from './external-tool-compatibility.ts'
 import { EXTERNAL_TOOL_IDS, type DesktopExternalToolId } from './external-tool-compatibility-manifest.ts'
 import { createDesktopLifecycle, type DesktopLifecycle } from './window-lifecycle.ts'
+import { ApplicationMenuController } from './application-menu-controller.ts'
+import { CLIENT_COMMANDS, menuCopy, type DesktopCommand } from './application-menu.ts'
+import { menuMutationActive } from './menu-mutation-guard.ts'
 import { isDesktopRenderer, withDesktopWindowMetadata } from './window-frame.ts'
 import {
   createDesktopWindowSurface,
@@ -137,7 +140,7 @@ const DESKTOP_DATA_HOME = resolveDesktopDataHomeLayout(
   process.env,
 )
 
-app.setName(APP_NAME)
+app.setName('Open DSH Desktop')
 app.setPath('userData', DESKTOP_DATA_HOME.desktopRoot)
 app.setPath('sessionData', DESKTOP_DATA_HOME.sessionData)
 app.setAppLogsPath(DESKTOP_DATA_HOME.logs)
@@ -148,6 +151,91 @@ let mainSurface: DesktopWindowSurface | undefined
 let supervisor: HarnessSupervisor | undefined
 let harnessOrigin: string | undefined
 let lifecycle: DesktopLifecycle | undefined
+let applicationMenu: ApplicationMenuController | undefined
+let disposeApplicationMenu: (() => void) | undefined
+let activeMenuHome: string | undefined
+let menuLocale = 'en'
+let menuClientReady = false
+let snapshotMutationActive = false
+let trayUnavailable = false
+let trayWarningOpen = false
+const pendingMenuCommands = new Map<string, { resolve(): void; reject(error: Error): void; timer: NodeJS.Timeout }>()
+
+function menuBusy(): boolean {
+  const lab = diagnosticLabManager?.current()
+  return snapshotMutationActive || lab?.phase === 'running' || lab?.phase === 'queued' || lab?.phase === 'restoring'
+    || (activeMenuHome !== undefined && menuMutationActive(activeMenuHome))
+}
+
+function reportMenuError(error: unknown): void {
+  if (quitReleased || lifecycle?.isQuitting === true) return
+  dialog.showErrorBox(menuCopy(menuLocale).error, error instanceof Error ? error.message : String(error))
+}
+
+function rejectPendingMenuCommands(): void {
+  for (const pending of pendingMenuCommands.values()) {
+    clearTimeout(pending.timer)
+    pending.reject(new Error(menuCopy(menuLocale).unavailable))
+  }
+  pendingMenuCommands.clear()
+}
+
+async function executeProductMenu(command: DesktopCommand): Promise<void> {
+  if ((CLIENT_COMMANDS as readonly string[]).includes(command)) {
+    lifecycle?.showWindow()
+    const id = randomUUID()
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pendingMenuCommands.delete(id)
+        reject(new Error(menuCopy(menuLocale).unavailable))
+      }, 5000)
+      pendingMenuCommands.set(id, { resolve, reject, timer })
+      mainSurface?.send('dsh:menu:command', { id, command })
+    })
+    return
+  }
+  switch (command) {
+    case 'show': lifecycle?.showWindow(); return
+    case 'restart': requestDesktopRestart(); return
+    case 'quit':
+      if (lifecycle === undefined) { quitReleased = true; app.quit() }
+      else await lifecycle.requestQuit()
+      return
+    case 'open-config': {
+      const result = await openSettingsDocument()
+      if (result.error !== '') throw new Error(result.error)
+      return
+    }
+    case 'logs': {
+      const error = await shell.openPath(DESKTOP_DATA_HOME.logs)
+      if (error !== '') throw new Error(error)
+      return
+    }
+    case 'about': {
+      const manifest = JSON.parse(await readFile(new URL('./harness-version.json', import.meta.url), 'utf8')) as { version: string }
+      await dialog.showMessageBox({ type: 'info', title: menuCopy(menuLocale).about,
+        message: 'Open DeepSeek Harness Desktop',
+        detail: `${app.getVersion()}\nHarness ${manifest.version}\n\n${menuCopy(menuLocale).community}` })
+      return
+    }
+    case 'docs': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop#readme'); return
+    case 'repository': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop'); return
+    case 'feedback': await shell.openExternal('https://github.com/flaqai/open-deepseek-harness-desktop/issues'); return
+    default: throw new Error(`desktop: unhandled menu command ${command}`)
+  }
+}
+
+async function openSettingsDocument(): Promise<{ error: string }> {
+  const dshHome = activeMenuHome
+  if (dshHome === undefined) throw new Error(menuCopy(menuLocale).unavailable)
+  const settingsPath = join(dshHome, 'settings.yaml')
+  try { await lstat(settingsPath) } catch (error) {
+    if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error
+    return { error: await shell.openPath(dshHome) }
+  }
+  shell.showItemInFolder(settingsPath)
+  return { error: '' }
+}
 let preferencesStore: DesktopPreferencesStore | undefined
 let preferences: DesktopPreferences = { ...DEFAULT_DESKTOP_PREFERENCES }
 let tray: Tray | undefined
@@ -616,9 +704,9 @@ function buildTrayMenu(): Menu {
     { label: copy.open, click: () => { lifecycle?.showWindow() } },
     {
       label: copy.restart,
-      click: requestDesktopRestart,
+      click: () => { applicationMenu?.execute('restart') },
     },
-    { label: copy.openLog, click: () => { void openHarnessLog() } },
+    { label: copy.openLog, click: () => { applicationMenu?.execute('logs') } },
     { type: 'separator' },
     {
       label: copy.launchAtLogin,
@@ -634,7 +722,7 @@ function buildTrayMenu(): Menu {
       click: (item) => { updatePreferences({ notificationsEnabled: item.checked }) },
     },
     { type: 'separator' },
-    { label: copy.quit, click: () => { void lifecycle?.requestQuit() } },
+    { label: copy.quit, click: () => { applicationMenu?.execute('quit') } },
   ]
   return Menu.buildFromTemplate(template)
 }
@@ -680,6 +768,7 @@ function desktopTrayImage(images: DesktopIconImages): Electron.NativeImage {
 }
 
 function applyDesktopIcons(images: DesktopIconImages, shortcuts: boolean, createShortcut: boolean): IconSurfaceResult[] {
+  applicationMenu?.refresh()
   const results: IconSurfaceResult[] = []
   try {
     if (process.platform === 'darwin') {
@@ -1031,10 +1120,23 @@ function createWindow(): BrowserWindow {
   })
   mainWindow = window
   mainSurface = surface
+  applicationMenu?.attach(surface)
+  applicationMenu?.refresh()
+  const refreshMenu = (): void => { applicationMenu?.refresh() }
+  window.on('maximize', refreshMenu)
+  window.on('unmaximize', refreshMenu)
+  window.on('enter-full-screen', refreshMenu)
+  window.on('leave-full-screen', refreshMenu)
+  surface.titlebarRenderer?.on('did-finish-load', () => { applicationMenu?.refresh() })
   const rendererId = surface.renderer.id
-  surface.renderer.on('destroyed', () => { iconManager?.discardOwner(rendererId) })
+  surface.renderer.on('destroyed', () => { iconManager?.discardOwner(rendererId); rejectPendingMenuCommands() })
   surface.renderer.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
-    if (isMainFrame && !isInPlace) iconManager?.discardOwner(rendererId)
+    if (isMainFrame && !isInPlace) {
+      iconManager?.discardOwner(rendererId)
+      menuClientReady = false
+      rejectPendingMenuCommands()
+      applicationMenu?.refresh()
+    }
   })
   if (iconManager !== undefined && tray !== undefined) iconManager.refresh(app.isPackaged)
   if (harnessOrigin === undefined) showLoading('starting')
@@ -1045,6 +1147,18 @@ function createWindow(): BrowserWindow {
 async function startApplication(): Promise<void> {
   if (process.platform === 'win32') app.setAppUserModelId('ai.flaq.deepseek-harness')
   await app.whenReady()
+  menuLocale = app.getLocale()
+  applicationMenu = new ApplicationMenuController({
+    surface: () => mainSurface,
+    state: () => ({ platform: process.platform, locale: menuLocale, ready: menuClientReady && harnessOrigin !== undefined,
+      busy: menuBusy(), maximized: mainWindow?.isMaximized() ?? false,
+      fullscreen: mainWindow?.isFullScreen() ?? false, development: !app.isPackaged }),
+    icon: () => (iconManager?.images().application ?? nativeImage.createFromPath(WINDOW_ICON))
+      .resize({ width: 20, height: 20 }).toDataURL(),
+    execute: executeProductMenu, reportError: reportMenuError,
+  })
+  disposeApplicationMenu = applicationMenu.register(ipcMain)
+  applicationMenu.refresh()
   if (process.platform === 'darwin' || process.platform === 'win32') {
     iconManager = new DesktopIconManager({
       directory: join(app.getPath('userData'), 'icons'), platform: process.platform, packaged: app.isPackaged,
@@ -1056,6 +1170,7 @@ async function startApplication(): Promise<void> {
   }
   applyStartupDockIcon()
   const dshHome = await prepareDesktopDshHome(DESKTOP_DATA_HOME)
+  activeMenuHome = dshHome
   applyDesktopThemeSource(await readDesktopThemeSource(
     dshHome,
     (error) => { console.warn('desktop: could not read theme preference; following the system appearance', error) },
@@ -1307,15 +1422,7 @@ async function startApplication(): Promise<void> {
   })
   ipcMain.handle('dsh:desktop:settings:open', async (event): Promise<{ error: string }> => {
     assertMainRenderer(event.sender)
-    const settingsPath = join(dshHome, 'settings.yaml')
-    try {
-      await lstat(settingsPath)
-      shell.showItemInFolder(settingsPath)
-      return { error: '' }
-    } catch {
-      const error = await shell.openPath(dshHome)
-      return { error }
-    }
+    return openSettingsDocument()
   })
   ipcMain.handle('dsh:desktop:settings:reset', async (event): Promise<{ backupName?: string; restarting: true }> => {
     assertMainRenderer(event.sender)
@@ -1658,20 +1765,59 @@ async function startApplication(): Promise<void> {
     const surface = mainSurface
     if (surface !== undefined && isDesktopRenderer(event.sender, surface.titlebarRenderer)) surface.window.close()
   })
+  ipcMain.on('dsh:menu:client-state', (event, state: unknown) => {
+    if (event.sender !== mainSurface?.renderer || typeof state !== 'object' || state === null) return
+    const { ready, locale } = state as { ready?: unknown; locale?: unknown }
+    if (typeof ready !== 'boolean' || typeof locale !== 'string' || locale.length > 64) return
+    menuClientReady = ready
+    menuLocale = locale
+    applicationMenu?.refresh()
+  })
+  ipcMain.on('dsh:menu:result', (event, result: unknown) => {
+    if (event.sender !== mainSurface?.renderer || typeof result !== 'object' || result === null) return
+    const { id, error } = result as { id?: unknown; error?: unknown }
+    if (typeof id !== 'string' || (error !== undefined && typeof error !== 'string')) return
+    const pending = pendingMenuCommands.get(id)
+    if (pending === undefined) return
+    pendingMenuCommands.delete(id)
+    clearTimeout(pending.timer)
+    if (typeof error === 'string') pending.reject(new Error(error.slice(0, 1000)))
+    else pending.resolve()
+  })
   lifecycle = createDesktopLifecycle({
     getWindow: () => mainWindow,
     createWindow,
     readCloseBehavior: () => preferences.closeBehavior,
+    canQuit: () => {
+      if (!menuBusy()) return true
+      reportMenuError(new Error(menuCopy(menuLocale).busy))
+      return false
+    },
+    canHideToTray: () => !trayUnavailable,
+    onTrayUnavailable: () => {
+      if (trayWarningOpen) return
+      trayWarningOpen = true
+      const copy = menuCopy(menuLocale)
+      void dialog.showMessageBox({ type: 'warning', message: copy.tray,
+        buttons: [copy.cancel, copy.quit], defaultId: 0, cancelId: 0,
+      }).then((result) => { if (result.response === 1) void lifecycle?.requestQuit() })
+        .finally(() => { trayWarningOpen = false })
+    },
     disposeHost: async () => { await supervisor?.stop() },
     releaseQuit: () => {
       quitReleased = true
+      disposeApplicationMenu?.()
       tray?.destroy()
       tray = undefined
       app.quit()
     },
     reportError: (error) => { console.error('desktop: shutdown failed', error) },
   })
-  createTray()
+  try { createTray() } catch (error) {
+    hiddenLaunch = false
+    trayUnavailable = true
+    console.error('desktop: system tray unavailable; closing will keep the window accessible', error)
+  }
   createWindow()
 
   publishStartupProgress(app.isPackaged
@@ -1909,6 +2055,8 @@ async function startApplication(): Promise<void> {
     },
     onState: (state) => {
       if (state === 'restarting' || state === 'failed') harnessOrigin = undefined
+      if (state !== 'ready') menuClientReady = false
+      applicationMenu?.refresh()
       if (state === 'starting') publishStartupProgress({ stage: 'starting-harness', progress: 92 })
       if (state === 'restarting') publishStartupProgress({ stage: 'restarting-harness', progress: 90 })
       if (state !== 'failed') showLoading(state)
@@ -1987,7 +2135,11 @@ async function startApplication(): Promise<void> {
       ], launchOptions), [0, 2])
       return parseDiagnosticLabDoctorOutput(output).status === 'healthy'
     },
-    onStatus: (snapshot) => { mainSurface?.send('dsh:desktop:plugin-snapshots:status', snapshot) },
+    onStatus: (snapshot) => {
+      snapshotMutationActive = !['needs-network', 'succeeded', 'rolled-back', 'failed'].includes(snapshot.phase)
+      applicationMenu?.refresh()
+      mainSurface?.send('dsh:desktop:plugin-snapshots:status', snapshot)
+    },
     journalPath: join(dshHome, 'plugin-snapshots', 'v1', 'restore-journal.json'),
   })
   diagnosticLabManager = new DiagnosticLabManager({
@@ -2027,6 +2179,7 @@ async function startApplication(): Promise<void> {
       return parseDiagnosticLabDoctorOutput(output)
     },
     onSnapshot: (snapshot: DiagnosticLabRunSnapshot) => {
+      applicationMenu?.refresh()
       mainSurface?.send('dsh:desktop:diagnostic-lab:status', snapshot)
     },
   })

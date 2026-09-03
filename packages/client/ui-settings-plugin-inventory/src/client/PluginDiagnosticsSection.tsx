@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   PluginDoctorRequest,
@@ -182,6 +182,7 @@ function uninstallSucceeded(snapshot: PluginInstallSnapshot | undefined): boolea
 
 /** Dedicated profile dependency diagnosis and recovery page. */
 export function PluginDiagnosticsSection({
+  preferredSubsectionId,
   diagnosticLab,
   pluginSnapshots,
   settingsRecovery,
@@ -199,6 +200,10 @@ export function PluginDiagnosticsSection({
   openPluginMarket,
   t,
 }: PluginDiagnosticsSectionProps): ReactNode {
+  const snapshotsSection = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (preferredSubsectionId === 'snapshots') snapshotsSection.current?.scrollIntoView({ block: 'start' })
+  }, [preferredSubsectionId])
   const [revision, setRevision] = useState(0)
   const [inventory, setInventory] = useState<InventoryState>({ status: 'loading' })
   const [doctor, setDoctor] = useState<PluginDoctorSnapshot | null>(null)
@@ -744,7 +749,7 @@ export function PluginDiagnosticsSection({
         </section>
       ) : null}
 
-      {pluginSnapshots === undefined ? null : <PluginSnapshotPanel {...pluginSnapshots} t={t} />}
+      {pluginSnapshots === undefined ? null : <div ref={snapshotsSection}><PluginSnapshotPanel {...pluginSnapshots} t={t} /></div>}
 
       {diagnosticLab === undefined ? null : <DiagnosticLabPanel {...diagnosticLab} t={t} />}
 

@@ -1,6 +1,8 @@
 /** Desktop shell settings and update copy. */
 
 export const zh = {
+  'menu.unavailable': '此设置页面尚未加载或对应插件未安装。请在设置中检查插件；不会自动安装。',
+  'close.linux': 'Linux 托盘可见性取决于桌面环境及其扩展。若看不到图标，可选择完整退出。',
   'icons.crop.sizes': '32 / 16 px',
   'icons.title': '应用图标',
   'icons.description': '仅保存在本机。支持 PNG / JPEG，最大 10 MB、1600 万像素；建议至少 512 × 512。',
@@ -132,6 +134,8 @@ export type DesktopShellKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key source. */
 export const en = {
+  'menu.unavailable': 'This settings page is unavailable or its plugin is not installed. Check plugins in Settings; nothing was installed automatically.',
+  'close.linux': 'Tray visibility on Linux depends on your desktop environment and extensions. Choose Quit client if the icon is not visible.',
   'icons.crop.sizes': '32 / 16 px',
   'icons.title': 'Application icons',
   'icons.description': 'Stored only on this device. PNG / JPEG, up to 10 MB and 16 million pixels. At least 512 × 512 is recommended.',

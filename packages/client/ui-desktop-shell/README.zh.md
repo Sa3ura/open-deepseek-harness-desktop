@@ -26,6 +26,8 @@ kind: "package-reference"
 
 将本包挂载到桌面客户端 Bundle。它只在窄权限的 `window.deepSeekHarnessDesktop` 预加载桥存在时激活，并严格反映 Electron 主进程报告的能力。
 
+原生应用菜单导航使用现有工作区和设置服务。“新对话”保留这些服务原有的草稿行为；通用设置消费一次性的更新区域或数据目录选择请求。插件设置项缺失时报告错误，不安装任何内容。连接与语言订阅发布当前菜单就绪状态，并随插件释放。平台行为见[应用菜单](../../../apps/desktop/README.zh.md#application-menus)。
+
 Windows 与 macOS 的“应用图标”提供本地图片选择、支持键盘操作的方形裁剪、缩放、预览及独立托盘偏好。取消不会保存。卡片按目标位置显示结果及图片缺失提示；Windows 还提供明确的快捷方式创建与更新重试控件。平台限制与存储归属见[桌面图标说明](../../../apps/desktop/README.zh.md#custom-application-icons)。
 
 -----

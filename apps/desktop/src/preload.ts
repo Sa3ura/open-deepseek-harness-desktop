@@ -1,6 +1,7 @@
 /** Narrow update bridge for the trusted Harness renderer. */
 
 import { contextBridge, ipcRenderer } from 'electron'
+import { CLIENT_COMMANDS } from './application-menu.ts'
 import type { DesktopIconsBridge, DesktopIconStatus, IconSelection } from './icon-protocol.ts'
 import type { OpenLogResult } from './log-reveal.ts'
 import type { DesktopPreferences, DesktopPreferencesPatch } from './preferences.ts'
@@ -295,6 +296,22 @@ const iconsBridge: DesktopIconsBridge = {
   },
 }
 contextBridge.exposeInMainWorld('deepSeekHarnessDesktop', Object.freeze({
+  menu: Object.freeze({
+    reportState(state: { ready: boolean; locale: string }): void {
+      ipcRenderer.send('dsh:menu:client-state', state)
+    },
+    onCommand(callback: (command: string) => void | Promise<void>): () => void {
+      const listener = (_event: Electron.IpcRendererEvent, request: { id: string; command: string }): void => {
+        if (typeof request.id !== 'string' || !(CLIENT_COMMANDS as readonly string[]).includes(request.command)) return
+        void Promise.resolve().then(() => callback(request.command)).then(
+          () => { ipcRenderer.send('dsh:menu:result', { id: request.id }) },
+          (error: unknown) => { ipcRenderer.send('dsh:menu:result', { id: request.id, error: String(error).slice(0, 1000) }) },
+        )
+      }
+      ipcRenderer.on('dsh:menu:command', listener)
+      return () => { ipcRenderer.removeListener('dsh:menu:command', listener) }
+    },
+  }),
   shell: Object.freeze(shellBridge),
   icons: Object.freeze(iconsBridge),
   releases: Object.freeze(releasesBridge),
