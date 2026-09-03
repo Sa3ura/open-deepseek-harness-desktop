@@ -1073,9 +1073,9 @@ async function startApplication(): Promise<void> {
       url => session.defaultSession.resolveProxy(url),
     )
     harnessEnvironment = resolvedProxy.environment
-    if (resolvedProxy.applied) console.info('desktop: system proxy enabled for Harness child processes')
-  } catch (error) {
-    console.warn('desktop: could not resolve the system proxy; preserving the explicit process environment', error)
+    if (resolvedProxy.applied) console.info('desktop: system proxy resolved for Codex only; package-manager proxy configuration unchanged')
+  } catch {
+    console.warn('desktop: system proxy resolution failed; preserving explicit proxy configuration (resolver details omitted for privacy)')
   }
   let launchOptions: DesktopLaunchOptions = app.isPackaged
     ? {}

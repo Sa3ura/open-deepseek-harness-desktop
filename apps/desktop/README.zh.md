@@ -32,6 +32,8 @@ pnpm run dev:desktop
 
 每次外部工具安装请求都会刷新签名兼容清单；同时发起的请求共享进行中的查询。后续请求可以从此前的网络失败中恢复，或在不重启桌面端的情况下采用新审核的修订版。这会选择最新的已审核兼容坐标，而不是 npm 最新发布版本，也不会静默升级已经安装的工具。发布门禁还要求记录的源码审核基线及运行时版本与工作区一致，因此合并上游后即使继续选择原有 Provider 版本，也必须重新确认兼容性。桌面端从 `https://flaqai.github.io/open-deepseek-harness-desktop/metadata/external-tools/v1/` 获取两份签名文档；发布工作流只通过 GitHub Pages 部署这些文档，没有 Release 写入权限。发布要求仓库的 Pages 来源设为 GitHub Actions，且 `github-pages` 环境允许 master 部署。本仓库的 Pages 专用于元数据；文档部署在这里被排除，避免覆盖元数据站点。使用旧 Release 地址构建的安装包仍保留该地址，需要重新打包才能切换；此工作流既不删除，也不重建旧 Release。
 
+桌面端只为官方 Codex Provider 解析系统代理，显式代理设置优先。插件下载保留 pnpm 与 Git 自身配置，不继承面向 ChatGPT 的专用路由。网络失败会附带有长度边界的分类与耗时提示；不会仅凭环境变量推断实际路由。详见[代理作用范围与验证限制](../../.agents/notes/implemented/bug-fix/2026-09-03-desktop-codex-proxy-scope.zh.md)。
+
 开发与打包脚本会从 Desktop 和 Web 各自的应用目录执行。每个 Unix 打包命令都会把明确的平台与架构同时传给运行时和 Codex 准备步骤，使 macOS Apple 芯片、macOS Intel、Linux x64 与 Windows x64 的 staging 相互独立。
 
 <a id="custom-application-icons"></a>

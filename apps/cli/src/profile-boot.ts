@@ -52,6 +52,7 @@ import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
 import { INSTALL_ANCHOR } from './install-anchor.ts'
 import { runProfilePackageManager } from './profile-package-manager.ts'
+import { withDesktopCodexProxy } from './desktop-codex-proxy.ts'
 
 const NAME = 'dsh'
 
@@ -258,12 +259,12 @@ interface ComposedProfile {
 
 /** The full patch stack of one composed profile, in application order. */
 function allPatches(composed: ComposedProfile): PatchOptions[] {
-  return [
+  return withDesktopCodexProxy([
     ...composed.bundlePatches,
     ...composed.profile.patches,
     ...composed.homePatches,
     ...composed.overlays,
-  ]
+  ], process.env)
 }
 
 /**
@@ -451,6 +452,7 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
   const safeMode = options.safeMode === true
   const profileDir = resolveProfileDir(options.profile)
   if (!safeMode && existsSync(join(profileDir, 'package.json'))) {
+    await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR })
     const dependencyHealth = repairProfileDependencies({
       binName: NAME,
       profile: options.profile,
@@ -500,12 +502,12 @@ async function runProfileAttempt(options: RunProfileOptions): Promise<{ ctx: Con
   // objects in place. Reusing one parsed patch object across applications
   // would bake a user override into the bundle's in-memory insert row, so
   // removing the override could never revert the row to the bundle default.
-  const composeLive = (): PatchOptions[] => structuredClone([
+  const composeLive = (): PatchOptions[] => structuredClone(withDesktopCodexProxy([
     ...composed.bundlePatches,
     ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
     ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
     ...composed.overlays,
-  ])
+  ], process.env))
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
   const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {

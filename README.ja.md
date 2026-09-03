@@ -12,7 +12,7 @@
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1.1 を公開しました。v0.1.2-alpha.1 の修正強化版です。ぜひダウンロードしてお試しください](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1)。** 本版は引き続き DeepSeek Harness 0.1.2-alpha.1 を上流の基盤とし、デスクトップ環境の管理、プラグイン復旧、クロスプラットフォームの安定性を強化しています。
+> **[v0.1.2-alpha.5 を公開しました。ぜひダウンロードしてお試しください](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.5)。** 本版は DeepSeek Harness 0.1.2-alpha.5 を上流の基盤とし、alpha.2～alpha.5 の累積更新、プラグインのスナップショット復元、アプリ・トレイアイコンのカスタマイズに対応しています。プラグインの診断と復旧、外部ツールの互換バージョン検証、クロスプラットフォームの安定性も強化しています。
 >
 > これは Alpha プレリリースです。アップグレード前に重要な設定をバックアップし、問題を報告する際はログまたは診断レポートを添付してください。
 
@@ -204,7 +204,7 @@ Cordis の Context、Service、Symbol はバージョン番号だけでなく物
 
 ## ダウンロードとインストール
 
-[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) から対象パッケージを入手してください。
+[GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.5) から対象パッケージを入手してください。
 
 | OS | アーキテクチャ | パッケージ |
 | --- | --- | --- |

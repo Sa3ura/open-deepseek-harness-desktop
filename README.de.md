@@ -8,7 +8,7 @@ Sprachen: [简体中文](README.md) · [English](README.en.md) · [日本語](RE
 
 > [!IMPORTANT]
 >
-> **[v0.1.2-alpha.1.1 ist verfügbar. Dieses Korrektur- und Verbesserungsupdate für v0.1.2-alpha.1 kann jetzt heruntergeladen und ausprobiert werden](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.1.1).** Die Version verwendet weiterhin DeepSeek Harness 0.1.2-alpha.1 als Upstream-Basis und verbessert die Verwaltung der Desktop-Umgebung, die Plugin-Wiederherstellung und die plattformübergreifende Stabilität.
+> **[v0.1.2-alpha.5 ist verfügbar – jetzt herunterladen und ausprobieren](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.5).** Diese Version basiert auf DeepSeek Harness 0.1.2-alpha.5 und umfasst die kumulativen Updates von alpha.2 bis alpha.5, die Wiederherstellung aus Plugin-Snapshots, eigene Anwendungs- und Tray-Symbole sowie Verbesserungen bei Plugin-Diagnose und -Wiederherstellung, der Prüfung kompatibler Versionen externer Tools und der plattformübergreifenden Stabilität.
 >
 > Dies ist eine Alpha-Vorabversion. Sichern Sie wichtige Konfigurationen vor dem Upgrade und fügen Sie Problemmeldungen relevante Protokolle oder Diagnoseberichte bei.
 
@@ -176,7 +176,7 @@ Unterstützt System, Hell, Dunkel und acht Produkt-Themes, acht integrierte Illu
 
 ## Download und Installation
 
-Laden Sie das passende Paket von [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases) herunter.
+Laden Sie das passende Paket von [GitHub Releases](https://github.com/flaqai/open-deepseek-harness-desktop/releases/tag/odsh-v0.1.2-alpha.5) herunter.
 
 | System | Architektur | Paket |
 | --- | --- | --- |
