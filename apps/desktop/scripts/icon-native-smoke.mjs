@@ -14,6 +14,40 @@ async function run() {
   let tray
   try {
     await app.whenReady()
+    const approvedTray = nativeImage.createFromPath(new URL('../assets/tray-icon/approved-white-transparent.png', import.meta.url).pathname)
+    assert.deepEqual(approvedTray.getSize(), { width: 1254, height: 1254 })
+    const approvedPixels = approvedTray.toBitmap()
+    assert.equal(approvedPixels[(700 * 1254 + 1000) * 4 + 3], 0, 'Approved mouth is hollow')
+    assert.equal(approvedPixels[(420 * 1254 + 690) * 4 + 3], 255, 'Approved rider remains present')
+    for (const scale of [1, 2]) {
+      const name = `tray-iconTemplate${scale === 2 ? '@2x' : ''}.png`
+      const source = readFileSync(new URL(`../src/${name}`, import.meta.url))
+      assert.deepEqual(readFileSync(new URL(`../lib/${name}`, import.meta.url)), source)
+      const template = nativeImage.createFromBuffer(source, { scaleFactor: 1 })
+      const width = 30 * scale
+      assert.deepEqual(template.getSize(), { width, height: 18 * scale })
+      const pixels = template.toBitmap()
+      const alpha = (x, y) => pixels[(Math.floor((y + 0.5) * scale) * width + Math.floor((x + 0.5) * scale)) * 4 + 3]
+      assert.equal(alpha(0, 0), 0)
+      assert.equal(alpha(9, 17), 0)
+      assert.ok(alpha(15, 2) >= 200, 'Rider head remains visible')
+      assert.ok(alpha(8, 12) >= 200, 'Whale body remains visible')
+      assert.ok(alpha(24, 9) < 20, 'Mouth remains transparent')
+      let jawAlpha = 0
+      for (let y = 9 * scale; y < 12 * scale; y++) {
+        for (let x = 24 * scale; x < 27 * scale; x++) jawAlpha = Math.max(jawAlpha, pixels[(y * width + x) * 4 + 3])
+      }
+      assert.ok(jawAlpha > 20, 'Lower jaw retains its antialiased outline at each density')
+      for (let offset = 0; offset < pixels.length; offset += 4) {
+        // Native bitmaps premultiply the white channels by alpha.
+        for (let channel = 0; channel < 3; channel++) assert.ok(Math.abs(pixels[offset + channel] - pixels[offset + 3]) <= 1)
+      }
+    }
+    const trayTemplate = nativeImage.createFromPath(new URL('../lib/tray-iconTemplate.png', import.meta.url).pathname)
+    assert.deepEqual(trayTemplate.getScaleFactors(), [1, 2])
+    trayTemplate.setTemplateImage(true)
+    assert.equal(trayTemplate.isTemplateImage(), true)
+    console.log('PASS: approved rider/whale tray artwork, hollow outlined jaw, white alpha, both Retina densities and built asset parity')
     const defaultApplication = loadDefaultApplicationIcon('darwin')
     assert.equal(defaultApplication.isEmpty(), false)
     const defaultSize = defaultApplication.getSize()
