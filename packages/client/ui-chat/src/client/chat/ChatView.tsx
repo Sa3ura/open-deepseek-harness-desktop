@@ -753,15 +753,17 @@ export function ChatView({
     const isAtBottom = movedByReader
       ? ((delivery?.floor ?? floor) - (delivery?.scrollTop ?? el.scrollTop)) <= FOLLOW_THRESHOLD + 1
       : atBottomRef.current
-    // A reader landing at the floor (native End, back-to-bottom) owns the
-    // floor's future growth too: the delivery fixes ownership, and the re-pin
-    // chase closes whatever measurement growth opened after that delivery.
-    // Without it, growth that fits inside the sample-suppression window never
-    // sees another ResizeObserver tick and the gap freezes.
-    const deliveryAtFloor = delivery === null
-      ? floor - el.scrollTop <= FOLLOW_THRESHOLD + 1
-      : delivery.floor - delivery.scrollTop <= FOLLOW_THRESHOLD + 1
-    if (isAtBottom && (!movedByReader || deliveryAtFloor)) {
+    // A reader landing exactly on the floor (native End, back-to-bottom) owns
+    // the floor's future growth too: the delivery fixes ownership, and the
+    // re-pin chase closes whatever measurement growth opened after that
+    // delivery. Without it, growth that fits inside the sample-suppression
+    // window never sees another ResizeObserver tick and the gap freezes. The
+    // match is exact so a deliberate wheel stop inside the threshold keeps its
+    // remaining distance.
+    const deliveryOnFloor = delivery === null
+      ? floor - el.scrollTop <= 0.5
+      : delivery.floor - delivery.scrollTop <= 0.5
+    if (isAtBottom && (!movedByReader || deliveryOnFloor)) {
       toBottom(el)
       return
     }
