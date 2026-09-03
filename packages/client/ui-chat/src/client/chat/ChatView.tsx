@@ -13,7 +13,7 @@ import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
-import { useChatVirtualizer, useFlowHeadHeight } from './use-chat-virtualizer.ts'
+import { useChatVirtualizer, useFlowHeadHeight, VIRTUAL_ROW_ESTIMATE_PX } from './use-chat-virtualizer.ts'
 import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
@@ -387,6 +387,9 @@ export function ChatView({
   /** Window head at the last settle-time repage; an unmoved head falls back instead of repaging forever. */
   const jumpRepageHeadRef = useRef<number | null>(null)
   const firstSeqRef = useRef<number | null>(null)
+  /** Flow row count at the last layout pass; the prepend branch reads the
+   *  difference as the number of rows inserted above the reader. */
+  const flowCountRef = useRef(0)
   const openedRef = useRef(false)
   const lastKeyRef = useRef<string | null>(null)
   const lastSteeringIdRef = useRef<string | null>(null)
@@ -647,6 +650,7 @@ export function ChatView({
         else if (normalized !== null) chatScroll.save(normalized)
       }
       firstSeqRef.current = firstSeq
+      flowCountRef.current = order.length
       lastKeyRef.current = lastKey
       lastSteeringIdRef.current = lastSteeringId
       lastSubmissionIdRef.current = lastSubmissionId
@@ -659,30 +663,40 @@ export function ChatView({
     if (anchorRef.current !== null && firstSeq !== null && firstSeqRef.current !== null && firstSeq < firstSeqRef.current) {
       const anchor = anchorRef.current
       anchorRef.current = null
-      // Virtual path: row offsets are self-consistent across the prepend
-      // (TanStack keys measured sizes by node key and does not compensate
-      // count growth), so scrolling straight to the anchor's new offset minus
-      // its pre-prepend viewport top re-seats the same row. That first write
-      // rides estimate sizes for the never-mounted rows above the anchor; the
-      // settle loop re-seats from live rectangles as they measure. No
+      // Virtual path: preserve the reader's viewport by advancing the scroll
+      // position with the real stride of the inserted block. The virtualizer's
+      // estimate map prices never-mounted rows at the constant estimate — far
+      // below the measured Markdown rows around the reader — so offset
+      // arithmetic loses thousands of pixels across a large prepend, while the
+      // mounted rows' measured mean is the best available stride. The settle
+      // loop then re-seats the anchor from its live rectangle. The plain path
+      // mounts every row and keeps its exact rectangle correction. No
       // virtualizer adjustment runs beside either write.
-      const virtualOffset = virtual.offsetOfKey(anchor.key)
-      const row = virtualOffset === null ? anchorElement(local, anchor.key) : null
-      if (virtualOffset !== null) {
-        el.scrollTop = Math.max(0, virtualOffset - anchor.top)
+      const inserted = order.length - flowCountRef.current
+      const row = anchorElement(local, anchor.key)
+      if (virtual.enabled && inserted > 0) {
+        const stride = virtual.averageMountedSize() ?? VIRTUAL_ROW_ESTIMATE_PX
+        el.scrollTop += inserted * stride
       } else if (row !== null) {
         el.scrollTop += flowTop(row, el) - anchor.top
       }
       observedTopRef.current = el.scrollTop
       // A jump chunk lands here: scroll to the target once its rows exist;
       // until then keep holding the reader's row for the next chunk. The
-      // re-armed top is the anchor's post-correction viewport position.
-      const held = virtualOffset !== null || row !== null
-      if (!realizePendingJump(local, el, false) && held) {
+      // re-armed top is the anchor's post-correction viewport position. A
+      // settled session has no pending jump, and realizePendingJump's
+      // vacuous-true must not read as a jump takeover here.
+      const held = (virtual.enabled && inserted > 0) || row !== null
+      const hadPendingJump = pendingJumpRef.current !== null
+      const jumpLanded = realizePendingJump(local, el, false)
+      if (!jumpLanded && held) {
         anchorRef.current = { key: anchor.key, top: anchor.top }
+      }
+      if (held && (!jumpLanded || !hadPendingJump)) {
         armSettle((settleLocal, settleEl) => seatRowTarget(settleLocal, settleEl, anchor.key, anchor.top))
       }
       firstSeqRef.current = firstSeq
+      flowCountRef.current = order.length
       /* v8 ignore next -- ?? arm: a prepend adds nodes, so the flow list here is never empty. */
       lastKeyRef.current = lastKey
       lastSteeringIdRef.current = lastSteeringId
@@ -691,6 +705,7 @@ export function ChatView({
       return
     }
     firstSeqRef.current = firstSeq
+    flowCountRef.current = order.length
     // Own words must be visible: a new trailing user node force-scrolls
     // (send lives in the composer, so arrival is detected here, not armed there).
     const appendedUser = lastKey !== lastKeyRef.current && lastNode?.kind === 'user'

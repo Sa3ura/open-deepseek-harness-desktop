@@ -53,6 +53,13 @@ export interface ChatVirtualFlow {
    * null when virtualization is off or the offset is above the first row.
    */
   readonly indexAtOffset: (offset: number) => number | null
+  /**
+   * Mean measured height of the currently mounted rows, or null when nothing
+   * is mounted. Row content is locally homogeneous, so this is the stride a
+   * prepend of unseen rows can assume — far closer to reality than the
+   * constant estimate for Markdown-heavy Chat rows.
+   */
+  readonly averageMountedSize: () => number | null
 }
 
 /**
@@ -116,6 +123,12 @@ export function useChatVirtualizer(
   }, [enabled, virtualizer])
 
   const items = enabled ? virtualizer.getVirtualItems() : []
+  const averageMountedSize = (): number | null => {
+    if (items.length === 0) return null
+    let total = 0
+    for (const item of items) total += item.size
+    return total / items.length
+  }
   return {
     enabled,
     items,
@@ -125,6 +138,7 @@ export function useChatVirtualizer(
       : undefined,
     offsetOfKey,
     indexAtOffset,
+    averageMountedSize,
   }
 }
 
