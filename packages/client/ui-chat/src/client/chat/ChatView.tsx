@@ -361,6 +361,13 @@ export function ChatView({
   // restores it and normalizes a floor-clamped position back to following.
   const [atBottom, setAtBottom] = useState(() => chatScroll.read() === null)
   const atBottomRef = useRef(atBottom)
+  /** Durable follow-tail intent: established by semantic follow actions
+   *  (fresh open, back-to-bottom, own submission arrival, a confirmed floor
+   *  landing) and released only by reader-owned movement away from the floor.
+   *  Geometry alone — a virtual re-measure growing the floor between writes —
+   *  never releases it, so the ResizeObserver keeps chasing until the
+   *  geometry converges or the reader takes the scrollport back. */
+  const followIntentRef = useRef(atBottom)
   const scrollSamplePendingRef = useRef(false)
   const [, setScrollSampleTick] = useState(0)
   const [activeTurn, setActiveTurn] = useState<number | null>(
@@ -580,6 +587,16 @@ export function ChatView({
     setActiveTurn(turnNavigationItems.at(-1)?.turn ?? null)
   }
 
+  /** Semantic follow action: establish the durable intent, then take the
+   *  floor. Reader-neutral corrections (the RO chase, a landing
+   *  normalization) call toBottom directly so they cannot re-arm a released
+   *  intent. */
+  const followBottom = (el: HTMLElement): void => {
+    if (!followIntentRef.current) diag('intent', { value: true, reason: 'follow-action' })
+    followIntentRef.current = true
+    toBottom(el)
+  }
+
   /**
    * Land one row — addressed by its stable node key — at the reading line and
    * republish scroll-derived state. A mounted row corrects from its real
@@ -604,6 +621,7 @@ export function ChatView({
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
     atBottomRef.current = isAtBottom
     setAtBottom(isAtBottom)
+    followIntentRef.current = isAtBottom
     setActiveTurn(turn)
     const position = isAtBottom ? null : scrollPosition(local, el)
     if (isAtBottom) chatScroll.save(null)
@@ -662,7 +680,7 @@ export function ChatView({
       openedRef.current = true
       const saved = chatScroll.read()
       if (saved === null) {
-        toBottom(el)
+        followBottom(el)
       } else {
         el.scrollTop = saved.scrollTop
         const row = anchorElement(local, saved.anchorKey)
@@ -672,6 +690,7 @@ export function ChatView({
         const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
         atBottomRef.current = isAtBottom
         setAtBottom(isAtBottom)
+        followIntentRef.current = isAtBottom
         const normalized = isAtBottom ? null : scrollPosition(local, el)
         if (isAtBottom) chatScroll.save(null)
         else if (normalized !== null) chatScroll.save(normalized)
@@ -744,8 +763,15 @@ export function ChatView({
     lastSubmissionIdRef.current = lastSubmissionId
     followSigRef.current = followSig
     // Follow new flow content while pinned; do NOT re-pin on every render
-    // merely because atBottomRef is true (scroll threshold → setState → snap).
-    if (appendedUser || appendedSteering || appendedSubmission || (tipMoved && atBottomRef.current)) {
+    // merely because the geometry is near the floor (scroll threshold →
+    // setState → snap). Own words, steering, and submissions are semantic
+    // follow actions that establish the intent; tail growth continues an
+    // already-held one.
+    if (appendedUser || appendedSteering || appendedSubmission) {
+      followBottom(el)
+      return
+    }
+    if (tipMoved && followIntentRef.current) {
       toBottom(el)
       return
     }
@@ -783,6 +809,7 @@ export function ChatView({
       : atBottomRef.current
     diag('sample', {
       movedByReader, isAtBottom, atBottomBefore: atBottomRef.current,
+      intent: followIntentRef.current,
       suppressed: scrollSamplePendingRef.current,
       observed: Math.round(observedTopRef.current), live: Math.round(el.scrollTop),
       gap: Math.round(floor - el.scrollTop),
@@ -796,6 +823,17 @@ export function ChatView({
     }
     atBottomRef.current = isAtBottom
     setAtBottom(isAtBottom)
+    // Intent rides the same classification: a confirmed floor landing (native
+    // End, back-to-bottom) re-arms following; reader-owned movement away
+    // releases it. A geometry-only move away from the floor — measurement
+    // growth with no reader-owned delivery — preserves the intent.
+    if (isAtBottom) {
+      if (!followIntentRef.current) diag('intent', { value: true, reason: 'floor' })
+      followIntentRef.current = true
+    } else if (movedByReader) {
+      if (followIntentRef.current) diag('intent', { value: false, reason: 'reader-away' })
+      followIntentRef.current = false
+    }
     const position = isAtBottom ? null : scrollPosition(local, el)
     if (isAtBottom) {
       anchorRef.current = null
@@ -851,13 +889,16 @@ export function ChatView({
   followRef.current = () => {
     const probe = listRef.current === null ? null : scrollerOf(listRef.current)
     diag('ro', {
+      intent: followIntentRef.current,
       atBottom: atBottomRef.current,
       gap: probe === null ? -1 : Math.round(probe.scrollHeight - probe.clientHeight - probe.scrollTop),
-      blocked: scrollSamplePendingRef.current ? 'sample-pending' : atBottomRef.current ? null : 'not-at-bottom',
+      blocked: scrollSamplePendingRef.current
+        ? 'sample-pending'
+        : followIntentRef.current ? null : 'no-follow-intent',
     })
     if (scrollSamplePendingRef.current) return
     const local = listRef.current
-    if (local !== null && atBottomRef.current) {
+    if (local !== null && followIntentRef.current) {
       const el = scrollerOf(local)
       const before = Math.round(el.scrollTop)
       el.scrollTop = el.scrollHeight
@@ -970,6 +1011,7 @@ export function ChatView({
       // would call toBottom and cancel the jump.
       atBottomRef.current = false
       setAtBottom(false)
+      followIntentRef.current = false
       // Hold the reader's place through the paging chunks; the layout effect
       // lands on the target once its rows commit.
       const held = pagingAnchor(local, el)
@@ -1126,7 +1168,7 @@ export function ChatView({
               onClick={() => {
                 const local = listRef.current
                 /* v8 ignore next -- ref-null guard: the button only renders alongside the mounted list. */
-                if (local !== null) toBottom(scrollerOf(local))
+                if (local !== null) followBottom(scrollerOf(local))
               }}
             >
               <IconChevronDownOutline14 />

@@ -394,6 +394,11 @@
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
+  /* Scroll anchoring must not move the scrollport behind the Chat view: the
+     view is the single scrollTop writer, and an anchoring adjustment during a
+     virtual remeasure would be misread as reader movement by the ownership
+     sample and release bottom follow. */
+  overflow-anchor: none;
   /* Reserved unconditionally: the composer seat rides this box's content box in
      Chat and its padding box under a view's composer overlay, so an `auto`
      gutter moves the input card sideways by the bar's width whenever the two

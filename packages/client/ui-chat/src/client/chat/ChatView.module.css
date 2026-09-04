@@ -10,6 +10,11 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* Scroll anchoring must not move the scrollport behind this view: ChatView
+     is the single scrollTop writer, and an anchoring adjustment during a
+     virtual remeasure would be misread as reader movement by the ownership
+     sample and release bottom follow. */
+  overflow-anchor: none;
   /* Sides = composer clearance + 16px: on narrow viewports the transcript
      stays exactly 32px narrower than the input card (the shared width rule). */
   padding: 16px calc(var(--dsh-composer-side-clearance) + 16px);
