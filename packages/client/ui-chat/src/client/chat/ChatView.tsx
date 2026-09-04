@@ -569,6 +569,10 @@ export function ChatView({
     el.scrollTop = el.scrollHeight
     observedTopRef.current = el.scrollTop
     floorWriteRef.current = { top: el.scrollTop, floor: el.scrollHeight - el.clientHeight }
+    // The floor can keep growing for a few frames after the write as the
+    // mounted window measures; the convergence loop chases those last pixels
+    // (a remeasure the bottom spacer absorbs never reaches the observer).
+    armSettle(settleEl => settleEl.scrollHeight - settleEl.clientHeight - settleEl.scrollTop)
     atBottomRef.current = true
     setAtBottom(true)
     chatScroll.save(null)
