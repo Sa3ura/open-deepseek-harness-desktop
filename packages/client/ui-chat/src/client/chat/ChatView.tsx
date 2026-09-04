@@ -846,7 +846,12 @@ export function ChatView({
         st: Math.round(delivery.scrollTop), floor: Math.round(delivery.floor), observed: Math.round(delivery.observed),
       },
     })
-    if (!readerOwned && isAtBottom) {
+    // A machine-owned delivery (or its settle) normalizes back to the floor
+    // when following: either the geometry confirms the threshold, or the
+    // intent holds and the floor moved under a stable scrollport — a resize
+    // the column observer may not even see (a row remeasure the bottom
+    // spacer absorbs never changes the column's box, so no RO tick fires).
+    if (!readerOwned && (isAtBottom || followIntentRef.current)) {
       toBottom(el)
       return
     }
