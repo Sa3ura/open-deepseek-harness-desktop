@@ -374,7 +374,10 @@ export function ConversationRoot({
     <div ref={rootResizeRef} className={css.root} data-phase={phase}>
       {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
       <div className={css.body}>
-        <div className={css.scrollBody} data-conversation-scroll="">
+        {/* Focusable (never tab-reachable): when a virtualized row holding
+            focus unmounts, focus hands off here so native keyboard scrolling
+            keeps panning the transcript. */}
+        <div className={css.scrollBody} data-conversation-scroll="" tabIndex={-1}>
           {sessionId === undefined ? null : renderSlot('conversation.session', {})}
           {composerSeat}
         </div>

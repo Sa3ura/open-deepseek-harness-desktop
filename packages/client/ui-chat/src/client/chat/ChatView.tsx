@@ -1074,6 +1074,7 @@ export function ChatView({
     renderMessageImages,
     fileMentions,
     renderSlot,
+    focusScroller: getScrollElement,
     t,
   }
   // Spacer heights keep the natural flow layout identical to the virtualizer's
@@ -1091,7 +1092,7 @@ export function ChatView({
 
   return (
     <div className={css.root}>
-      <div ref={listRef} className={css.scroll}>
+      <div ref={listRef} className={css.scroll} tabIndex={-1}>
         <TurnNavigator
           items={railItems}
           activeTurn={activeTurn}

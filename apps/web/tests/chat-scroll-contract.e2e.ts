@@ -880,6 +880,13 @@ describe('web e2e: long Chat scroll contract', () => {
         await nextPaint(world.page)
       }
       await markDiag(world.page, 'keyboard-pageup')
+      // The burst pushed the focused tool row out of the virtual window: its
+      // unmount must hand focus to the conversation scroller, so the native
+      // End below still pans the transcript.
+      await expect.poll(async () => world.page.evaluate(() => {
+        const active = document.activeElement
+        return active instanceof HTMLElement && active.hasAttribute('data-conversation-scroll')
+      }), { timeout: 10_000 }).toBe(true)
       await backToBottom.waitFor({ timeout: 10_000 })
       await expect.poll(async () => (await scrollGeometry(world.page)).distanceFromBottom, { timeout: 10_000 })
         .toBeGreaterThan(100)

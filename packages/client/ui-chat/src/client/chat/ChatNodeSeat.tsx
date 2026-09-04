@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
@@ -20,6 +20,10 @@ interface ChatNodeSeatProps extends ChatNodeOwnerProps {
   readonly t: ChatViewSlotProps['t']
   /** TanStack measurement ref; present only on the virtualized render path. */
   readonly measureRef?: ((node: HTMLDivElement | null) => void) | undefined
+  /** The conversation scrollport — the focus target when this row unmounts
+   *  while holding focus, so virtual unmounts never strand native keyboard
+   *  scrolling on the body. */
+  readonly focusScroller?: (() => HTMLElement | null) | undefined
   /** Virtual item index; TanStack's measureElement resolves rows by `data-index`. */
   readonly dataIndex?: number | undefined
   /** First flow row with no leading block above it: owns no leading gap. */
@@ -45,7 +49,7 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
   nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
   selectedCallId, cwd, openFile, inspectCall, forkAt,
   renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
-  measureRef, dataIndex, firstRow,
+  measureRef, dataIndex, firstRow, focusScroller,
 }: ChatNodeSeatProps) {
   const node = useChatNode(nodeKey)
   const routedNode = node as ChatNode | undefined
@@ -107,6 +111,21 @@ export const ChatNodeSeat = memo(function ChatNodeSeat({
     if (processMember) setOpen(true)
   }, [processMember, setOpen])
   const wrapperRef = useSearchableHidden(processHidden, revealProcess)
+  // Runs during the deletion commit, before React removes the seat's DOM:
+  // a row about to unmount while holding focus hands it to the conversation
+  // scrollport, so the browser's native keyboard scrolling (End, PageUp)
+  // keeps panning the transcript instead of dying on <body>. The element is
+  // captured at mount because React detaches child refs before running this
+  // destroy hook; rows without focus never touch focus state.
+  useLayoutEffect(() => {
+    const seat = wrapperRef.current
+    return () => {
+      const active = seat?.ownerDocument.activeElement
+      if (seat !== null && active instanceof Node && seat.contains(active)) {
+        focusScroller?.()?.focus({ preventScroll: true })
+      }
+    }
+  }, [focusScroller, wrapperRef])
   // One callback ref feeds both the searchable-hidden subtree and the
   // virtualizer's row measurement; the seat wrapper is the measured unit.
   const setWrapperRef = useCallback((element: HTMLDivElement | null) => {

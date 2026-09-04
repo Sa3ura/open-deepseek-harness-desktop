@@ -2560,6 +2560,22 @@ describe('ChatView', () => {
     }
   })
 
+  it('hands focus to the scrollport when the focused row unmounts', () => {
+    const h = makeHarness({ nodes: [user(1, 'q'), assistant(2, 'a')] })
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    // A focusable row control — an expanded tool row, a message action —
+    // holds focus when its node leaves the flow. The unmounting seat must
+    // move focus to the scrollport so native keyboard scrolling survives;
+    // stranding it on <body> kills End/PageUp panning of the transcript.
+    const control = document.createElement('button')
+    view.container.querySelector('[data-chat-flow-key]')!.appendChild(control)
+    control.focus()
+    expect(document.activeElement).toBe(control)
+    act(() => { h.setChat({ nodes: [assistant(2, 'a')] }) })
+    expect(document.activeElement).toBe(scroller)
+  })
+
   it('paging button loads older and shows its busy label', () => {
     const h = makeHarness({ nodes: [user(5, 'later')] }, { hasMore: true })
     const view = render(<h.ChatView {...h.props} />)

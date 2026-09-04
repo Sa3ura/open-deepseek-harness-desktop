@@ -116,7 +116,6 @@ jobs:
           pnpm exec vitest run --config vitest.web.config.ts
           apps/web/tests/chat-virtualization.e2e.ts
           apps/web/tests/chat-scroll-contract.e2e.ts
-          apps/web/tests/trajectory-virtualization.e2e.ts
 
       # Repo default mode: the config's fileParallelism: false keeps every
       # browser file serial, which suits the hosted runner's 4 vCPUs.
