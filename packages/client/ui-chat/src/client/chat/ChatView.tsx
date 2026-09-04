@@ -20,6 +20,14 @@ import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
 const SCROLL_SAMPLE_INTERVAL_MS = 500
+/** A reader delivery that moves toward the floor and lands within this band
+ *  re-arms bottom follow, and a displacement of our own floor write within
+ *  this band is attributed to the write rather than the reader. Native End's
+ *  landing and a floor write's settle both ride a measurement cascade that
+ *  keeps the floor moving for a few frames — one remeasured row plus the
+ *  follow threshold — so the 24px threshold alone would read those gestures
+ *  as scroll-away. */
+const FLOOR_LANDING_PX = 96
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -430,6 +438,11 @@ export function ChatView({
    *  scroll-driven at-bottom chrome re-render (which would snap inertial
    *  scrolls the rest of the way to the floor). */
   const followSigRef = useRef<string | null>(null)
+  /** Floor write context: the scrollTop and floor of the latest toBottom, so
+   *  the sample can attribute the write's own settle displacement (a clamp
+   *  while content collapses, then remeasure growth) to the write instead of
+   *  to the reader. */
+  const floorWriteRef = useRef<{ top: number; floor: number } | null>(null)
   /** Programmatic-landing convergence: rows never mounted carry estimate
    *  sizes, so one semantic write (prepend re-seat, session restore, row
    *  landing) moves as the mounted window measures. The frame loop re-reads
@@ -580,6 +593,7 @@ export function ChatView({
     diag('toBottom', { before: Math.round(el.scrollTop), target: Math.round(el.scrollHeight), gap: Math.round(el.scrollHeight - el.clientHeight - el.scrollTop) })
     el.scrollTop = el.scrollHeight
     observedTopRef.current = el.scrollTop
+    floorWriteRef.current = { top: el.scrollTop, floor: el.scrollHeight - el.clientHeight }
     diag('toBottom.wrote', { after: Math.round(el.scrollTop), gap: Math.round(el.scrollHeight - el.clientHeight - el.scrollTop) })
     atBottomRef.current = true
     setAtBottom(true)
@@ -801,14 +815,29 @@ export function ChatView({
     // reclassify a floor landing (native End, back-to-bottom) as reader
     // movement and disengage follow while the floor recedes.
     const delivery = lastDeliveryRef.current
-    const movedByReader = delivery === null
-      ? Math.abs(el.scrollTop - Math.min(observedTopRef.current, floor)) > 0.5
-      : Math.abs(delivery.scrollTop - Math.min(delivery.observed, delivery.floor)) > 0.5
-    const isAtBottom = movedByReader
-      ? ((delivery?.floor ?? floor) - (delivery?.scrollTop ?? el.scrollTop)) <= FOLLOW_THRESHOLD + 1
+    const deliveryTop = delivery?.scrollTop ?? el.scrollTop
+    const deliveryFloor = delivery?.floor ?? floor
+    const ledgerFloor = delivery === null
+      ? Math.min(observedTopRef.current, floor)
+      : Math.min(delivery.observed, delivery.floor)
+    const moved = Math.abs(deliveryTop - ledgerFloor) > 0.5
+    const movedDown = moved && deliveryTop > ledgerFloor
+    // Two displacements are the machine's, not the reader's: our own floor
+    // write settling through a content collapse (clamp onto the smaller
+    // floor) followed by remeasure growth, and a native landing toward the
+    // floor that the still-moving floor outruns. Both stay within one
+    // remeasured row of the write or of the floor respectively.
+    const writeSettled = moved && !movedDown
+      && floorWriteRef.current !== null
+      && deliveryFloor > floorWriteRef.current.floor
+      && Math.abs(deliveryTop - floorWriteRef.current.top) <= FLOOR_LANDING_PX
+    const readerOwned = moved && !writeSettled
+    const landing = (deliveryFloor - deliveryTop) <= FLOOR_LANDING_PX
+    const isAtBottom = readerOwned
+      ? (deliveryFloor - deliveryTop) <= FOLLOW_THRESHOLD + 1
       : atBottomRef.current
     diag('sample', {
-      movedByReader, isAtBottom, atBottomBefore: atBottomRef.current,
+      moved, readerOwned, movedDown, writeSettled, isAtBottom, atBottomBefore: atBottomRef.current,
       intent: followIntentRef.current,
       suppressed: scrollSamplePendingRef.current,
       observed: Math.round(observedTopRef.current), live: Math.round(el.scrollTop),
@@ -817,22 +846,30 @@ export function ChatView({
         st: Math.round(delivery.scrollTop), floor: Math.round(delivery.floor), observed: Math.round(delivery.observed),
       },
     })
-    if (!movedByReader && isAtBottom) {
+    if (!readerOwned && isAtBottom) {
       toBottom(el)
       return
     }
     atBottomRef.current = isAtBottom
     setAtBottom(isAtBottom)
-    // Intent rides the same classification: a confirmed floor landing (native
-    // End, back-to-bottom) re-arms following; reader-owned movement away
-    // releases it. A geometry-only move away from the floor — measurement
-    // growth with no reader-owned delivery — preserves the intent.
+    // Intent rides the same classification: a confirmed floor landing
+    // re-arms following, a reader-owned move toward the floor that lands
+    // within the landing band re-arms too (native End), reader-owned
+    // movement away releases it, and machine displacements preserve
+    // whatever the reader last chose.
     if (isAtBottom) {
       if (!followIntentRef.current) diag('intent', { value: true, reason: 'floor' })
       followIntentRef.current = true
-    } else if (movedByReader) {
-      if (followIntentRef.current) diag('intent', { value: false, reason: 'reader-away' })
-      followIntentRef.current = false
+      floorWriteRef.current = null
+    } else if (readerOwned) {
+      if (movedDown && landing) {
+        if (!followIntentRef.current) diag('intent', { value: true, reason: 'floor-landing' })
+        followIntentRef.current = true
+      } else {
+        if (followIntentRef.current) diag('intent', { value: false, reason: 'reader-away' })
+        followIntentRef.current = false
+        floorWriteRef.current = null
+      }
     }
     const position = isAtBottom ? null : scrollPosition(local, el)
     if (isAtBottom) {
