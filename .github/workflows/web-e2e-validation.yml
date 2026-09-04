@@ -89,7 +89,10 @@ jobs:
       - name: Build
         run: pnpm run build
 
+      # Master carries no virtualization test files; the focused step only
+      # makes sense on the branch, so full-suite baseline runs skip it.
       - name: Focused Phase 1 browser tests
+        if: inputs.run_full_suite != true
         env:
           DSH_SNAPSHOT: replay
         run: >-
