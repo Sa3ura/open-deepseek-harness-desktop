@@ -28,9 +28,6 @@ env:
   # CI runs must never report to the production telemetry endpoint baked
   # into apps/cli/cordis.yml (AppCLIEntry disables the row when set).
   DSH_TELEMETRY_DISABLED: '1'
-  # Absolute evidence directory: the test host resolves it through the env
-  # var, so diagnostics and screenshots survive regardless of cwd.
-  DSH_CHAT_DIAG_DIR: ${{ runner.temp }}/dsh-chat-diag
 
 concurrency:
   group: web-e2e-validation-${{ github.ref }}
@@ -101,14 +98,16 @@ jobs:
       # Smoke for the evidence channel itself: a fixed JSON written before any
       # test runs. If the upload below carries this file, the directory, env
       # var, and artifact leg all work; missing diagnostic JSONs then point at
-      # the page-to-host leg instead of the upload.
+      # the page-to-host leg instead of the upload. The absolute path is
+      # exported here (workflow-level env cannot use the runner context).
       - name: Seed the diagnostic evidence channel
         run: |
-          mkdir -p "$DSH_CHAT_DIAG_DIR"
+          echo "DSH_CHAT_DIAG_DIR=$RUNNER_TEMP/dsh-chat-diag" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/dsh-chat-diag"
           printf '{"smoke":"evidence-channel","runId":"%s","attempt":"%s","at":"%s"}\n' \
             "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            > "$DSH_CHAT_DIAG_DIR/smoke-evidence-channel.json"
-          cat "$DSH_CHAT_DIAG_DIR/smoke-evidence-channel.json"
+            > "$RUNNER_TEMP/dsh-chat-diag/smoke-evidence-channel.json"
+          cat "$RUNNER_TEMP/dsh-chat-diag/smoke-evidence-channel.json"
 
       - name: Focused Phase 1 browser tests
         env:
