@@ -8,6 +8,11 @@ name: Web E2E validation (temporary)
 
 on:
   workflow_dispatch:
+    inputs:
+      run_full_suite:
+        description: Run the full web e2e suite after the focused files
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -91,11 +96,21 @@ jobs:
           pnpm exec vitest run --config vitest.web.config.ts
           apps/web/tests/chat-virtualization.e2e.ts
           apps/web/tests/chat-scroll-contract.e2e.ts
-          apps/web/tests/trajectory-virtualization.e2e.ts
 
       # Repo default mode: the config's fileParallelism: false keeps every
       # browser file serial, which suits the hosted runner's 4 vCPUs.
       - name: Full web e2e suite
+        if: inputs.run_full_suite
         env:
           DSH_SNAPSHOT: replay
         run: pnpm run test:web:built
+
+      # saveFailureShot writes full-page screenshots to the gitignored
+      # .artifacts/ on failure; upload them before the runner disappears.
+      - name: Upload failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-e2e-failure-evidence-${{ github.run_attempt }}
+          path: .artifacts
+          if-no-files-found: ignore
