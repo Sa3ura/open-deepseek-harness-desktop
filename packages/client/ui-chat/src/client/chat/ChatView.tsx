@@ -969,6 +969,15 @@ export function ChatView({
     return () => { observer.disconnect() }
   }, [])
 
+  // A row remeasure the bottom spacer absorbs leaves the column's box
+  // unchanged, so the ResizeObserver never sees it even though the floor
+  // moved; the virtualizer's total size is that same signal at its source.
+  // The effect runs only on measurement commits — never on an interval —
+  // and followRef still gates every write on the durable intent.
+  useLayoutEffect(() => {
+    followRef.current?.()
+  }, [virtual.totalSize])
+
   // A failed/empty page leaves the head unchanged. Once the request leaves
   // its busy state there is no future prepend for the saved anchor to own.
   useEffect(() => {
