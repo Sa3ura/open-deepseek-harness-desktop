@@ -19,7 +19,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { flushDiag, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
+import { flushDiag, markDiag, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
 
 const MODE = webSnapshotMode()
 const SESSION_ID = 'chat-virtualization-e2e'
@@ -172,10 +172,12 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 900)
     tripwire = watchConsole(page)
-    await page.evaluate(() => { (window as unknown as { __dshDiagLabel?: string }).__dshDiagLabel = 'chat-virtualization' })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
+    // Label after navigation: a value set before `goto` dies with the blank
+    // window when the navigation replaces the global object.
+    await page.evaluate(() => { (window as unknown as { __dshDiagLabel?: string }).__dshDiagLabel = 'chat-virtualization' })
   }, 120_000)
 
   afterAll(async () => {
@@ -194,6 +196,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     // Case 2 — load-earlier keeps the reader's semantic anchor in place.
     // The first click is setup only: the button lives at the flow head, so
     // Playwright's click jumps the scrollport to the flow top.
+    await markDiag(page, 'case2-load-earlier-start')
     const loadMore = page.getByRole('button', { name: 'Load earlier' })
     await loadMore.waitFor({ timeout: 15_000 })
     const logical = await logicalRows(page)
@@ -207,6 +210,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     })
     await nextPaint(page)
     const anchor = await firstVisibleSeat(page)
+    await markDiag(page, 'case2-anchor-captured')
     await loadMore.click()
     await expect.poll(() => logicalRows(page), { timeout: 30_000 }).toBeGreaterThan(logical + 1)
     await nextPaint(page)
@@ -221,6 +225,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     // visible one. The expand rides an async virtual remeasure, so row-top
     // stability is not assertable at a frame boundary — the seam to the next
     // seat is.)
+    await markDiag(page, 'case5-tool-expand')
     const toolRow = page.locator('[data-chat-flow] [data-variant="bash"]').filter({ visible: true }).first()
     if (await toolRow.count() > 0) {
       await toolRow.click()
@@ -242,6 +247,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     // Case 3 — pinned streaming keeps the output visible at the floor.
     // The exhaustion loop left the reader mid-flow; streaming pins only from
     // the floor, so return there before submitting.
+    await markDiag(page, 'case3-return-to-floor')
     await page.locator('[data-conversation-scroll]').evaluate((host) => {
       host.scrollTop = host.scrollHeight
       host.dispatchEvent(new Event('scroll'))
@@ -250,6 +256,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
     await writeComposerDraft(page, composer, 'Stream one deterministic response while Chat stays pinned.')
     await composer.press('Enter')
+    await markDiag(page, 'case3-stream-submitted')
     // A text waitFor would auto-scroll the streamed row into view, which
     // reads as reader movement and disengages follow; poll the mounted
     // fragment count instead, which never scrolls. The replay turn settles
@@ -258,12 +265,17 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
       .getByText('stream fragment 01', { exact: false }).count(), { timeout: 30_000 }).toBeGreaterThan(0)
     // Follow chases the streaming floor through the ResizeObserver cadence;
     // pinning settles within a few frames rather than on one paint.
+    await markDiag(page, 'case3-pinned-poll')
     await expect.poll(async () => {
       const pinned = await geometry(page)
       return pinned.scrollHeight - pinned.clientHeight - pinned.scrollTop
     }, { timeout: 15_000 }).toBeLessThanOrEqual(48)
+    // The pinned-streaming window is the evidence this round analyzes first;
+    // drain it separately before later cases dilute the ring.
+    await flushDiag(page, 'pinned-streaming')
 
     // Case 4 — scrolling away during streaming is not dragged back to the floor.
+    await markDiag(page, 'case4-scroll-away')
     await scrollToRatio(page, 0.5)
     const reading = await geometry(page)
     await page.waitForTimeout(1_500)
@@ -275,6 +287,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
 
     // Page to exhaustion, then assert the seat bound against the fully
     // loaded window (600 turns: 1201 logical rows).
+    await markDiag(page, 'exhaustion-loop')
     let paged = 0
     while (await loadMore.count() > 0 && paged < 40) {
       const before = await logicalRows(page)
@@ -289,6 +302,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
 
     // Case 6 — a tool disclosure opened mid-history survives its row leaving
     // the virtual window and coming back.
+    await markDiag(page, 'case6-disclosure')
     await scrollToRatio(page, 0.45)
     const historyTool = page.locator('[data-chat-flow] [data-variant="bash"]').filter({ visible: true }).first()
     if (await historyTool.count() > 0) {
@@ -314,6 +328,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     // Case 7 — session A → B → A keeps rows, virtual state, and follow intact.
     // Reopening A restores its saved mid-flow position, so these waits must
     // not demand a tail marker row.
+    await markDiag(page, 'case7-session-switch')
     await openSession(page, SHORT_FIXTURE.markers.user(1))
     const shortLogical = await logicalRows(page)
     expect(shortLogical).toBeLessThan(100)
@@ -324,6 +339,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     expect(await page.getByText(SHORT_FIXTURE.markers.user(1), { exact: false }).count()).toBe(0)
 
     // Case 8 — viewport changes re-window without overlap.
+    await markDiag(page, 'case8-resize')
     await page.setViewportSize({ width: 720, height: 1_200 })
     await nextPaint(page)
     expect(await mountedSeats(page)).toBeLessThanOrEqual(MAX_MOUNTED_SEATS)

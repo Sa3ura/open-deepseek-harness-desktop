@@ -1,5 +1,6 @@
 // Shared plumbing for the web smoke tests (dist location, free port, failure shots).
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -173,32 +174,95 @@ export async function writeComposerDraft(
 }
 
 /**
- * Flush the page-side diagnostic ring into .artifacts/ as JSONL. Diagnostic
- * rounds only: ChatView pushes timestamped lines into `window.__dshDiag`.
- * @param page - the page under test.
- * @param label - scenario label in the file name.
+ * Evidence directory for diagnostic rounds: the temporary workflow pins an
+ * absolute runner path through `DSH_CHAT_DIAG_DIR`; local runs fall back to
+ * the gitignored repo `.artifacts/`.
  */
-export async function flushDiag(page: Page, label: string): Promise<void> {
-  const lines = await page.evaluate(() => {
-    const w = window as unknown as { __dshDiag?: string[] }
-    const lines = w.__dshDiag ?? []
-    w.__dshDiag = []
-    return lines
-  })
-  if (lines.length === 0) return
-  const dir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
-  mkdirSync(dir, { recursive: true })
-  appendFileSync(`${dir}/diag-${label}.jsonl`, lines.map(line => `${line}\n`).join(''))
+function diagDir(): string {
+  return process.env.DSH_CHAT_DIAG_DIR
+    ?? fileURLToPath(new URL('../../../.artifacts', import.meta.url))
 }
 
-/** Failure evidence goes to the gitignored .artifacts/ (repo convention). */
-export async function saveFailureShot(page: Page, name: string): Promise<void> {
-  const dir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
-  mkdirSync(dir, { recursive: true })
+/** Diagnostic rounds only: per-label record buffers, rewritten on every flush. */
+const diagRecords = new Map<string, object[]>()
+
+/**
+ * Drain the page-side diagnostic ring into `<diagDir>/<label>.json`. The
+ * browser context only collects; this Node host owns the file. Every outcome
+ * is logged so a runner-side gap explains itself, and an empty ring still
+ * lands a manifest record — which distinguishes "no taps fired" from
+ * "evidence channel broken". Best-effort: never throws into a failure path.
+ * @param page - the page under test.
+ * @param label - scenario label for the file name.
+ */
+export async function flushDiag(page: Page, label: string): Promise<void> {
   try {
-    await page.screenshot({ path: `${dir}/${name}.png`, fullPage: true })
-  } catch {
-    // Best-effort evidence: a dead page/browser at failure time must not mask the real assertion error.
+    const drained = await page.evaluate(() => {
+      const w = window as unknown as { __dshDiag?: string[] }
+      const present = Array.isArray(w.__dshDiag)
+      const lines = w.__dshDiag ?? []
+      w.__dshDiag = []
+      return { present, lines }
+    })
+    const records = diagRecords.get(label) ?? []
+    for (const line of drained.lines) {
+      try {
+        records.push(JSON.parse(line) as object)
+      } catch {
+        records.push({ event: 'unparseable', raw: line })
+      }
+    }
+    diagRecords.set(label, records)
+    const dir = diagDir()
+    await mkdir(dir, { recursive: true })
+    const path = join(dir, `${label}.json`)
+    const payload = { label, ringPresent: drained.present, records }
+    await writeFile(path, `${JSON.stringify(payload, null, 1)}\n`)
+    if (!drained.present || records.length === 0) {
+      console.warn(`[diag] ${label}: ring present=${String(drained.present)} records=${String(records.length)} → ${path}`)
+    } else {
+      console.log(`[diag] ${label}: ${String(records.length)} record(s) → ${path}`)
+    }
+  } catch (error) {
+    console.error(`[diag] ${label}: flush failed — ${error instanceof Error ? error.message : String(error)}`)
+  }
+}
+
+/**
+ * Drop a case mark into the page-side diagnostic ring so one combined
+ * timeline can be segmented by scenario phase. Diagnostic rounds only.
+ * @param page - the page under test.
+ * @param name - mark name recorded with the ring's monotonic timestamp.
+ */
+export async function markDiag(page: Page, name: string): Promise<void> {
+  await page.evaluate((mark) => {
+    const w = window as unknown as { __dshDiag?: string[]; __dshDiagLabel?: string }
+    w.__dshDiag ??= []
+    w.__dshDiag.push(JSON.stringify({ t: Math.round(performance.now()), label: w.__dshDiagLabel ?? 'unlabeled', event: 'mark', mark }))
+  }, name)
+}
+
+/**
+ * Failure evidence lands beside the diagnostics in the diag directory.
+ * Full-page first, viewport fallback: a runner-side full-page capture
+ * failure must not cost the only visual record, and every attempt is
+ * logged. Best-effort: never throws into a failure path.
+ * @param page - the page under test.
+ * @param name - file stem for the screenshot.
+ */
+export async function saveFailureShot(page: Page, name: string): Promise<void> {
+  const path = join(diagDir(), `${name}.png`)
+  try {
+    await page.screenshot({ path, fullPage: true })
+    return
+  } catch (error) {
+    console.error(`[diag] ${name}: full-page screenshot failed — ${error instanceof Error ? error.message : String(error)}`)
+  }
+  try {
+    await page.screenshot({ path, fullPage: false })
+    console.warn(`[diag] ${name}: fell back to a viewport screenshot`)
+  } catch (error) {
+    console.error(`[diag] ${name}: viewport screenshot failed — ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
