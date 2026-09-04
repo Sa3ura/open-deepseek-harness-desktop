@@ -20,7 +20,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
+import { expandOwningTurnProcess, flushDiag, newEnglishPage, saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
 const HISTORY_SESSION_ID = 'chat-scroll-history-e2e'
@@ -167,6 +167,7 @@ async function launchScrollWorld(options: ScrollWorldOptions): Promise<ScrollWor
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { events.push(event) })
     page = await newEnglishPage(browser, 900)
     const tripwire = watchConsole(page)
+    await page.evaluate(() => { (window as unknown as { __dshDiagLabel?: string }).__dshDiagLabel = 'chat-scroll-contract' })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     // Session-list bootstrap can replace the controlled search state. Wait
@@ -219,6 +220,7 @@ async function withScrollWorld(
     runFailure = error
     try {
       await saveFailureShot(world.page, options.failureShot)
+      await flushDiag(world.page, `chat-scroll-contract-${options.failureShot}`)
     } catch {
       // Best-effort evidence must never prevent cleanup of the owned world.
     }
@@ -537,7 +539,9 @@ describe('web e2e: long Chat scroll contract', () => {
 
       await settled
       await expect.poll(() => world.page.locator('[data-streaming="true"]').count(), { timeout: 15_000 }).toBe(0)
-      await world.page.getByText(LIVE_TEXT_DONE, { exact: false }).last().waitFor({ timeout: 15_000 })
+      // The streamed tail sits unmounted while the reader holds the prepend
+      // anchor; stream completion is a logical event, not a mounted-DOM fact.
+      await expect.poll(() => world.events.some(event => JSON.stringify(event).includes(LIVE_TEXT_DONE)), { timeout: 15_000 }).toBe(true)
       await world.page.unroute('**/api/session/page')
 
       let additionalPages = 0

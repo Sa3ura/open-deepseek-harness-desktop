@@ -368,6 +368,31 @@ export function ChatView({
   )
   /** Last position delivered or written on the main thread. */
   const observedTopRef = useRef(0)
+  const diag = (event: string, data: Record<string, unknown>): void => {
+    const w = window as unknown as { __dshDiag?: string[]; __dshDiagLabel?: string }
+    w.__dshDiag ??= []
+    w.__dshDiag.push(JSON.stringify({ t: Math.round(performance.now()), label: w.__dshDiagLabel ?? 'unlabeled', event, ...data }))
+  }
+  const virtualDiag = (): void => {
+    const el = getScrollElement()
+    const local = listRef.current
+    if (el === null || local === null) return
+    const items = virtual.items
+    const last = items.at(-1)
+    const prev = lastTotalRef.current
+    const total = virtual.totalSize
+    diag('virtual', {
+      totalSize: Math.round(total), delta: Math.round(total - prev),
+      scrollOffset: Math.round(el.scrollTop), scrollMargin: Math.round(scrollMargin),
+      flowOrigin: Math.round(flowOriginRef.current), flowHead: Math.round(flowHead.height),
+      first: items[0]?.index, firstKey: items[0] ? order[items[0].index] : undefined,
+      lastIdx: last?.index, lastKey: last ? order[last.index] : undefined,
+      mounted: items.length,
+      gap: Math.round(el.scrollHeight - el.clientHeight - el.scrollTop),
+    })
+    lastTotalRef.current = total
+  }
+  const lastTotalRef = useRef(0)
   /** Scroll geometry at the latest raw delivery. Ownership is classified from
    *  delivery truth, not from the delayed sample: on the virtualized path,
    *  measurement of newly mounted rows moves the floor between the delivery
@@ -545,8 +570,10 @@ export function ChatView({
     // Returning to the live tail supersedes a jump still landing.
     pendingJumpRef.current = null
     setBusyJumpTurn(current => current === null ? current : null)
+    diag('toBottom', { before: Math.round(el.scrollTop), target: Math.round(el.scrollHeight), gap: Math.round(el.scrollHeight - el.clientHeight - el.scrollTop) })
     el.scrollTop = el.scrollHeight
     observedTopRef.current = el.scrollTop
+    diag('toBottom.wrote', { after: Math.round(el.scrollTop), gap: Math.round(el.scrollHeight - el.clientHeight - el.scrollTop) })
     atBottomRef.current = true
     setAtBottom(true)
     chatScroll.save(null)
@@ -725,6 +752,7 @@ export function ChatView({
     // A jump whose target committed outside the anchored-prepend path (for
     // example after a mid-jump toBottom dropped the held anchor) lands here.
     if (pendingJumpRef.current !== null) realizePendingJump(local, el, false)
+    virtualDiag()
   })
 
   const onScrollRef = useRef(() => {})
@@ -753,6 +781,15 @@ export function ChatView({
     const isAtBottom = movedByReader
       ? ((delivery?.floor ?? floor) - (delivery?.scrollTop ?? el.scrollTop)) <= FOLLOW_THRESHOLD + 1
       : atBottomRef.current
+    diag('sample', {
+      movedByReader, isAtBottom, atBottomBefore: atBottomRef.current,
+      suppressed: scrollSamplePendingRef.current,
+      observed: Math.round(observedTopRef.current), live: Math.round(el.scrollTop),
+      gap: Math.round(floor - el.scrollTop),
+      delivery: delivery === null ? null : {
+        st: Math.round(delivery.scrollTop), floor: Math.round(delivery.floor), observed: Math.round(delivery.observed),
+      },
+    })
     if (!movedByReader && isAtBottom) {
       toBottom(el)
       return
@@ -812,13 +849,21 @@ export function ChatView({
   // initializer a function initial value would need never exists.
   const followRef = useRef<(() => void) | null>(null)
   followRef.current = () => {
+    const probe = listRef.current === null ? null : scrollerOf(listRef.current)
+    diag('ro', {
+      atBottom: atBottomRef.current,
+      gap: probe === null ? -1 : Math.round(probe.scrollHeight - probe.clientHeight - probe.scrollTop),
+      blocked: scrollSamplePendingRef.current ? 'sample-pending' : atBottomRef.current ? null : 'not-at-bottom',
+    })
     if (scrollSamplePendingRef.current) return
     const local = listRef.current
     if (local !== null && atBottomRef.current) {
       const el = scrollerOf(local)
+      const before = Math.round(el.scrollTop)
       el.scrollTop = el.scrollHeight
       observedTopRef.current = el.scrollTop
       chatScroll.save(null)
+      diag('follow.wrote', { before, after: Math.round(el.scrollTop), gap: Math.round(el.scrollHeight - el.clientHeight - el.scrollTop) })
     }
   }
   // Streaming, tool disclosures, and other flow changes resize the column;

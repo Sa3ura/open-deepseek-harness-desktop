@@ -1,5 +1,5 @@
 // Shared plumbing for the web smoke tests (dist location, free port, failure shots).
-import { existsSync, mkdirSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -170,6 +170,25 @@ export async function writeComposerDraft(
   await page.keyboard.press('ControlOrMeta+A')
   if (text === '') await page.keyboard.press('Backspace')
   else await page.keyboard.type(text)
+}
+
+/**
+ * Flush the page-side diagnostic ring into .artifacts/ as JSONL. Diagnostic
+ * rounds only: ChatView pushes timestamped lines into `window.__dshDiag`.
+ * @param page - the page under test.
+ * @param label - scenario label in the file name.
+ */
+export async function flushDiag(page: Page, label: string): Promise<void> {
+  const lines = await page.evaluate(() => {
+    const w = window as unknown as { __dshDiag?: string[] }
+    const lines = w.__dshDiag ?? []
+    w.__dshDiag = []
+    return lines
+  })
+  if (lines.length === 0) return
+  const dir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))
+  mkdirSync(dir, { recursive: true })
+  appendFileSync(`${dir}/diag-${label}.jsonl`, lines.map(line => `${line}\n`).join(''))
 }
 
 /** Failure evidence goes to the gitignored .artifacts/ (repo convention). */

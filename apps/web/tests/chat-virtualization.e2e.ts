@@ -19,7 +19,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
+import { flushDiag, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
 
 const MODE = webSnapshotMode()
 const SESSION_ID = 'chat-virtualization-e2e'
@@ -172,6 +172,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser, 900)
     tripwire = watchConsole(page)
+    await page.evaluate(() => { (window as unknown as { __dshDiagLabel?: string }).__dshDiagLabel = 'chat-virtualization' })
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await page.getByText('Ungrouped', { exact: true }).waitFor({ timeout: 30_000 })
@@ -184,7 +185,10 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
   })
 
   it.skipIf(MODE === 'record')('keeps mounted Chat seats bounded across scroll, prepend, streaming, disclosures, and session switches', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-chat-virtualization'))
+    onTestFailed(async () => {
+      await saveFailureShot(page, 'web-e2e-chat-virtualization')
+      await flushDiag(page, 'chat-virtualization')
+    })
     await openSession(page, LONG_FIXTURE.markers.user(1), LONG_FIXTURE.markers.assistant(LONG_FIXTURE.turns))
 
     // Case 2 — load-earlier keeps the reader's semantic anchor in place.
@@ -327,6 +331,7 @@ describe('web e2e: Chat virtualization over tail-paged history', () => {
     await nextPaint(page)
     expect(await mountedSeats(page)).toBeLessThanOrEqual(MAX_MOUNTED_SEATS)
 
+    await flushDiag(page, 'chat-virtualization')
     expect({
       pageErrors: tripwire.pageErrors,
       warnings: tripwire.warnings,
