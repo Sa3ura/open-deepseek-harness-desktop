@@ -4,12 +4,6 @@
 # fork. It reproduces the web browser segment of that job — same Node, pnpm,
 # bubblewrap, and Playwright setup, `DSH_SNAPSHOT=replay`, no API key — and
 # stays dispatch-only so it never gates anything. Remove after acceptance.
-#
-# Evidence channel: every run seeds `$RUNNER_TEMP/dsh-chat-diag` with a smoke
-# JSON and hands the absolute path to the test host through DSH_CHAT_DIAG_DIR;
-# the tests drain their diagnostic ring and failure screenshots there, the
-# upload uses the same directory, and a run without any scenario diagnostic
-# JSON fails loud instead of uploading nothing silently.
 name: Web E2E validation (temporary)
 
 on:
@@ -95,20 +89,6 @@ jobs:
       - name: Build
         run: pnpm run build
 
-      # Smoke for the evidence channel itself: a fixed JSON written before any
-      # test runs. If the upload below carries this file, the directory, env
-      # var, and artifact leg all work; missing diagnostic JSONs then point at
-      # the page-to-host leg instead of the upload. The absolute path is
-      # exported here (workflow-level env cannot use the runner context).
-      - name: Seed the diagnostic evidence channel
-        run: |
-          echo "DSH_CHAT_DIAG_DIR=$RUNNER_TEMP/dsh-chat-diag" >> "$GITHUB_ENV"
-          mkdir -p "$RUNNER_TEMP/dsh-chat-diag"
-          printf '{"smoke":"evidence-channel","runId":"%s","attempt":"%s","at":"%s"}\n' \
-            "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            > "$RUNNER_TEMP/dsh-chat-diag/smoke-evidence-channel.json"
-          cat "$RUNNER_TEMP/dsh-chat-diag/smoke-evidence-channel.json"
-
       - name: Focused Phase 1 browser tests
         env:
           DSH_SNAPSHOT: replay
@@ -125,22 +105,12 @@ jobs:
           DSH_SNAPSHOT: replay
         run: pnpm run test:web:built
 
-      # Diagnostic rounds must never end silent: no scenario JSON at all means
-      # the page-to-host evidence leg is broken, so fail loud here.
-      - name: Require diagnostic evidence
-        if: always()
-        run: |
-          ls -la "$DSH_CHAT_DIAG_DIR"
-          count=$(find "$DSH_CHAT_DIAG_DIR" -name '*.json' ! -name 'smoke-evidence-channel.json' | wc -l)
-          if [ "$count" -eq 0 ]; then
-            echo "::error::no diagnostic JSON landed in $DSH_CHAT_DIAG_DIR — the evidence channel is broken"
-            exit 1
-          fi
-
-      - name: Upload chat diagnostic evidence
+      # saveFailureShot writes full-page screenshots to the gitignored
+      # .artifacts/ on failure; upload them before the runner disappears.
+      - name: Upload failure evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: web-e2e-chat-diag-${{ github.run_attempt }}
-          path: ${{ env.DSH_CHAT_DIAG_DIR }}
-          if-no-files-found: error
+          name: web-e2e-failure-evidence-${{ github.run_attempt }}
+          path: .artifacts
+          if-no-files-found: ignore

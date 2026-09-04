@@ -20,7 +20,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { expandOwningTurnProcess, flushDiag, markDiag, newEnglishPage, saveFailureShot } from './support.ts'
+import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
 const HISTORY_SESSION_ID = 'chat-scroll-history-e2e'
@@ -90,8 +90,6 @@ interface ScrollWorld {
 
 interface ScrollWorldOptions {
   readonly failureShot: string
-  /** Scenario label for the diagnostic JSON file and the page-side ring. */
-  readonly diagLabel: string
   readonly replay?: ReplayOverrideDoc
   readonly seeds: readonly { fixture: ChatScrollFixture; id: string }[]
 }
@@ -171,11 +169,6 @@ async function launchScrollWorld(options: ScrollWorldOptions): Promise<ScrollWor
     const tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    // Label after navigation: a value set before `goto` dies with the blank
-    // window when the navigation replaces the global object.
-    await page.evaluate((label) => {
-      (window as unknown as { __dshDiagLabel?: string }).__dshDiagLabel = label
-    }, options.diagLabel)
     // Session-list bootstrap can replace the controlled search state. Wait
     // for the seeded baseline before openSeed starts the lazy content query
     // (the compact layout dropped group session counts; the Ungrouped bucket
@@ -224,10 +217,11 @@ async function withScrollWorld(
     await run(world)
   } catch (error) {
     runFailure = error
-    await saveFailureShot(world.page, options.failureShot)
-  } finally {
-    // Success and failure both drain: this round needs the timeline either way.
-    await flushDiag(world.page, options.diagLabel)
+    try {
+      await saveFailureShot(world.page, options.failureShot)
+    } catch {
+      // Best-effort evidence must never prevent cleanup of the owned world.
+    }
   }
   let cleanupFailure: unknown
   try {
@@ -491,7 +485,6 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('preserves the reader anchor when history and streaming arrive concurrently', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-history-stream',
-      diagLabel: 'reader-anchor',
       replay: [replayEntry(textStream(LIVE_TEXT_FIRST, LIVE_TEXT_DONE, 120))],
       seeds: [{ fixture: HISTORY_FIXTURE, id: HISTORY_SESSION_ID }],
     }, async (world) => {
@@ -526,12 +519,10 @@ describe('web e2e: long Chat scroll contract', () => {
         await composer.fill(LIVE_TEXT_PROMPT)
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
         await world.page.getByText(LIVE_TEXT_FIRST, { exact: false }).last().waitFor({ timeout: 15_000 })
-        await markDiag(world.page, 'reader-stream-started')
         await wheelToHistoryStart(world.page)
         const beforeRows = await loadedFlowRows(world.page)
         await world.page.getByRole('button', { name: 'Load earlier', exact: true }).click()
         await expect.poll(() => held, { timeout: 10_000 }).toBe(true)
-        await markDiag(world.page, 'reader-history-held')
 
         await wheelTranscript(world.page, 420)
         const readerAnchor = await visibleFlowAnchor(world.page)
@@ -543,7 +534,6 @@ describe('web e2e: long Chat scroll contract', () => {
 
         releaseHistory()
         await expect.poll(() => loadedFlowRows(world.page), { timeout: 30_000 }).toBeGreaterThan(beforeRows)
-        await markDiag(world.page, 'reader-prepend-released')
         await nextPaint(world.page)
         await expectSameFlowTop(world.page, readerAnchor)
       } finally {
@@ -558,7 +548,6 @@ describe('web e2e: long Chat scroll contract', () => {
       await world.page.unroute('**/api/session/page')
 
       let additionalPages = 0
-      await markDiag(world.page, 'reader-paging-loop')
       while (additionalPages < 8) {
         await wheelToHistoryStart(world.page)
         if (await world.page.getByRole('button', { name: 'Load earlier', exact: true }).count() === 0) break
@@ -579,7 +568,6 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('offers every outline turn on the rail and jumps to an unloaded one', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-turn-rail-jump',
-      diagLabel: 'turn-rail',
       seeds: [{ fixture: HISTORY_FIXTURE, id: RAIL_SESSION_ID }],
     }, async (world) => {
       await openSeed(world.page, HISTORY_FIXTURE, HISTORY_FIXTURE.markers.assistant(HISTORY_FIXTURE.turns))
@@ -654,7 +642,6 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('keeps streaming ownership and tool disclosure state across a long scroll-away cycle', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-live-tool',
-      diagLabel: 'live-tool',
       replay: [
         replayEntry(toolStream()),
         replayEntry(textStream(LIVE_TOOL_FIRST, LIVE_TOOL_DONE, 84)),
@@ -747,7 +734,6 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('restores tab/session position and keeps composer resizing on the correct scroll owner', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-restore-composer',
-      diagLabel: 'restore-position',
       seeds: [
         { fixture: RESTORE_FIXTURE_A, id: RESTORE_SESSION_A_ID },
         { fixture: RESTORE_FIXTURE_B, id: RESTORE_SESSION_B_ID },
@@ -763,7 +749,6 @@ describe('web e2e: long Chat scroll contract', () => {
       await wheelToHistoryStart(world.page)
       await wheelTranscript(world.page, 1_300)
       const sessionAnchor = await visibleFlowAnchor(world.page)
-      await markDiag(world.page, 'restore-session-anchor')
 
       await world.page.getByRole('tab', { name: 'Trajectory', exact: true }).click()
       await world.page.getByLabel('Trajectory timeline').waitFor({ timeout: 30_000 })
@@ -800,7 +785,6 @@ describe('web e2e: long Chat scroll contract', () => {
       })
       await world.page.getByLabel('Trajectory timeline').waitFor({ timeout: 30_000 })
       await world.page.getByRole('tab', { name: 'Chat', exact: true }).click()
-      await markDiag(world.page, 'restore-pinned-remount-poll')
       await expectBottom(world.page)
       await openSeed(
         world.page,
@@ -852,7 +836,6 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('keyboard paging owns bottom-follow without wheel input', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-keyboard',
-      diagLabel: 'keyboard-end',
       seeds: [{ fixture: INPUTS_FIXTURE, id: INPUTS_SESSION_ID }],
     }, async (world) => {
       await openSeed(
@@ -873,13 +856,11 @@ describe('web e2e: long Chat scroll contract', () => {
       await lastToolRow.focus()
       await world.page.keyboard.press('End')
       await expectBottom(world.page)
-      await markDiag(world.page, 'keyboard-first-end')
       await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
       for (let press = 0; press < 3; press += 1) {
         await world.page.keyboard.press('PageUp')
         await nextPaint(world.page)
       }
-      await markDiag(world.page, 'keyboard-pageup')
       // The burst pushed the focused tool row out of the virtual window: its
       // unmount must hand focus to the conversation scroller, so the native
       // End below still pans the transcript.
@@ -891,7 +872,6 @@ describe('web e2e: long Chat scroll contract', () => {
       await expect.poll(async () => (await scrollGeometry(world.page)).distanceFromBottom, { timeout: 10_000 })
         .toBeGreaterThan(100)
       await world.page.keyboard.press('End')
-      await markDiag(world.page, 'keyboard-second-end')
       await expectBottom(world.page)
       await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
       assertClean(world)
@@ -901,7 +881,6 @@ describe('web e2e: long Chat scroll contract', () => {
   it.skipIf(MODE === 'record')('touch-style fling scrolling owns streaming bottom-follow without wheel input', async () => {
     await withScrollWorld({
       failureShot: 'web-e2e-chat-scroll-fling-stream',
-      diagLabel: 'fling-stream',
       replay: [
         replayEntry(toolStream()),
         replayEntry(textStream(LIVE_FLING_FIRST, LIVE_FLING_DONE, 240)),
