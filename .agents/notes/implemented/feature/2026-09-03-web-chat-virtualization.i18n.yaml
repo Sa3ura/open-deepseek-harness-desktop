@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-09-03-web-chat-virtualization.md
-2026-09-03-web-chat-virtualization.md: 18e31e8562a509ceac900d31a5211b9267624388
-2026-09-03-web-chat-virtualization.zh.md: c2cd188ff6cc4c2adf897f049dd3d71174a998b3
+2026-09-03-web-chat-virtualization.md: 0fbc81734a18ea8fcdf4c31e461ce056646c205d
+2026-09-03-web-chat-virtualization.zh.md: 73b61f862e03ba1ba0009c43e68fa40657f6d8ff
